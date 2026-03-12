@@ -51,7 +51,7 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 - `./scripts/run_checks.ps1` or `./scripts/run_checks.sh` is the authoritative pre-push local check path and uses only the venv's bundled Python tooling.
 - `./scripts/run_checks.ps1 -IncludeRemoteGitHubChecks` or `./scripts/run_checks.sh --include-remote-github-checks` is an optional post-push deployed-state check that uses the venv's bundled Python and `gh`.
 - Your unpushed local issue-template files are validated by the local `pytest` issue-template tests instead of the remote metadata query.
-- After issue-template changes land on `main`, the `Issue Metadata` GitHub Actions workflow verifies that GitHub recognized the default-branch forms and contact links.
+- After issue-template changes land on `main`, the `Issue Metadata` GitHub Actions workflow verifies the default-branch issue metadata plus the pushed `.github/ISSUE_TEMPLATE/*.yml` files.
 
 ## GitHub Automation
 

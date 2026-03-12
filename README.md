@@ -252,9 +252,9 @@ On Windows, `scripts/create_github_backlog.ps1` remains available as a
 PowerShell-specific wrapper if you prefer that entrypoint.
 
 The `Issue Metadata` workflow runs after issue-template changes reach
-`main` and checks GitHub's parsed default-branch `issueTemplates` and
-`contactLinks` via GraphQL. That provides a GitHub-side verification
-path without relying on manual browser inspection.
+`main` and checks GitHub's default-branch issue metadata and pushed
+template files via the GitHub APIs. That provides a GitHub-side
+verification path without relying on manual browser inspection.
 
 The bootstrap scripts install both Python dependencies and a venv-scoped
 GitHub CLI, so local checks do not require a global `gh` installation.

@@ -44,6 +44,7 @@ def test_validate_accepts_expected_issue_metadata() -> None:
             {"name": "Epic", "about": "", "title": "[Epic]: ", "filename": "epic.yml"},
             {"name": "Feature Request", "about": "", "title": "[Feature]: ", "filename": "feature.yml"},
         ],
+        template_files=["bug.yml", "chore.yml", "config.yml", "docs.yml", "epic.yml", "feature.yml"],
     )
 
     assert MODULE._validate(parsed) == []
@@ -56,6 +57,7 @@ def test_validate_reports_missing_remote_metadata() -> None:
         blank_issues_enabled=True,
         contact_links=[],
         issue_templates=[],
+        template_files=[],
     )
 
     errors = MODULE._validate(parsed)
@@ -64,4 +66,4 @@ def test_validate_reports_missing_remote_metadata() -> None:
     assert "missing contact link: Private security report" in errors
     assert "missing contact link: Contribution guide" in errors
     assert "missing contact link: Project backlog" in errors
-    assert any(error.startswith("missing issue templates recognized by GitHub:") for error in errors)
+    assert any(error.startswith("missing pushed issue template files on default branch:") for error in errors)

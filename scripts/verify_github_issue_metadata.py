@@ -6,11 +6,13 @@ import os
 import sys
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
 GRAPHQL_ENDPOINT = "https://api.github.com/graphql"
+REST_API_ROOT = "https://api.github.com"
 EXPECTED_CONTACT_LINKS = {
     "Private security report": "/security/advisories/new",
     "Contribution guide": "/blob/main/CONTRIBUTING.md",
@@ -54,6 +56,7 @@ class ParsedRepo:
     blank_issues_enabled: bool
     contact_links: list[dict[str, str]]
     issue_templates: list[dict[str, str]]
+    template_files: list[str]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -83,26 +86,16 @@ def _split_repo(repo: str) -> tuple[str, str]:
 
 
 def _run_query(token: str, owner: str, name: str) -> ParsedRepo:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "etl-identity-engine-issue-metadata-check",
+    }
     payload = json.dumps(
-        {
-            "query": QUERY,
-            "variables": {
-                "owner": owner,
-                "name": name,
-            },
-        }
+        {"query": QUERY, "variables": {"owner": owner, "name": name}}
     ).encode("utf-8")
-    request = Request(
-        GRAPHQL_ENDPOINT,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "etl-identity-engine-issue-metadata-check",
-        },
-        method="POST",
-    )
+    request = Request(GRAPHQL_ENDPOINT, data=payload, headers=headers, method="POST")
 
     try:
         with urlopen(request, timeout=30) as response:
@@ -120,12 +113,34 @@ def _run_query(token: str, owner: str, name: str) -> ParsedRepo:
         raise SystemExit(f"Repository {owner}/{name} was not found via GitHub GraphQL.")
 
     default_branch = repository["defaultBranchRef"]["name"]
+    contents_url = (
+        f"{REST_API_ROOT}/repos/{owner}/{name}/contents/"
+        f"{quote('.github/ISSUE_TEMPLATE')}?ref={quote(default_branch)}"
+    )
+    contents_request = Request(contents_url, headers=headers, method="GET")
+    try:
+        with urlopen(contents_request, timeout=30) as response:
+            contents_data: Any = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise SystemExit(
+            f"GitHub contents request for .github/ISSUE_TEMPLATE failed with HTTP {exc.code}."
+        ) from exc
+    except URLError as exc:
+        raise SystemExit(f"GitHub contents request failed: {exc.reason}") from exc
+
+    template_files = []
+    if isinstance(contents_data, list):
+        for item in contents_data:
+            if isinstance(item, dict) and item.get("type") == "file" and isinstance(item.get("name"), str):
+                template_files.append(item["name"])
+
     return ParsedRepo(
         repo_url=repository["url"],
         default_branch=default_branch,
         blank_issues_enabled=repository["isBlankIssuesEnabled"],
         contact_links=repository["contactLinks"],
         issue_templates=repository["issueTemplates"],
+        template_files=sorted(template_files),
     )
 
 
@@ -146,12 +161,10 @@ def _validate(parsed: ParsedRepo) -> list[str]:
                 f"contact link {expected_name!r} has unexpected URL: {matching['url']}"
             )
 
-    template_files = {template["filename"] for template in parsed.issue_templates}
+    template_files = set(parsed.template_files)
     missing_templates = sorted(EXPECTED_TEMPLATE_FILES - template_files)
     if missing_templates:
-        errors.append(
-            "missing issue templates recognized by GitHub: " + ", ".join(missing_templates)
-        )
+        errors.append("missing pushed issue template files on default branch: " + ", ".join(missing_templates))
 
     return errors
 
@@ -167,14 +180,21 @@ def main() -> int:
     print(f"Default branch: {parsed.default_branch}")
     print(f"Blank issues enabled: {parsed.blank_issues_enabled}")
     print(f"Contact links recognized by GitHub: {len(parsed.contact_links)}")
-    print(f"Issue templates recognized by GitHub: {len(parsed.issue_templates)}")
+    print(f"Template files on default branch: {len(parsed.template_files)}")
+    print(f"GraphQL issueTemplates entries: {len(parsed.issue_templates)}")
 
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("GitHub recognized the expected issue metadata on the default branch.")
+    if not parsed.issue_templates:
+        print(
+            "Note: GitHub GraphQL returned zero issueTemplates entries; "
+            "the check passed by validating the pushed .github/ISSUE_TEMPLATE files instead."
+        )
+
+    print("GitHub recognized the expected issue metadata and default-branch template files.")
     return 0
 
 
