@@ -1,0 +1,16 @@
+source_priority:
+  - source_b
+  - source_a
+
+field_rules:
+  first_name:
+    strategy: source_priority_then_non_null
+  last_name:
+    strategy: source_priority_then_non_null
+  dob:
+    strategy: source_priority_then_non_null
+  address:
+    strategy: source_priority_then_non_null
+  phone:
+    strategy: source_priority_then_non_null
+

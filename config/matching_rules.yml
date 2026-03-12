@@ -1,0 +1,6 @@
+weights:
+  canonical_name: 0.5
+  canonical_dob: 0.3
+  canonical_phone: 0.1
+  canonical_address: 0.1
+

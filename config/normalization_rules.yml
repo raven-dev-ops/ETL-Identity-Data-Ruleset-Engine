@@ -1,0 +1,16 @@
+name_normalization:
+  trim_whitespace: true
+  remove_punctuation: true
+  uppercase: true
+
+date_normalization:
+  accepted_formats:
+    - "%Y-%m-%d"
+    - "%m/%d/%Y"
+    - "%m-%d-%Y"
+    - "%Y/%m/%d"
+  output_format: "%Y-%m-%d"
+
+phone_normalization:
+  digits_only: true
+

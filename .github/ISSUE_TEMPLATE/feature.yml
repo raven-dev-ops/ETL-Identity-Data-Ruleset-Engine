@@ -1,0 +1,96 @@
+name: Feature Request
+description: Propose a new capability or extension to the ETL prototype.
+title: "[Feature]: "
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for net-new behavior. For larger multi-issue initiatives, open an Epic instead.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and the planning backlog for similar work.
+          required: true
+        - label: I can describe the user or operator problem this change solves.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Target Area
+      options:
+        - repo / packaging / scripts
+        - synthetic generation
+        - normalization
+        - matching / clustering
+        - survivorship / golden records
+        - reporting / quality outputs
+        - CI / automation / docs
+    validations:
+      required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Suggested Milestone
+      description: Pick the delivery stream that best matches the work.
+      options:
+        - M1 - project bootstrap and repo standards
+        - M2 - synthetic data generation
+        - M3 - normalization and data quality
+        - M4 - matching, scoring, and clustering
+        - M5 - survivorship and golden records
+        - M6 - reporting, hardening, and release
+        - not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested Priority
+      options:
+        - priority:p0
+        - priority:p1
+        - priority:p2
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Behavior
+      description: Describe the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Note rejected approaches, workarounds, or why current behavior is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: List concrete completion criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: config_impact
+    attributes:
+      label: Config, Schema, or Data Impact
+      description: Note impacted config files, schemas, outputs, or docs.
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Related Issues or Dependencies
+      description: Link blocking issues, epics, or related backlog items if known.

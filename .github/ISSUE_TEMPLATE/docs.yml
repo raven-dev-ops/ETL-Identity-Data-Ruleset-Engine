@@ -1,0 +1,68 @@
+name: Documentation
+description: Suggest documentation additions, corrections, or restructuring.
+title: "[Docs]: "
+labels: ["type:docs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for README, architecture, setup, or stage-level documentation work.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and checked the current docs before filing this.
+          required: true
+        - label: I can point to the exact doc page, section, or workflow that is unclear or outdated.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Documentation Area
+      options:
+        - README / repo landing page
+        - contributor setup / governance
+        - pipeline architecture
+        - synthetic generation
+        - normalization
+        - matching / clustering
+        - survivorship / golden records
+        - reporting / quality outputs
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Impacted Documentation
+      description: Which file(s) should change?
+    validations:
+      required: true
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Documentation Problem Type
+      options:
+        - missing content
+        - incorrect content
+        - outdated content
+        - confusing structure
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is Unclear or Missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Wording or Structure
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation Notes
+      description: Describe how you verified the docs gap, such as following setup steps or running a command.

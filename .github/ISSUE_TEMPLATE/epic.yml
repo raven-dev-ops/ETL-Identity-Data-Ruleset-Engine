@@ -1,0 +1,74 @@
+name: Epic
+description: Track a multi-issue delivery stream.
+title: "[Epic]: "
+labels: ["type:epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use an epic for milestone-scale work that will break down into multiple child issues.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched the existing backlog and this work is not already tracked by another epic.
+          required: true
+        - label: I expect this effort to require multiple child issues or coordinated deliverables.
+          required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Target Milestone
+      options:
+        - M1 - project bootstrap and repo standards
+        - M2 - synthetic data generation
+        - M3 - normalization and data quality
+        - M4 - matching, scoring, and clustering
+        - M5 - survivorship and golden records
+        - M6 - reporting, hardening, and release
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome does this epic deliver?
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Why This Matters
+      description: Describe the operational or project problem this epic addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: Explicitly list out-of-scope items.
+  - type: textarea
+    id: deliverables
+    attributes:
+      label: Deliverables
+      description: List expected child issues or outcomes.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: List prerequisite issues, upstream decisions, or external blockers.
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Capture the main execution or quality risks.
+  - type: textarea
+    id: success
+    attributes:
+      label: Success Metrics
+      description: Describe how the team will know this epic is complete and useful.
+    validations:
+      required: true

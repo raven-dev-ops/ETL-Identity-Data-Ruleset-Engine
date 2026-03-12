@@ -1,0 +1,93 @@
+name: Bug Report
+description: Report incorrect behavior in the pipeline, CLI, or repo tooling.
+title: "[Bug]: "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for reproducible defects in synthetic-data workflows.
+
+        Do not report vulnerabilities here. Use the private security reporting link in the issue chooser instead.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and the planning backlog for duplicates.
+          required: true
+        - label: I confirmed this is not a private security issue.
+          required: true
+        - label: I can reproduce this with synthetic data only.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Impacted Area
+      description: Choose the main pipeline or repo area affected.
+      options:
+        - repo / packaging / scripts
+        - synthetic generation
+        - normalization
+        - matching / clustering
+        - survivorship / golden records
+        - reporting / quality outputs
+        - CI / automation / docs
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - high - blocks development or invalidates core output
+        - medium - degraded behavior with a workaround
+        - low - isolated defect or paper cut
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Include exact commands, config files, and synthetic input artifacts.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, Output Snippets, or Synthetic Samples
+      description: Paste relevant logs or reference local paths. Do not include real personal or operational data.
+  - type: input
+    id: version
+    attributes:
+      label: Commit SHA or Version
+      description: Provide a commit SHA, branch name, or local version if known.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, shell, and any relevant dependency versions.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Suggested Fix Outcome
+      description: Describe the observable behavior that should be true once this bug is fixed.

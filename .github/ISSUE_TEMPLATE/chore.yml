@@ -1,0 +1,68 @@
+name: Maintenance Task
+description: Track repository hygiene, automation, refactors, and other non-feature work.
+title: "[Chore]: "
+labels: ["type:chore"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for repo maintenance, tooling, packaging, automation, cleanup, and similar work that is not a user-facing feature.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and the planning backlog for similar maintenance work.
+          required: true
+        - label: This request is not better represented as a bug, feature, docs issue, or epic.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Maintenance Area
+      options:
+        - repo structure / packaging
+        - developer tooling / scripts
+        - CI / automation
+        - test infrastructure
+        - docs / governance
+        - sample data / fixtures
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested Priority
+      options:
+        - priority:p0
+        - priority:p1
+        - priority:p2
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the maintenance task and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List the systems, files, or workflows expected to change.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: List the concrete conditions that will close this task.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Related Issues or Dependencies
+      description: Link any epics, follow-up tasks, or blockers.

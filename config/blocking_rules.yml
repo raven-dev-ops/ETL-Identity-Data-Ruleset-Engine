@@ -1,0 +1,11 @@
+blocking_passes:
+  - name: last_initial_plus_dob
+    fields:
+      - last_initial
+      - dob
+
+  - name: last_name_plus_birth_year
+    fields:
+      - last_name
+      - birth_year
+

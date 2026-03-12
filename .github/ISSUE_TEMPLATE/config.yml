@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/security/advisories/new
+    about: Report vulnerabilities privately instead of opening a public issue.
+  - name: Contribution guide
+    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/CONTRIBUTING.md
+    about: Review setup, validation, and PR expectations before filing work.
+  - name: Project backlog
+    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/github-issues-backlog.md
+    about: Check planned milestones, issue types, and existing delivery streams first.
