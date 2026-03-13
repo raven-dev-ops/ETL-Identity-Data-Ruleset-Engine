@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 
 DEFAULT_WEIGHTS = {
@@ -13,6 +14,8 @@ DEFAULT_WEIGHTS = {
 }
 PARTIAL_MATCH_WEIGHT_RATIO = {
     "canonical_name": 0.7,
+    "canonical_phone": 0.8,
+    "canonical_address": 0.6,
 }
 NICKNAME_GROUPS = (
     frozenset({"JOHN", "JON", "JOHNNY", "JONATHAN"}),
@@ -72,20 +75,83 @@ def _partial_field_match_weight(
     field_name: str,
     weight: float,
 ) -> tuple[str, float] | None:
-    if field_name != "canonical_name":
-        return None
-
     left_value = left.get(field_name, "").strip()
     right_value = right.get(field_name, "").strip()
     if not left_value or not right_value:
         return None
-    if not _is_partial_name_match(left_value, right_value):
+
+    is_partial_match = False
+    if field_name == "canonical_name":
+        is_partial_match = _is_partial_name_match(left_value, right_value)
+    elif field_name == "canonical_phone":
+        is_partial_match = _is_partial_phone_match(left_value, right_value)
+    elif field_name == "canonical_address":
+        is_partial_match = _is_partial_address_match(left_value, right_value)
+
+    if not is_partial_match:
         return None
 
     partial_weight = round(weight * PARTIAL_MATCH_WEIGHT_RATIO[field_name], 4)
     if partial_weight <= 0.0:
         return None
-    return ("canonical_name_partial", partial_weight)
+    return (f"{field_name}_partial", partial_weight)
+
+
+def _phone_digits(value: str) -> str:
+    return re.sub(r"\D+", "", value)
+
+
+def _is_partial_phone_match(left_value: str, right_value: str) -> bool:
+    left_digits = _phone_digits(left_value)
+    right_digits = _phone_digits(right_value)
+    if len(left_digits) < 10 or len(right_digits) < 10:
+        return False
+    return left_digits[-10:] == right_digits[-10:]
+
+
+_ADDRESS_DIRECTION_TOKENS = frozenset(
+    {"NORTH", "SOUTH", "EAST", "WEST", "NORTHEAST", "NORTHWEST", "SOUTHEAST", "SOUTHWEST"}
+)
+_ADDRESS_SUFFIX_TOKENS = frozenset(
+    {
+        "AVENUE",
+        "BOULEVARD",
+        "CIRCLE",
+        "COURT",
+        "DRIVE",
+        "HIGHWAY",
+        "LANE",
+        "PARKWAY",
+        "PLACE",
+        "ROAD",
+        "STREET",
+        "TERRACE",
+    }
+)
+_ADDRESS_STOP_TOKENS = _ADDRESS_DIRECTION_TOKENS | _ADDRESS_SUFFIX_TOKENS | {"UNIT", "PO", "BOX"}
+
+
+def _address_signature(value: str) -> tuple[str, frozenset[str]]:
+    tokens = tuple(token for token in value.strip().upper().split() if token)
+    if not tokens:
+        return "", frozenset()
+
+    house_number = next((token for token in tokens if any(character.isdigit() for character in token)), "")
+    if "UNIT" in tokens:
+        tokens = tokens[: tokens.index("UNIT")]
+
+    street_tokens = frozenset(token for token in tokens if token != house_number and token not in _ADDRESS_STOP_TOKENS)
+    return house_number, street_tokens
+
+
+def _is_partial_address_match(left_value: str, right_value: str) -> bool:
+    left_house_number, left_street_tokens = _address_signature(left_value)
+    right_house_number, right_street_tokens = _address_signature(right_value)
+    if not left_house_number or left_house_number != right_house_number:
+        return False
+    if not left_street_tokens or not right_street_tokens:
+        return False
+    return bool(left_street_tokens & right_street_tokens)
 
 
 @dataclass(frozen=True)

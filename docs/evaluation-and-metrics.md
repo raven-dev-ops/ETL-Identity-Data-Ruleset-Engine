@@ -60,4 +60,7 @@ The current duplicate-reduction block reports:
 
 Threshold tuning guidance, release-quality targets, and richer quality
 interpretation notes are still tracked as follow-on documentation work.
+The current test suite now includes explicit threshold-boundary
+regression fixtures so scorer changes are checked against stable
+`auto_merge`, `manual_review`, and `no_match` expectations before merge.
 

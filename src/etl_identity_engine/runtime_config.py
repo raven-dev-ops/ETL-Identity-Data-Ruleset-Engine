@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 import yaml
 
@@ -16,6 +17,7 @@ SUPPORTED_WEIGHT_FIELDS = (
     "canonical_phone",
     "canonical_address",
 )
+SUPPORTED_PHONE_OUTPUT_FORMATS = frozenset({"digits_only", "e164"})
 SUPPORTED_SURVIVORSHIP_FIELDS = ("first_name", "last_name", "dob", "address", "phone")
 SUPPORTED_SURVIVORSHIP_STRATEGIES = frozenset({"source_priority_then_non_null"})
 
@@ -40,6 +42,8 @@ class DateNormalizationConfig:
 @dataclass(frozen=True)
 class PhoneNormalizationConfig:
     digits_only: bool
+    output_format: str
+    default_country_code: str
 
 
 @dataclass(frozen=True)
@@ -189,6 +193,20 @@ def _require_float(
     return float(value)
 
 
+def _optional_non_empty_string(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    path: Path,
+    context: str,
+    default: str,
+) -> str:
+    value = mapping.get(key, default)
+    if not isinstance(value, str) or not value.strip():
+        raise _config_error(path, f"{context}.{key} must be a non-empty string")
+    return value.strip()
+
+
 def load_pipeline_config(config_dir: Path | None = None) -> PipelineConfig:
     root = config_dir or default_config_dir()
 
@@ -242,7 +260,7 @@ def load_pipeline_config(config_dir: Path | None = None) -> PipelineConfig:
     )
     _validate_allowed_keys(
         phone_rules,
-        allowed_keys={"digits_only"},
+        allowed_keys={"digits_only", "output_format", "default_country_code"},
         path=normalization_path,
         context="phone_normalization",
     )
@@ -326,6 +344,32 @@ def load_pipeline_config(config_dir: Path | None = None) -> PipelineConfig:
     total_weight = round(sum(weights.values()), 10)
     if total_weight <= 0.0:
         raise _config_error(matching_path, "weights must sum to a value greater than 0")
+
+    phone_output_format = _optional_non_empty_string(
+        phone_rules,
+        "output_format",
+        path=normalization_path,
+        context="phone_normalization",
+        default="digits_only",
+    )
+    if phone_output_format not in SUPPORTED_PHONE_OUTPUT_FORMATS:
+        raise _config_error(
+            normalization_path,
+            "phone_normalization.output_format must be one of: "
+            + ", ".join(sorted(SUPPORTED_PHONE_OUTPUT_FORMATS)),
+        )
+    default_country_code = _optional_non_empty_string(
+        phone_rules,
+        "default_country_code",
+        path=normalization_path,
+        context="phone_normalization",
+        default="1",
+    )
+    if not re.fullmatch(r"\d+", default_country_code):
+        raise _config_error(
+            normalization_path,
+            "phone_normalization.default_country_code must contain digits only",
+        )
 
     _validate_allowed_keys(
         thresholds_rules,
@@ -486,6 +530,8 @@ def load_pipeline_config(config_dir: Path | None = None) -> PipelineConfig:
                     path=normalization_path,
                     context="phone_normalization",
                 ),
+                output_format=phone_output_format,
+                default_country_code=default_country_code,
             ),
         ),
         matching=MatchingConfig(

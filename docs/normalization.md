@@ -9,6 +9,12 @@ combined artifact for downstream matching.
 - Explicit source files can be supplied with repeated `--input` flags
 - Output is written to `data/normalized/normalized_person_records.csv`
 - Runtime rules are loaded from `config/normalization_rules.yml`
+- Address normalization now standardizes common street suffixes,
+  directional tokens, PO box forms, and unit markers into a single
+  canonical token order.
+- Phone normalization defaults to digit-only output and can opt into
+  E.164-style output through config without changing the default
+  contract for existing runs.
 
 ## Normalized Fields
 
@@ -43,4 +49,21 @@ python -m etl_identity_engine.cli normalize \
 surface for the matching stage. The file contains one row per input
 source record after normalization and preserves source-level identifiers
 for traceability.
+
+## Phone Output Config
+
+`config/normalization_rules.yml` supports these phone options:
+
+- `digits_only`
+- `output_format`
+- `default_country_code`
+
+The current supported `output_format` values are:
+
+- `digits_only`
+- `e164`
+
+`digits_only` remains the default for the `0.1.x` line. `e164` uses the
+configured `default_country_code` for local 10-digit inputs and preserves
+internationally prefixed digit strings when they are already present.
 

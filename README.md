@@ -225,6 +225,10 @@ used per run.
 The stable output shapes for those files are documented in
 [docs/output-contracts.md](docs/output-contracts.md).
 
+The current manual-review operating model is a CSV handoff via
+`data/review_queue/manual_review_queue.csv`; the project does not yet
+implement a persisted review workflow.
+
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes
 `cluster_id` values. The standalone `report` stage reads the normalized

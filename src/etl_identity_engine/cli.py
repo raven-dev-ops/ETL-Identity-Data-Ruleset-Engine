@@ -65,6 +65,8 @@ def _normalize_rows(rows: list[dict[str, str]], config: PipelineConfig) -> list[
                 "canonical_phone": normalize_phone(
                     row.get("phone", ""),
                     digits_only=config.normalization.phone.digits_only,
+                    output_format=config.normalization.phone.output_format,
+                    default_country_code=config.normalization.phone.default_country_code,
                 ),
             }
         )

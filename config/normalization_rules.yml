@@ -13,4 +13,6 @@ date_normalization:
 
 phone_normalization:
   digits_only: true
+  output_format: digits_only
+  default_country_code: "1"
 

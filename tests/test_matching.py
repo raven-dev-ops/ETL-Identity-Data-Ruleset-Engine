@@ -132,6 +132,52 @@ def test_explain_pair_score_awards_partial_name_signal_for_same_person_variants(
     assert detail.reason_trace == ("canonical_name_partial:0.35", "canonical_dob:0.3")
 
 
+def test_explain_pair_score_awards_partial_address_signal_for_same_street_core() -> None:
+    left = {
+        "canonical_name": "JOHN SMITH",
+        "canonical_dob": "1985-03-12",
+        "canonical_phone": "",
+        "canonical_address": "123 NORTH MAIN STREET UNIT 5B",
+    }
+    right = {
+        "canonical_name": "JOHN SMITH",
+        "canonical_dob": "1985-03-12",
+        "canonical_phone": "",
+        "canonical_address": "123 MAIN STREET",
+    }
+
+    detail = explain_pair_score(left, right)
+
+    assert detail.score == 0.86
+    assert detail.matched_fields == ("canonical_name", "canonical_dob", "canonical_address_partial")
+    assert detail.reason_trace == (
+        "canonical_name:0.5",
+        "canonical_dob:0.3",
+        "canonical_address_partial:0.06",
+    )
+
+
+def test_explain_pair_score_awards_partial_phone_signal_for_country_code_variants() -> None:
+    left = {
+        "canonical_name": "",
+        "canonical_dob": "",
+        "canonical_phone": "15551234567",
+        "canonical_address": "",
+    }
+    right = {
+        "canonical_name": "",
+        "canonical_dob": "",
+        "canonical_phone": "5551234567",
+        "canonical_address": "",
+    }
+
+    detail = explain_pair_score(left, right)
+
+    assert detail.score == 0.08
+    assert detail.matched_fields == ("canonical_phone_partial",)
+    assert detail.reason_trace == ("canonical_phone_partial:0.08",)
+
+
 def test_partial_name_signal_does_not_auto_merge_without_other_supporting_signals() -> None:
     left = {
         "canonical_name": "JOHN SMITH",
@@ -155,6 +201,68 @@ def test_partial_name_signal_does_not_auto_merge_without_other_supporting_signal
         manual_review_min=0.6,
         no_match_max=0.59,
     ) == "no_match"
+
+
+def test_threshold_tuning_fixture_cases_cover_manual_review_boundaries() -> None:
+    cases = (
+        (
+            {
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_phone": "",
+                "canonical_address": "123 NORTH MAIN STREET UNIT 5B",
+            },
+            {
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_phone": "",
+                "canonical_address": "123 MAIN STREET",
+            },
+            "manual_review",
+        ),
+        (
+            {
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_phone": "15551234567",
+                "canonical_address": "",
+            },
+            {
+                "canonical_name": "J SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_phone": "5551234567",
+                "canonical_address": "",
+            },
+            "manual_review",
+        ),
+        (
+            {
+                "canonical_name": "",
+                "canonical_dob": "",
+                "canonical_phone": "",
+                "canonical_address": "123 MAIN STREET",
+            },
+            {
+                "canonical_name": "",
+                "canonical_dob": "",
+                "canonical_phone": "",
+                "canonical_address": "123 MAIN STREET UNIT 5",
+            },
+            "no_match",
+        ),
+    )
+
+    for left, right, expected_decision in cases:
+        detail = explain_pair_score(left, right)
+        assert (
+            classify_score(
+                detail.score,
+                auto_merge=0.9,
+                manual_review_min=0.6,
+                no_match_max=0.59,
+            )
+            == expected_decision
+        )
 
 
 def test_assign_cluster_ids_is_deterministic_for_links_and_singletons() -> None:

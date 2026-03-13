@@ -39,6 +39,8 @@ date_normalization:
   output_format: "%Y/%m/%d"
 phone_normalization:
   digits_only: true
+  output_format: digits_only
+  default_country_code: "1"
 """,
     )
     _write_text(
@@ -100,6 +102,8 @@ def test_load_pipeline_config_reads_custom_directory(tmp_path: Path) -> None:
     assert config.normalization.name.remove_punctuation is False
     assert config.normalization.name.uppercase is False
     assert config.normalization.date.output_format == "%Y/%m/%d"
+    assert config.normalization.phone.output_format == "digits_only"
+    assert config.normalization.phone.default_country_code == "1"
     assert [blocking_pass.fields for blocking_pass in config.matching.blocking_passes] == [("birth_year",)]
     assert config.matching.weights == {
         "canonical_name": 0.5,
@@ -125,6 +129,8 @@ date_normalization:
   output_format: "%Y-%m-%d"
 phone_normalization:
   digits_only: true
+  output_format: digits_only
+  default_country_code: "1"
 """,
     )
     _write_text(
@@ -468,6 +474,33 @@ field_rules:
     )
 
     with pytest.raises(ValueError, match=r"survivorship_rules\.yml: source_priority contains duplicate source names"):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_invalid_phone_output_format(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "normalization_rules.yml",
+        """
+name_normalization:
+  trim_whitespace: true
+  remove_punctuation: false
+  uppercase: false
+date_normalization:
+  accepted_formats:
+    - "%Y-%m-%d"
+  output_format: "%Y/%m/%d"
+phone_normalization:
+  digits_only: true
+  output_format: international
+""",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"normalization_rules\.yml: phone_normalization\.output_format must be one of: digits_only, e164",
+    ):
         load_pipeline_config(config_dir)
 
 

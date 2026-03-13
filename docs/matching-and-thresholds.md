@@ -42,6 +42,14 @@ The scorer now also emits a derived partial-name signal when two records
 share a surname and have either a matching first-name initial or a known
 nickname-family equivalent.
 
+The scorer also emits:
+
+- `canonical_phone_partial` when two phone values share the same trailing
+  10 digits but differ in formatting or country-code prefix shape
+- `canonical_address_partial` when two addresses share the same house
+  number and overlapping normalized street-core tokens even if unit or
+  directional detail differs
+
 The runtime now emits the following fields for each candidate pair in
 `data/matches/candidate_scores.csv`:
 
@@ -57,6 +65,12 @@ score. `reason_trace` includes those signals annotated with their
 applied weights. Derived signals such as `canonical_name_partial` are
 reported explicitly rather than being folded into exact-match labels.
 
+Current derived partial-signal weight ratios:
+
+- `canonical_name_partial`: `70%` of the configured name weight
+- `canonical_phone_partial`: `80%` of the configured phone weight
+- `canonical_address_partial`: `60%` of the configured address weight
+
 ## Thresholds
 
 Configured in `config/thresholds.yml`.
@@ -67,6 +81,14 @@ Current decision bands:
 - `manual_review`: score between `manual_review_min` and
   `auto_merge`
 - `no_match`: score less than or equal to `no_match_max`
+
+The test suite now includes threshold-boundary fixtures that exercise:
+
+- exact matches
+- partial-name plus exact-DOB cases
+- exact-name plus partial-address cases
+- partial-phone country-code variants
+- low-signal cases that must remain below `manual_review_min`
 
 ## Cluster Construction
 

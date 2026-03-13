@@ -65,6 +65,21 @@ The current end-to-end path writes:
 - `data/exceptions/run_report.md`
 - `data/exceptions/run_summary.json`
 
+## Manual Review Operating Model
+
+The supported manual-review model for the current `0.1.x` line remains a
+file-based CSV handoff:
+
+- `review-queue` writes `data/review_queue/manual_review_queue.csv`
+- `queue_status` is initialized to `pending`
+- reviewers are expected to consume that artifact outside the runtime
+  rather than through a persisted in-app workflow
+
+A persisted review workflow is intentionally out of scope for the
+current supported runtime surface. Any future expansion beyond the CSV
+handoff should be introduced as a new tracked backlog item instead of as
+an implicit behavior change.
+
 ## Command Example
 
 Run the full prototype pipeline:

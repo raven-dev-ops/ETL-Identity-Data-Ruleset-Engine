@@ -6,7 +6,8 @@ Last updated: 2026-03-13
 This checklist captures the remaining work after the `v0.1.1` release
 closeout. The active GitHub backlog source is now
 `planning/active-github-issues-backlog.md`; this checklist remains a
-short maintainer view of the same follow-up themes.
+short maintainer view of the same follow-up themes rather than a second
+source of truth.
 
 ## Tracked Follow-Up Tasks
 
@@ -20,9 +21,8 @@ short maintainer view of the same follow-up themes.
 
 ## Pipeline Follow-Up Tasks
 
-- [ ] Decide whether the manual review queue should remain a CSV handoff
-  or graduate to a persisted review workflow with status updates and
-  reassignment support.
+- [ ] Keep the supported manual-review model as a CSV handoff until a
+  future tracked issue explicitly expands it into a persisted workflow.
 - [ ] Expand matching beyond the current explainable heuristic set with
   additional non-exact signals such as address similarity, phone
   tolerance, and stronger evaluation fixtures for threshold tuning.

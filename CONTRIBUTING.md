@@ -82,6 +82,10 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 - Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --dry-run` to preview backlog creation from the active backlog.
 - Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine` to apply labels, milestones, epics, and issues from the active backlog.
 - Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --dry-run` only when re-syncing the completed bootstrap backlog.
+- Treat `planning/active-github-issues-backlog.md` as the only issue-sync
+  source of truth. `planning/remaining-work-task-list.md` is a short
+  maintainer mirror and should not diverge from the tracked GitHub issue
+  set for active work.
 - On Windows, `./scripts/create_github_backlog.ps1 -Repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine` remains available if you prefer PowerShell.
 
 ## Data Safety
