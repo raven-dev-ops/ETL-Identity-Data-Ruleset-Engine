@@ -9,9 +9,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import pyarrow as pa
-import pyarrow.parquet as pq
-
 from etl_identity_engine.generate.conflict_recipes import apply_conflict_recipes
 
 
@@ -117,6 +114,14 @@ def _write_csv(path: Path, rows: list[dict[str, str]], headers: tuple[str, ...])
 
 
 def _write_parquet(path: Path, rows: list[dict[str, str]], headers: tuple[str, ...]) -> None:
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Parquet output requires `pyarrow`. Install project dependencies or omit `parquet`."
+        ) from exc
+
     if rows:
         table = pa.Table.from_pylist(rows)
     else:

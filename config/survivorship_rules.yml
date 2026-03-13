@@ -1,6 +1,6 @@
 source_priority:
-  - source_b
   - source_a
+  - source_b
 
 field_rules:
   first_name:

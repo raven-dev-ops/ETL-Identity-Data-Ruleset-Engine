@@ -375,6 +375,49 @@ Date prepared: 2026-03-12
 - Acceptance criteria:
   - Release checklist complete and version plan documented.
 
+### 33) Add runtime config loading and validation layer
+
+- Milestone: `M3`
+- Labels: `type:feature`, `area:repo`, `priority:p0`
+- Depends on: #16, #17
+- Description:
+  - Add a shared loader for `config/*.yml` used by normalization,
+    blocking, matching, thresholds, and survivorship flows.
+  - Validate required keys, allowed values, and cross-file consistency at
+    startup.
+- Acceptance criteria:
+  - Runtime behavior reads configuration from the repo config files
+    instead of duplicating defaults in multiple modules.
+  - Invalid or incomplete configuration fails fast with actionable error
+    messages.
+
+### 34) Expand CI to Linux and Windows matrix with coverage reporting
+
+- Milestone: `M6`
+- Labels: `type:chore`, `area:ci`, `priority:p1`
+- Depends on: #30
+- Description:
+  - Extend CI to validate the documented bash and PowerShell execution
+    paths.
+  - Publish test coverage and define the minimum release-readiness gate.
+- Acceptance criteria:
+  - CI runs on Linux and Windows for the supported Python version.
+  - Coverage output is generated and visible in CI results.
+
+### 35) Formalize output schemas and contract tests for pipeline artifacts
+
+- Milestone: `M6`
+- Labels: `type:feature`, `area:quality`, `priority:p1`
+- Depends on: #26, #28, #29
+- Description:
+  - Define stable schema contracts for normalized, matches, golden,
+    crosswalk, exceptions, and review-queue outputs.
+  - Add contract tests that fail when required fields, types, or file
+    naming conventions drift.
+- Acceptance criteria:
+  - Output schemas are documented and exercised by automated tests.
+  - Breaking output-shape changes fail CI before release.
+
 ## Suggested Epic Issues
 
 Create these 6 epics first, then link child issues:
@@ -393,4 +436,80 @@ Create these 6 epics first, then link child issues:
 3. Create 6 epics.
 4. Create all child issues and assign them to epics.
 5. Sort by dependency path and execute `M1` to `M6`.
+
+## Recommended Near-Term Execution Order (Current State)
+
+This sequence reflects the repository's current implementation state:
+`M1` and `M2` are effectively in place, while `M3` through `M5` are
+partially implemented and `M6` is mostly planning scaffolding.
+
+1. Execute `#16` Build normalization orchestration pipeline
+   - Expand the current CLI normalization path into the one supported
+     multi-source orchestration entrypoint.
+   - Wire `config/normalization_rules.yml` into runtime behavior instead
+     of leaving normalization policy hardcoded.
+2. Execute `#17` Implement data-quality checks and exception output
+   - Emit concrete exception artifacts for invalid DOBs, malformed
+     phones, and normalization failures under `data/exceptions/`.
+3. Execute `#33` Add runtime config loading and validation layer
+   - Centralize parsing and validation for `config/*.yml` so blocking,
+     scoring, thresholds, and survivorship are not split between config
+     files and hardcoded defaults.
+4. Execute `#18` Implement candidate generation with blocking rules
+   - Replace the single hardcoded blocking strategy with multi-pass,
+     config-backed blocking and per-pass candidate metrics.
+5. Execute `#19` Implement weighted match scoring engine
+   - Return score reasons and contributing signals so scoring is
+     inspectable and auditable.
+6. Execute `#20` Add match decision thresholds
+   - Use `config/thresholds.yml` at runtime and route candidate pairs to
+     `auto-merge`, `manual-review`, and `no-match`.
+7. Execute `#21` Implement cluster construction from accepted links
+   - Generate deterministic cluster IDs and make downstream golden
+     record construction consume clusters instead of implicit entity IDs.
+8. Execute `#23` through `#26` as one vertical slice
+   - Finish config-driven survivorship, add field-level provenance, and
+     write the source-to-golden crosswalk.
+9. Execute `#34` Expand CI to Linux and Windows matrix with coverage
+   reporting
+   - Add Linux and Windows CI coverage, publish test coverage, and
+     define the branch protection expectation for release readiness.
+10. Execute `#35` Formalize output schemas and contract tests for
+    pipeline artifacts
+    - Define stable contracts for normalized, matches, golden,
+      crosswalk, exceptions, and review-queue outputs.
+11. Execute `#28` through `#31`
+    - Add before/after quality metrics, manual review outputs, and
+      replace placeholder stage docs with actual runbooks and examples.
+
+## Current Phase Gaps To Close Before `v0.1.0`
+
+- Config files exist for normalization, blocking, matching, thresholds,
+  and survivorship, but runtime behavior is still only partially wired
+  to them.
+- Threshold routing, deterministic clustering, provenance, and
+  crosswalk outputs are not yet implemented end to end.
+- Exception artifacts and manual review queues are not yet produced.
+- Several stage documents are still placeholders rather than operating
+  documentation.
+- CI currently validates only one OS / Python runtime path and does not
+  enforce a coverage target.
+
+## Follow-On Issues Added To Catalog
+
+- `#33` Runtime config loading and validation layer
+  - Milestone: `M3`
+  - Labels: `type:feature`, `area:repo`, `priority:p0`
+  - Why: make `config/*.yml` authoritative and fail fast on invalid or
+    incomplete rule configuration.
+- `#34` Expand CI to Linux and Windows matrix with coverage reporting
+  - Milestone: `M6`
+  - Labels: `type:chore`, `area:ci`, `priority:p1`
+  - Why: validate the documented PowerShell path and raise release
+    confidence with coverage visibility.
+- `#35` Formalize output schemas and contract tests for pipeline artifacts
+  - Milestone: `M6`
+  - Labels: `type:feature`, `area:quality`, `priority:p1`
+  - Why: define stable contracts for normalized, matches, golden,
+    crosswalk, exceptions, and review-queue outputs.
 

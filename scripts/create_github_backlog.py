@@ -12,9 +12,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BACKLOG_PATH = REPO_ROOT / "planning" / "github-issues-backlog.md"
 ISSUE_PATTERN = re.compile(
-    r"(?ms)^###\s+\d+\)\s+(?P<title>.+?)\r?\n\r?\n(?P<body>.*?)(?=^###\s+\d+\)|^##\s+Suggested Epic Issues)"
+    r"(?ms)^###\s+(?P<number>\d+)\)\s+(?P<title>.+?)\r?\n\r?\n(?P<body>.*?)(?=^###\s+\d+\)|^##\s+Suggested Epic Issues)"
 )
 EPIC_PATTERN = re.compile(r"^\d+\.\s+Epic:\s+(.+?)\s+\(`([^`]+)`\)", re.MULTILINE)
+DEPENDENCY_REFERENCE_PATTERN = re.compile(r"#(?P<number>\d+)")
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class IssueItem:
     depends_on: str
     description_items: tuple[str, ...]
     acceptance_items: tuple[str, ...]
+    catalog_number: int | None = None
 
 
 @dataclass(frozen=True)
@@ -97,10 +99,25 @@ def get_section_body(content: str, start_heading: str, end_heading: str) -> str:
 
 
 def parse_bullet_items(section: str) -> tuple[str, ...]:
-    return tuple(
-        match.group(1).strip()
-        for match in re.finditer(r"^\s*-\s+(.+)$", section, re.MULTILINE)
-    )
+    items: list[str] = []
+    current_parts: list[str] = []
+
+    for raw_line in section.splitlines():
+        line = raw_line.rstrip()
+        bullet_match = re.match(r"^\s*-\s+(.+)$", line)
+        if bullet_match:
+            if current_parts:
+                items.append(" ".join(current_parts).strip())
+            current_parts = [bullet_match.group(1).strip()]
+            continue
+
+        if current_parts and line.startswith(" "):
+            current_parts.append(line.strip())
+
+    if current_parts:
+        items.append(" ".join(current_parts).strip())
+
+    return tuple(items)
 
 
 def parse_backlog(backlog_text: str) -> ParsedBacklog:
@@ -136,6 +153,7 @@ def parse_backlog(backlog_text: str) -> ParsedBacklog:
                 depends_on=depends_match.group(1).strip() if depends_match else "none",
                 description_items=description_items,
                 acceptance_items=acceptance_items,
+                catalog_number=int(match.group("number")),
             )
         )
 
@@ -184,22 +202,85 @@ def get_label_description(label: str) -> str:
     return "Project label"
 
 
-def build_issue_body(issue: IssueItem) -> str:
+def translate_depends_on(depends_on: str, catalog_to_github_number: dict[int, int]) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        catalog_number = int(match.group("number"))
+        github_number = catalog_to_github_number.get(catalog_number)
+        if github_number is None:
+            return match.group(0)
+        return f"#{github_number}"
+
+    return DEPENDENCY_REFERENCE_PATTERN.sub(_replace, depends_on)
+
+
+def build_issue_body(
+    issue: IssueItem,
+    *,
+    depends_on: str | None = None,
+    epic_reference: str | None = None,
+) -> str:
     lines = [
         "## Milestone",
         "",
         f"- ``{issue.milestone}``",
-        "",
-        "## Depends On",
-        "",
-        f"- {issue.depends_on}",
-        "",
-        "## Description",
     ]
+    if epic_reference:
+        lines.extend(["", "## Epic", "", f"- {epic_reference}"])
+    lines.extend(["", "## Depends On", "", f"- {depends_on or issue.depends_on}", "", "## Description"])
     lines.extend(f"- {item}" for item in issue.description_items)
     lines.extend(["", "## Acceptance Criteria"])
     lines.extend(f"- {item}" for item in issue.acceptance_items)
     return "\n".join(lines)
+
+
+def get_existing_issue_map(gh_exe: str, repo: str) -> dict[str, int]:
+    existing = json.loads(
+        invoke_gh(
+            gh_exe,
+            "issue",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "all",
+            "--limit",
+            "500",
+            "--json",
+            "number,title",
+        )
+    )
+    return {item["title"]: item["number"] for item in existing}
+
+
+def build_catalog_number_map(
+    issues: tuple[IssueItem, ...],
+    existing_issue_map: dict[str, int],
+) -> dict[int, int]:
+    mapping: dict[int, int] = {}
+    for issue in issues:
+        if issue.catalog_number is None:
+            continue
+        github_number = existing_issue_map.get(issue.title)
+        if github_number is not None:
+            mapping[issue.catalog_number] = github_number
+    return mapping
+
+
+def build_epic_issue_number_map(
+    epics: tuple[IssueItem, ...],
+    existing_issue_map: dict[str, int],
+) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for epic in epics:
+        github_number = existing_issue_map.get(epic.title)
+        if github_number is None or not epic.milestone:
+            continue
+        mapping[epic.milestone] = github_number
+    return mapping
+
+
+def build_epic_reference_map(epic_issue_number_map: dict[str, int]) -> dict[str, str]:
+    return {milestone: f"#{issue_number}" for milestone, issue_number in epic_issue_number_map.items()}
 
 
 def ensure_labels(gh_exe: str, repo: str, labels: tuple[str, ...], dry_run: bool) -> None:
@@ -240,11 +321,11 @@ def ensure_milestones(gh_exe: str, repo: str, milestones: tuple[str, ...], dry_r
         print(f"milestone created: {milestone}")
 
 
-def ensure_issues(gh_exe: str, repo: str, issues: tuple[IssueItem, ...], dry_run: bool) -> None:
-    existing_titles: set[str] = set()
+def ensure_issues(gh_exe: str, repo: str, issues: tuple[IssueItem, ...], dry_run: bool) -> dict[str, int]:
+    existing_issue_map: dict[str, int] = {}
     if not dry_run:
-        existing = json.loads(invoke_gh(gh_exe, "issue", "list", "--repo", repo, "--state", "all", "--limit", "500", "--json", "title"))
-        existing_titles = {item["title"] for item in existing}
+        existing_issue_map = get_existing_issue_map(gh_exe, repo)
+    existing_titles = set(existing_issue_map)
 
     for issue in issues:
         if not dry_run and issue.title in existing_titles:
@@ -264,6 +345,204 @@ def ensure_issues(gh_exe: str, repo: str, issues: tuple[IssueItem, ...], dry_run
 
         invoke_gh(gh_exe, *args)
         print(f"issue created: {issue.title}")
+
+    if dry_run:
+        return existing_issue_map
+    return get_existing_issue_map(gh_exe, repo)
+
+
+def sync_epic_bodies(
+    gh_exe: str,
+    repo: str,
+    epics: tuple[IssueItem, ...],
+    *,
+    existing_issue_map: dict[str, int],
+    dry_run: bool,
+) -> None:
+    for epic in epics:
+        issue_number = existing_issue_map.get(epic.title)
+        body = build_issue_body(epic)
+        if dry_run:
+            print(
+                f"[DRY-RUN] gh issue edit --repo {repo} "
+                f"{issue_number or '<pending>'} --body <epic>"
+            )
+            continue
+        if issue_number is None:
+            continue
+        invoke_gh(gh_exe, "issue", "edit", str(issue_number), "--repo", repo, "--body", body)
+        print(f"issue body synced: {epic.title}")
+
+
+def sync_issue_bodies(
+    gh_exe: str,
+    repo: str,
+    issues: tuple[IssueItem, ...],
+    *,
+    existing_issue_map: dict[str, int],
+    catalog_number_map: dict[int, int],
+    epic_reference_map: dict[str, str],
+    dry_run: bool,
+) -> None:
+    for issue in issues:
+        issue_number = existing_issue_map.get(issue.title)
+        body = build_issue_body(
+            issue,
+            depends_on=translate_depends_on(issue.depends_on, catalog_number_map),
+            epic_reference=epic_reference_map.get(issue.milestone),
+        )
+        if dry_run:
+            print(
+                f"[DRY-RUN] gh issue edit --repo {repo} "
+                f"{issue_number or '<pending>'} --body <translated>"
+            )
+            continue
+        if issue_number is None:
+            continue
+        invoke_gh(gh_exe, "issue", "edit", str(issue_number), "--repo", repo, "--body", body)
+        print(f"issue body synced: {issue.title}")
+
+
+def get_parent_issue_number(gh_exe: str, repo: str, issue_number: int) -> int | None:
+    completed = subprocess.run(
+        [gh_exe, "api", f"repos/{repo}/issues/{issue_number}/parent"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        payload = json.loads(completed.stdout)
+        return int(payload["number"])
+
+    detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+    if "No parent issue found" in detail:
+        return None
+    raise SystemExit(
+        f"gh command failed ({completed.returncode}): api repos/{repo}/issues/{issue_number}/parent\n{detail}"
+    )
+
+
+def try_set_sub_issue_link(
+    gh_exe: str,
+    repo: str,
+    *,
+    parent_issue_number: int,
+    child_issue_number: int,
+) -> bool:
+    completed = subprocess.run(
+        [
+            gh_exe,
+            "api",
+            f"repos/{repo}/issues/{parent_issue_number}/sub_issues",
+            "--method",
+            "POST",
+            "-F",
+            f"sub_issue_id={child_issue_number}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return True
+
+    detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+    if "Not Found" in detail:
+        return False
+    raise SystemExit(
+        f"gh command failed ({completed.returncode}): "
+        f"api repos/{repo}/issues/{parent_issue_number}/sub_issues --method POST -F sub_issue_id={child_issue_number}\n"
+        f"{detail}"
+    )
+
+
+def remove_sub_issue_link(
+    gh_exe: str,
+    repo: str,
+    *,
+    parent_issue_number: int,
+    child_issue_number: int,
+) -> bool:
+    completed = subprocess.run(
+        [
+            gh_exe,
+            "api",
+            f"repos/{repo}/issues/{parent_issue_number}/sub_issue",
+            "--method",
+            "DELETE",
+            "-F",
+            f"sub_issue_id={child_issue_number}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return True
+
+    detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+    if "Not Found" in detail:
+        return False
+    raise SystemExit(
+        f"gh command failed ({completed.returncode}): "
+        f"api repos/{repo}/issues/{parent_issue_number}/sub_issue --method DELETE -F sub_issue_id={child_issue_number}\n"
+        f"{detail}"
+    )
+
+
+def sync_sub_issue_links(
+    gh_exe: str,
+    repo: str,
+    issues: tuple[IssueItem, ...],
+    *,
+    existing_issue_map: dict[str, int],
+    epic_issue_number_map: dict[str, int],
+    dry_run: bool,
+) -> None:
+    sub_issue_api_available = True
+    for issue in issues:
+        if not sub_issue_api_available:
+            break
+        issue_number = existing_issue_map.get(issue.title)
+        parent_issue_number = epic_issue_number_map.get(issue.milestone)
+        if issue_number is None or parent_issue_number is None:
+            continue
+
+        if dry_run:
+            print(
+                f"[DRY-RUN] gh api repos/{repo}/issues/{parent_issue_number}/sub_issues "
+                f"--method POST -f sub_issue_id={issue_number or '<pending>'}"
+            )
+            continue
+
+        current_parent_issue_number = get_parent_issue_number(gh_exe, repo, issue_number)
+        if current_parent_issue_number == parent_issue_number:
+            print(f"sub-issue link exists: {issue.title}")
+            continue
+        if current_parent_issue_number is not None:
+            removed = remove_sub_issue_link(
+                gh_exe,
+                repo,
+                parent_issue_number=current_parent_issue_number,
+                child_issue_number=issue_number,
+            )
+            if not removed:
+                print("native sub-issue API unavailable; skipping native hierarchy sync")
+                sub_issue_api_available = False
+                continue
+            print(f"sub-issue removed: {issue.title} from #{current_parent_issue_number}")
+
+        added = try_set_sub_issue_link(
+            gh_exe,
+            repo,
+            parent_issue_number=parent_issue_number,
+            child_issue_number=issue_number,
+        )
+        if not added:
+            print("native sub-issue API unavailable; skipping native hierarchy sync")
+            sub_issue_api_available = False
+            continue
+        print(f"sub-issue linked: {issue.title} -> #{parent_issue_number}")
 
 
 def main() -> int:
@@ -288,8 +567,39 @@ def main() -> int:
 
     ensure_labels(gh_exe, args.repo, parsed.labels, args.dry_run)
     ensure_milestones(gh_exe, args.repo, parsed.milestones, args.dry_run)
-    ensure_issues(gh_exe, args.repo, parsed.epics, args.dry_run)
-    ensure_issues(gh_exe, args.repo, parsed.issues, args.dry_run)
+    epic_issue_map = ensure_issues(gh_exe, args.repo, parsed.epics, args.dry_run)
+    existing_issue_map = ensure_issues(gh_exe, args.repo, parsed.issues, args.dry_run)
+
+    combined_issue_map = dict(epic_issue_map)
+    combined_issue_map.update(existing_issue_map)
+    catalog_number_map = build_catalog_number_map(parsed.issues, combined_issue_map)
+    epic_issue_number_map = build_epic_issue_number_map(parsed.epics, combined_issue_map)
+    epic_reference_map = build_epic_reference_map(epic_issue_number_map)
+
+    sync_epic_bodies(
+        gh_exe,
+        args.repo,
+        parsed.epics,
+        existing_issue_map=combined_issue_map,
+        dry_run=args.dry_run,
+    )
+    sync_issue_bodies(
+        gh_exe,
+        args.repo,
+        parsed.issues,
+        existing_issue_map=combined_issue_map,
+        catalog_number_map=catalog_number_map,
+        epic_reference_map=epic_reference_map,
+        dry_run=args.dry_run,
+    )
+    sync_sub_issue_links(
+        gh_exe,
+        args.repo,
+        parsed.issues,
+        existing_issue_map=combined_issue_map,
+        epic_issue_number_map=epic_issue_number_map,
+        dry_run=args.dry_run,
+    )
 
     print("backlog creation complete")
     return 0

@@ -183,6 +183,21 @@ configurable conflict injection:
 
 Formats are configurable (`csv`, `parquet`) and default to both.
 
+## Current Runtime Outputs
+
+`run-all` now executes a full config-driven prototype slice and writes:
+
+-   normalized rows in `data/normalized/normalized_person_records.csv`
+-   scored candidate pairs with `decision`, `matched_fields`, and
+    `reason_trace` in `data/matches/candidate_scores.csv`
+-   deterministic cluster assignments in `data/matches/entity_clusters.csv`
+-   golden records with field-level provenance in
+    `data/golden/golden_person_records.csv`
+-   a source-to-golden crosswalk in
+    `data/golden/source_to_golden_crosswalk.csv`
+-   a manual review queue in `data/review_queue/manual_review_queue.csv`
+-   exception artifacts and summary outputs under `data/exceptions/`
+
 ### Local Quickstart (Venv-First)
 
 Prerequisite: Python 3.11+ installed and available on PATH.

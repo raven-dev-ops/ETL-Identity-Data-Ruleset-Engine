@@ -1,5 +1,6 @@
 from etl_identity_engine.matching.blocking import generate_candidates
-from etl_identity_engine.matching.scoring import score_pair
+from etl_identity_engine.matching.clustering import assign_cluster_ids
+from etl_identity_engine.matching.scoring import classify_score, explain_pair_score, score_pair
 
 
 def test_generate_candidates_blocks_on_last_initial_and_dob() -> None:
@@ -26,4 +27,75 @@ def test_score_pair_returns_higher_for_similar_records() -> None:
         "canonical_address": "123 MAIN STREET",
     }
     assert score_pair(left, right) == 1.0
+
+
+def test_score_pair_ignores_blank_matches() -> None:
+    left = {
+        "canonical_name": "",
+        "canonical_dob": "",
+        "canonical_phone": "",
+        "canonical_address": "",
+    }
+    right = {
+        "canonical_name": "",
+        "canonical_dob": "",
+        "canonical_phone": "",
+        "canonical_address": "",
+    }
+    assert score_pair(left, right) == 0.0
+
+
+def test_generate_candidates_uses_multiple_blocking_passes() -> None:
+    rows = [
+        {"source_record_id": "1", "last_name": "SMITH", "canonical_dob": "1985-03-12"},
+        {"source_record_id": "2", "last_name": "SMITH", "canonical_dob": "1985-04-12"},
+    ]
+
+    pairs = generate_candidates(
+        rows,
+        blocking_passes=[("last_initial", "dob"), ("last_name", "birth_year")],
+    )
+
+    assert len(pairs) == 1
+
+
+def test_classify_score_uses_threshold_bands() -> None:
+    assert classify_score(1.0, auto_merge=0.9, manual_review_min=0.6, no_match_max=0.59) == "auto_merge"
+    assert classify_score(0.6, auto_merge=0.9, manual_review_min=0.6, no_match_max=0.59) == "manual_review"
+    assert classify_score(0.2, auto_merge=0.9, manual_review_min=0.6, no_match_max=0.59) == "no_match"
+
+
+def test_explain_pair_score_returns_reason_trace() -> None:
+    left = {
+        "canonical_name": "JOHN SMITH",
+        "canonical_dob": "1985-03-12",
+        "canonical_phone": "",
+        "canonical_address": "123 MAIN STREET",
+    }
+    right = {
+        "canonical_name": "JOHN SMITH",
+        "canonical_dob": "1985-03-12",
+        "canonical_phone": "5551234567",
+        "canonical_address": "999 OAK AVENUE",
+    }
+
+    detail = explain_pair_score(left, right)
+
+    assert detail.score == 0.8
+    assert detail.matched_fields == ("canonical_name", "canonical_dob")
+    assert detail.reason_trace == ("canonical_name:0.5", "canonical_dob:0.3")
+
+
+def test_assign_cluster_ids_is_deterministic_for_links_and_singletons() -> None:
+    cluster_ids = assign_cluster_ids(
+        ["A-1", "A-2", "B-1", "B-2"],
+        [("A-2", "B-2"), ("A-1", "B-1")],
+    )
+
+    assert cluster_ids == {
+        "A-1": "C-00001",
+        "B-1": "C-00001",
+        "A-2": "C-00002",
+        "B-2": "C-00002",
+    }
 
