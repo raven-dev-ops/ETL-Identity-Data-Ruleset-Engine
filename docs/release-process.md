@@ -1,7 +1,7 @@
 # Release Process
 
-This document defines the maintainer checklist for the first tagged
-release line, `v0.1.0`.
+This document defines the maintainer checklist for tagged release lines
+starting with `v0.1.0`, including later patch and hotfix releases.
 
 ## Required Checks For `main`
 
@@ -33,6 +33,18 @@ check baseline.
 - `README.md`, `CHANGELOG.md`, and the release notes reflect the current
   behavior.
 - A fresh small-profile `run-all` execution completes successfully.
+
+## Release Line Guidance
+
+- `v0.1.0` established the initial public release line for the project.
+- Later fixes should ship as new patch tags such as `v0.1.1` or
+  `v0.1.2`; do not retag or silently replace an existing published
+  release.
+- Hotfixes follow the same process as patch releases: land the fix on a
+  reviewed green commit, update `CHANGELOG.md`, then cut the next patch
+  tag from that commit.
+- If a defect is discovered after a tag is pushed, keep the existing tag
+  immutable and queue the correction for the next patch release.
 
 ## Known Limitations
 
@@ -73,7 +85,7 @@ shapes.
 ## Release Checklist
 
 - Confirm `pyproject.toml` version matches the intended tag.
-- Update `CHANGELOG.md` for the release scope.
+- Update `CHANGELOG.md` with a new section for the intended release tag.
 - Run the local validation path:
   - `./scripts/run_checks.ps1` on Windows
   - `./scripts/run_checks.sh` on systems that already provide `bash`
@@ -84,6 +96,7 @@ shapes.
 - Verify the required GitHub checks passed on the release commit.
 - Draft release notes summarizing:
   - included features
+  - patch or hotfix scope, if the release is not the initial tag in a line
   - known limitations
   - validation commands
   - sample output locations or attachments
@@ -96,9 +109,9 @@ From a clean checkout on the release commit:
 
 ```bash
 git pull --ff-only
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
-Then create the GitHub release for `v0.1.0` and paste the matching
+Then create the GitHub release for `vX.Y.Z` and paste the matching
 changelog entry into the release notes.

@@ -139,7 +139,8 @@ is included in the repository.
 ## Planning Artifacts
 
 - [Project Structure Outline](planning/project-structure-outline.md)
-- [GitHub Issues Backlog](planning/github-issues-backlog.md)
+- [Active Post-v0.1.0 GitHub Issues Backlog](planning/post-v0.1.0-github-issues-backlog.md)
+- [Bootstrap GitHub Issues Backlog (Historical)](planning/github-issues-backlog.md)
 
 ## Documentation
 
@@ -270,6 +271,15 @@ via the cross-platform Python automation script:
 gh auth login
 python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --dry-run
 python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine"
+```
+
+The default backlog source is
+`planning/post-v0.1.0-github-issues-backlog.md`. The bootstrap backlog
+at `planning/github-issues-backlog.md` is historical and should be used
+only when re-syncing the completed `M1` through `M6` tracker state:
+
+```powershell
+python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --backlog-path planning/github-issues-backlog.md --dry-run
 ```
 
 When filing new work manually, use the GitHub issue forms for `bug`,

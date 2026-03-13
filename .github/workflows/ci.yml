@@ -25,6 +25,12 @@ jobs:
       - name: Run repo checks via documented bash path
         run: bash ./scripts/run_checks.sh
 
+      - name: Validate active backlog sync dry-run
+        run: .venv/bin/python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --dry-run
+
+      - name: Validate bootstrap backlog sync dry-run
+        run: .venv/bin/python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --dry-run
+
       - name: Generate coverage report
         run: |
           .venv/bin/python -m pytest --cov=etl_identity_engine --cov-report=term-missing --cov-report=xml

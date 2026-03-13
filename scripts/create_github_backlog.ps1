@@ -2,7 +2,7 @@ Param(
     [Parameter(Mandatory = $true)]
     [string]$Repo,
 
-    [string]$BacklogPath = "planning/github-issues-backlog.md",
+    [string]$BacklogPath = "planning/post-v0.1.0-github-issues-backlog.md",
 
     [switch]$DryRun
 )
@@ -146,7 +146,7 @@ function Parse-Backlog {
             Milestone = $epic.Groups[2].Value.Trim()
             Labels = @("type:epic")
             DependsOn = "none"
-            DescriptionItems = @("Epic created from planning/github-issues-backlog.md")
+            DescriptionItems = @("Epic created from $($BacklogPath.Replace('\', '/'))")
             AcceptanceItems = @("Child issues linked and tracked to completion.")
         }
     }

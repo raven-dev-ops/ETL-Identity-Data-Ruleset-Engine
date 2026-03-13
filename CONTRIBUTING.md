@@ -66,7 +66,8 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 
 - Use the GitHub issue forms under `.github/ISSUE_TEMPLATE/` instead of opening blank issues.
 - Pick the form that matches the work: `bug`, `feature`, `docs`, `chore`, or `epic`.
-- Search existing issues and review `planning/github-issues-backlog.md` before creating new work.
+- Search existing issues and review `planning/post-v0.1.0-github-issues-backlog.md` before creating new work.
+- Treat `planning/github-issues-backlog.md` as the closed bootstrap history for `M1` through `M6`, not the active source for new work.
 - Keep issue reports limited to synthetic data, local repro steps, and project artifacts.
 - Report security issues privately through the repository security advisory flow, not in public issues.
 - `./scripts/run_checks.ps1` or `./scripts/run_checks.sh` is the authoritative pre-push local check path and uses the venv's Python tooling plus the host shell runtime for the platform-specific wrapper.
@@ -78,8 +79,9 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 ## GitHub Automation
 
 - Authenticate once with the venv-scoped GitHub CLI: `gh auth login`.
-- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --dry-run` to preview backlog creation from `planning/github-issues-backlog.md`.
-- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine` to apply labels, milestones, epics, and issues.
+- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --dry-run` to preview backlog creation from the active post-release backlog.
+- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine` to apply labels, milestones, epics, and issues from the active post-release backlog.
+- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --dry-run` only when re-syncing the completed bootstrap backlog.
 - On Windows, `./scripts/create_github_backlog.ps1 -Repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine` remains available if you prefer PowerShell.
 
 ## Data Safety

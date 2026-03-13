@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BACKLOG_PATH = REPO_ROOT / "planning" / "github-issues-backlog.md"
+DEFAULT_BACKLOG_PATH = REPO_ROOT / "planning" / "post-v0.1.0-github-issues-backlog.md"
 ISSUE_PATTERN = re.compile(
     r"(?ms)^###\s+(?P<number>\d+)\)\s+(?P<title>.+?)\r?\n\r?\n(?P<body>.*?)(?=^###\s+\d+\)|^##\s+Suggested Epic Issues)"
 )
@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backlog-path",
         default=str(DEFAULT_BACKLOG_PATH),
-        help="Path to planning/github-issues-backlog.md.",
+        help="Path to the planning backlog markdown file to sync.",
     )
     parser.add_argument(
         "--dry-run",
@@ -101,6 +101,14 @@ def normalize_issue_title(title: str) -> str:
     return re.sub(r"\s+", " ", title.replace("`", "")).strip().casefold()
 
 
+def format_backlog_source_label(backlog_path: Path, repo_root: Path = REPO_ROOT) -> str:
+    try:
+        relative_path = backlog_path.resolve().relative_to(repo_root.resolve())
+        return relative_path.as_posix()
+    except ValueError:
+        return str(backlog_path).replace("\\", "/")
+
+
 def get_section_body(content: str, start_heading: str, end_heading: str) -> str:
     pattern = re.compile(
         rf"(?ms)^## {re.escape(start_heading)}\s*(?P<body>.*?)(?=^## {re.escape(end_heading)}|\Z)"
@@ -131,7 +139,7 @@ def parse_bullet_items(section: str) -> tuple[str, ...]:
     return tuple(items)
 
 
-def parse_backlog(backlog_text: str) -> ParsedBacklog:
+def parse_backlog(backlog_text: str, *, source_label: str) -> ParsedBacklog:
     milestone_body = get_section_body(backlog_text, "Milestones", "Label Set To Create")
     label_body = get_section_body(backlog_text, "Label Set To Create", "Issue Catalog")
 
@@ -175,7 +183,7 @@ def parse_backlog(backlog_text: str) -> ParsedBacklog:
             milestone=epic_match.group(2).strip(),
             labels=("type:epic",),
             depends_on="none",
-            description_items=("Epic created from planning/github-issues-backlog.md",),
+            description_items=(f"Epic created from {source_label}",),
             acceptance_items=("Child issues linked and tracked to completion.",),
         )
         for epic_match in EPIC_PATTERN.finditer(epic_body)
@@ -187,6 +195,43 @@ def parse_backlog(backlog_text: str) -> ParsedBacklog:
         epics=epics,
         issues=tuple(issues),
     )
+
+
+def validate_backlog(parsed: ParsedBacklog) -> tuple[str, ...]:
+    errors: list[str] = []
+    normalized_title_map: dict[str, list[str]] = {}
+    known_milestones = set(parsed.milestones)
+    known_catalog_numbers = {issue.catalog_number for issue in parsed.issues if issue.catalog_number is not None}
+    seen_catalog_numbers: set[int] = set()
+
+    for item in (*parsed.epics, *parsed.issues):
+        normalized_title_map.setdefault(normalize_issue_title(item.title), []).append(item.title)
+        if item.milestone and item.milestone not in known_milestones:
+            errors.append(f"unknown milestone referenced by {item.title!r}: {item.milestone}")
+
+    for normalized_title, titles in normalized_title_map.items():
+        unique_titles = tuple(dict.fromkeys(titles))
+        if len(unique_titles) > 1:
+            formatted_titles = " | ".join(unique_titles)
+            errors.append(
+                f"normalized-title collision for {normalized_title!r}: {formatted_titles}"
+            )
+
+    for issue in parsed.issues:
+        if issue.catalog_number is None:
+            continue
+        if issue.catalog_number in seen_catalog_numbers:
+            errors.append(f"duplicate catalog number: {issue.catalog_number}")
+        seen_catalog_numbers.add(issue.catalog_number)
+
+        for match in DEPENDENCY_REFERENCE_PATTERN.finditer(issue.depends_on):
+            dependency_number = int(match.group("number"))
+            if dependency_number not in known_catalog_numbers:
+                errors.append(
+                    f"unknown dependency reference in {issue.title!r}: #{dependency_number}"
+                )
+
+    return tuple(errors)
 
 
 def get_label_color(label: str) -> str:
@@ -673,7 +718,11 @@ def main() -> int:
         raise SystemExit(f"Backlog file not found: {backlog_path}")
 
     backlog_text = backlog_path.read_text(encoding="utf-8")
-    parsed = parse_backlog(backlog_text)
+    parsed = parse_backlog(backlog_text, source_label=format_backlog_source_label(backlog_path))
+    validation_errors = validate_backlog(parsed)
+    if validation_errors:
+        error_lines = "\n".join(f"- {error}" for error in validation_errors)
+        raise SystemExit(f"Backlog validation failed:\n{error_lines}")
 
     print(f"parsed milestones: {len(parsed.milestones)}")
     print(f"parsed labels: {len(parsed.labels)}")

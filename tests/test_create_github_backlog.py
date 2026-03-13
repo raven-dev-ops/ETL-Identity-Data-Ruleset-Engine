@@ -12,11 +12,17 @@ MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
-BACKLOG_PATH = Path(__file__).resolve().parents[1] / "planning" / "github-issues-backlog.md"
+HISTORICAL_BACKLOG_PATH = Path(__file__).resolve().parents[1] / "planning" / "github-issues-backlog.md"
+ACTIVE_BACKLOG_PATH = (
+    Path(__file__).resolve().parents[1] / "planning" / "post-v0.1.0-github-issues-backlog.md"
+)
 
 
 def test_parse_backlog_current_catalog() -> None:
-    parsed = MODULE.parse_backlog(BACKLOG_PATH.read_text(encoding="utf-8"))
+    parsed = MODULE.parse_backlog(
+        HISTORICAL_BACKLOG_PATH.read_text(encoding="utf-8"),
+        source_label="planning/github-issues-backlog.md",
+    )
 
     assert parsed.milestones == ("M1", "M2", "M3", "M4", "M5", "M6")
     assert len(parsed.labels) == 16
@@ -26,6 +32,23 @@ def test_parse_backlog_current_catalog() -> None:
     assert parsed.issues[-1].catalog_number == 42
     assert parsed.issues[0].title == "Bootstrap repository skeleton"
     assert parsed.issues[-1].title == "Clean up README encoding and formatting artifacts"
+
+
+def test_parse_backlog_active_catalog() -> None:
+    parsed = MODULE.parse_backlog(
+        ACTIVE_BACKLOG_PATH.read_text(encoding="utf-8"),
+        source_label="planning/post-v0.1.0-github-issues-backlog.md",
+    )
+
+    assert parsed.milestones == ("v0.1.1", "v0.2.0")
+    assert len(parsed.labels) == 16
+    assert len(parsed.epics) == 2
+    assert len(parsed.issues) == 6
+    assert parsed.issues[0].catalog_number == 46
+    assert parsed.issues[-1].catalog_number == 51
+    assert parsed.epics[0].description_items == (
+        "Epic created from planning/post-v0.1.0-github-issues-backlog.md",
+    )
 
 
 def test_build_issue_body_uses_expected_sections() -> None:
@@ -173,6 +196,41 @@ def test_normalize_issue_title_ignores_backticks_and_extra_spacing() -> None:
     assert (
         MODULE.normalize_issue_title(" Prepare `v0.1.0`  release checklist ")
         == MODULE.normalize_issue_title("Prepare v0.1.0 release checklist")
+    )
+
+
+def test_validate_backlog_rejects_normalized_title_collisions() -> None:
+    parsed = MODULE.ParsedBacklog(
+        milestones=("v0.2.0",),
+        labels=("type:docs",),
+        epics=(),
+        issues=(
+            MODULE.IssueItem(
+                title="Document `v0.1.1` release steps",
+                milestone="v0.2.0",
+                labels=("type:docs",),
+                depends_on="none",
+                description_items=("first",),
+                acceptance_items=("done",),
+                catalog_number=52,
+            ),
+            MODULE.IssueItem(
+                title="Document v0.1.1 release steps",
+                milestone="v0.2.0",
+                labels=("type:docs",),
+                depends_on="none",
+                description_items=("second",),
+                acceptance_items=("done",),
+                catalog_number=53,
+            ),
+        ),
+    )
+
+    errors = MODULE.validate_backlog(parsed)
+
+    assert errors == (
+        "normalized-title collision for 'document v0.1.1 release steps': "
+        "Document `v0.1.1` release steps | Document v0.1.1 release steps",
     )
 
 

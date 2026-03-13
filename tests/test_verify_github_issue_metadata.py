@@ -34,7 +34,7 @@ def test_validate_accepts_expected_issue_metadata() -> None:
             {
                 "name": "Project backlog",
                 "about": "planning",
-                "url": "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/github-issues-backlog.md",
+                "url": "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/post-v0.1.0-github-issues-backlog.md",
             },
         ],
         issue_templates=[
