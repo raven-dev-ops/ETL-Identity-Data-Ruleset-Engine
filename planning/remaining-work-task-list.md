@@ -3,34 +3,24 @@
 Date prepared: 2026-03-13
 Last updated: 2026-03-13
 
-This checklist captures the remaining work after the `v0.1.1` release
-closeout. The active GitHub backlog source is now
-`planning/active-github-issues-backlog.md`; this checklist remains a
-short maintainer view of the same follow-up themes rather than a second
-source of truth.
+This checklist captures the current maintainer task state after the
+`v0.1.1` release closeout and the completed follow-on backlog cycle. The
+active GitHub backlog source remains
+`planning/active-github-issues-backlog.md`; this file is only a short
+mirror of that tracked work.
 
-## Tracked Follow-Up Tasks
+## Completed Task List
 
-- [ ] `#54` Expand normalization fidelity for addresses and phone
+- [x] `#54` Expand normalization fidelity for addresses and phone
   outputs.
-- [ ] `#55` Expand non-exact matching signals and threshold-tuning
+- [x] `#55` Expand non-exact matching signals and threshold-tuning
   fixtures.
-- [ ] `#56` Decide the supported manual-review operating model.
-- [ ] `#57` Define how the remaining-work checklist and GitHub backlog
+- [x] `#56` Decide the supported manual-review operating model.
+- [x] `#57` Define how the remaining-work checklist and GitHub backlog
   should coexist.
 
-## Pipeline Follow-Up Tasks
+## Current Status
 
-- [ ] Keep the supported manual-review model as a CSV handoff until a
-  future tracked issue explicitly expands it into a persisted workflow.
-- [ ] Expand matching beyond the current explainable heuristic set with
-  additional non-exact signals such as address similarity, phone
-  tolerance, and stronger evaluation fixtures for threshold tuning.
-- [ ] Expand normalization beyond the current prototype baseline,
-  especially richer address parsing and optional E.164-style phone
-  output.
-
-## Repo Maintenance Tasks
-
-- [ ] Keep `planning/project-structure-outline.md` aligned with the live
-  tree when new planning files, tests, scripts, or docs are added.
+- No open tracked tasks remain in the current backlog cycle.
+- Define or sync the next backlog only when new scope is ready to be
+  tracked in GitHub.

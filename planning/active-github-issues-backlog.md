@@ -41,7 +41,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 54) Expand normalization fidelity for addresses and phone outputs
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.2.0`
 - Labels: `type:feature`, `area:normalize`, `priority:p1`
 - Depends on: none
@@ -55,7 +55,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 55) Expand non-exact matching signals and threshold-tuning fixtures
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.2.0`
 - Labels: `type:feature`, `area:matching`, `priority:p1`
 - Depends on: #54
@@ -71,7 +71,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 56) Decide the supported manual-review operating model
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.3.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
 - Depends on: none
@@ -85,7 +85,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 57) Define how the remaining-work checklist and GitHub backlog should coexist
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.3.0`
 - Labels: `type:docs`, `area:repo`, `priority:p2`
 - Depends on: none
@@ -116,9 +116,13 @@ Create these 2 epics first, then link child issues:
 
 Snapshot date: 2026-03-13
 
-- Active epic issues in GitHub for this backlog: `#52`, `#53`
-- Open issues represented in this local active catalog: `#54`, `#55`, `#56`, `#57`
+- Active epic issues in GitHub for this backlog: none
+- Open issues represented in this local active catalog: none
+- Closed issues and epics in this active catalog: `#52`, `#53`, `#54`,
+  `#55`, `#56`, `#57`
 - Historical backlog files remain read-only records for completed work.
 - Milestone `v0.1.1` was closed on 2026-03-13 after the `v0.1.1` release closeout completed.
-- Milestone `v0.2.0` is active with epic `#52` and child issues `#54` and `#55`.
-- Milestone `v0.3.0` is active with epic `#53` and child issues `#56` and `#57`.
+- Milestones `v0.2.0` and `v0.3.0` were both closed on 2026-03-13 after
+  the tracked issue set completed.
+- Refresh or replace this file before the next backlog sync when new
+  work is ready to be tracked.
