@@ -9,9 +9,9 @@ Define and track the repository structure for implementing the ETL Identity Data
 
 ## Current Status
 
-`M1` through `M6` are implemented in-repo and `v0.1.0` has shipped.
-Post-release hardening and release-follow-up planning are now tracked
-separately.
+`M1` through `M6` are implemented in-repo, `v0.1.0` shipped, and the
+`v0.1.1` stabilization release is now published. The next follow-up
+planning cycle is tracked separately from the completed release work.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`

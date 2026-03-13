@@ -3,26 +3,19 @@
 Date prepared: 2026-03-13
 Last updated: 2026-03-13
 
-This checklist captures the remaining work after the current repository
-hardening pass. It is intentionally separate from the GitHub
-issue-sync backlog files so maintainers can track immediate follow-up
-tasks without changing the automation source of truth.
+This checklist captures the remaining work after the `v0.1.1` release
+closeout. It is intentionally separate from the GitHub issue-sync
+backlog files so maintainers can track immediate follow-up tasks
+without changing the automation source of truth.
 
 ## Active Release Tasks
 
-- [ ] Generate the packaged `v0.1.1` sample bundle with
-  `scripts/package_release_sample.py` and attach the resulting zip to
-  the GitHub release.
-- [ ] Prepare the `v0.1.1` patch release from a green commit:
-  - confirm `pyproject.toml` and `src/etl_identity_engine/__init__.py`
-    both carry `0.1.1`
-  - keep `CHANGELOG.md` aligned with the published tag
-  - tag and publish the patch release with links to the release docs and
-    attached sample bundle
-  - confirm the published release notes call out `v0.1.1` as the first
-    post-`v0.1.0` stabilization release
-- [ ] Close or resync epic `#44` after child issues `#46` and `#48` are
-  complete so the live tracker and local snapshot stay aligned.
+- [ ] Define the next post-`v0.1.1` release line and decide which
+  remaining follow-up items below should be promoted into new GitHub
+  milestones and issues.
+- [ ] Decide whether the closed `planning/post-v0.1.0-github-issues-backlog.md`
+  catalog should remain a historical record only or be replaced with a
+  new active backlog file for future work.
 
 ## Pipeline Follow-Up Tasks
 
