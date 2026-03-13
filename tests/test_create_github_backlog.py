@@ -41,7 +41,7 @@ def test_build_issue_body_uses_expected_sections() -> None:
     body = MODULE.build_issue_body(issue)
 
     assert "## Milestone" in body
-    assert "- ``M1``" in body
+    assert "- `M1`" in body
     assert "## Depends On" in body
     assert "- #1" in body
     assert "## Description" in body
@@ -97,11 +97,83 @@ def test_build_epic_issue_number_map_uses_epic_titles_and_milestones() -> None:
 
     epic_issue_number_map = MODULE.build_epic_issue_number_map(
         epics,
-        {"Normalization and Data Quality Core": 3},
+        {
+            MODULE.normalize_issue_title("Normalization and Data Quality Core"): MODULE.ExistingIssue(
+                number=3,
+                title="Normalization and Data Quality Core",
+                state="CLOSED",
+            )
+        },
     )
 
     assert epic_issue_number_map == {"M3": 3}
     assert MODULE.build_epic_reference_map(epic_issue_number_map) == {"M3": "#3"}
+
+
+def test_build_epic_body_reflects_child_issue_completion_status() -> None:
+    epic = MODULE.IssueItem(
+        title="Reporting, Hardening, and Release",
+        milestone="M6",
+        labels=("type:epic",),
+        depends_on="none",
+        description_items=("Epic created from planning/github-issues-backlog.md",),
+        acceptance_items=("Child issues linked and tracked to completion.",),
+    )
+    child_issues = (
+        MODULE.IssueItem(
+            title="Prepare v0.1.0 release checklist, changelog, and tag procedure",
+            milestone="M6",
+            labels=("type:chore",),
+            depends_on="none",
+            description_items=(),
+            acceptance_items=(),
+            catalog_number=38,
+        ),
+        MODULE.IssueItem(
+            title="Expand CI to Linux and Windows matrix with coverage reporting",
+            milestone="M6",
+            labels=("type:chore",),
+            depends_on="none",
+            description_items=(),
+            acceptance_items=(),
+            catalog_number=40,
+        ),
+    )
+
+    body = MODULE.build_epic_body(
+        epic,
+        child_issues=child_issues,
+        existing_issues={
+            MODULE.normalize_issue_title(epic.title): MODULE.ExistingIssue(
+                number=6,
+                title=epic.title,
+                state="CLOSED",
+            ),
+            MODULE.normalize_issue_title(child_issues[0].title): MODULE.ExistingIssue(
+                number=38,
+                title=child_issues[0].title,
+                state="CLOSED",
+            ),
+            MODULE.normalize_issue_title(child_issues[1].title): MODULE.ExistingIssue(
+                number=40,
+                title=child_issues[1].title,
+                state="OPEN",
+            ),
+        },
+    )
+
+    assert "- `M6`" in body
+    assert "- Child issues complete: `1/2`" in body
+    assert "- [x] #38 Prepare v0.1.0 release checklist, changelog, and tag procedure" in body
+    assert "- [ ] #40 Expand CI to Linux and Windows matrix with coverage reporting" in body
+    assert "- Outstanding: #40 Expand CI to Linux and Windows matrix with coverage reporting" in body
+
+
+def test_normalize_issue_title_ignores_backticks_and_extra_spacing() -> None:
+    assert (
+        MODULE.normalize_issue_title(" Prepare `v0.1.0`  release checklist ")
+        == MODULE.normalize_issue_title("Prepare v0.1.0 release checklist")
+    )
 
 
 def test_parse_bullet_items_keeps_wrapped_continuation_lines() -> None:

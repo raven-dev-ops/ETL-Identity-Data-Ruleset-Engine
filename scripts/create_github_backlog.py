@@ -30,6 +30,13 @@ class IssueItem:
 
 
 @dataclass(frozen=True)
+class ExistingIssue:
+    number: int
+    title: str
+    state: str
+
+
+@dataclass(frozen=True)
 class ParsedBacklog:
     milestones: tuple[str, ...]
     labels: tuple[str, ...]
@@ -88,6 +95,10 @@ def invoke_gh(gh_exe: str, *args: str) -> str:
 
 def ordered_unique(items: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(items))
+
+
+def normalize_issue_title(title: str) -> str:
+    return re.sub(r"\s+", " ", title.replace("`", "")).strip().casefold()
 
 
 def get_section_body(content: str, start_heading: str, end_heading: str) -> str:
@@ -222,7 +233,7 @@ def build_issue_body(
     lines = [
         "## Milestone",
         "",
-        f"- ``{issue.milestone}``",
+        f"- `{issue.milestone}`",
     ]
     if epic_reference:
         lines.extend(["", "## Epic", "", f"- {epic_reference}"])
@@ -233,7 +244,84 @@ def build_issue_body(
     return "\n".join(lines)
 
 
-def get_existing_issue_map(gh_exe: str, repo: str) -> dict[str, int]:
+def build_epic_body(
+    epic: IssueItem,
+    *,
+    child_issues: tuple[IssueItem, ...],
+    existing_issues: dict[str, ExistingIssue],
+) -> str:
+    ordered_children = tuple(
+        sorted(
+            child_issues,
+            key=lambda item: (item.catalog_number is None, item.catalog_number or 0, item.title),
+        )
+    )
+    closed_count = sum(
+        1
+        for child_issue in ordered_children
+        if existing_issues.get(
+            normalize_issue_title(child_issue.title),
+            ExistingIssue(0, child_issue.title, "OPEN"),
+        ).state.upper()
+        == "CLOSED"
+    )
+    total_count = len(ordered_children)
+    open_children = tuple(
+        child_issue
+        for child_issue in ordered_children
+        if existing_issues.get(
+            normalize_issue_title(child_issue.title),
+            ExistingIssue(0, child_issue.title, "OPEN"),
+        ).state.upper()
+        != "CLOSED"
+    )
+
+    lines = [
+        "## Milestone",
+        "",
+        f"- `{epic.milestone}`",
+        "",
+        "## Progress",
+        "",
+        f"- Child issues complete: `{closed_count}/{total_count}`",
+    ]
+    if open_children:
+        remaining_references = ", ".join(
+            f"#{existing_issues[normalize_issue_title(child_issue.title)].number}"
+            for child_issue in open_children
+            if normalize_issue_title(child_issue.title) in existing_issues
+        )
+        lines.append(f"- Remaining child issues: {remaining_references or 'tracked but not yet created'}")
+    else:
+        lines.append("- Remaining child issues: none")
+
+    lines.extend(["", "## Child Issues"])
+    for child_issue in ordered_children:
+        existing_issue = existing_issues.get(normalize_issue_title(child_issue.title))
+        issue_number = existing_issue.number if existing_issue else child_issue.catalog_number
+        checkbox = "x" if existing_issue and existing_issue.state.upper() == "CLOSED" else " "
+        reference = f"#{issue_number}" if issue_number is not None else child_issue.title
+        lines.append(f"- [{checkbox}] {reference} {child_issue.title}")
+
+    lines.extend(["", "## Current Status"])
+    if open_children:
+        lines.append(f"- This epic still has `{len(open_children)}` open child issue(s).")
+        for child_issue in open_children:
+            existing_issue = existing_issues.get(normalize_issue_title(child_issue.title))
+            if existing_issue is not None:
+                lines.append(f"- Outstanding: #{existing_issue.number} {child_issue.title}")
+            else:
+                lines.append(f"- Outstanding: {child_issue.title}")
+    else:
+        lines.append("- All child issues linked to this epic are closed.")
+        lines.append("- The milestone scope is complete in the repository and tracker.")
+
+    lines.extend(["", "## Exit Criteria"])
+    lines.extend(f"- {item}" for item in epic.acceptance_items)
+    return "\n".join(lines)
+
+
+def get_existing_issue_map(gh_exe: str, repo: str) -> dict[str, ExistingIssue]:
     existing = json.loads(
         invoke_gh(
             gh_exe,
@@ -246,36 +334,47 @@ def get_existing_issue_map(gh_exe: str, repo: str) -> dict[str, int]:
             "--limit",
             "500",
             "--json",
-            "number,title",
+            "number,title,state",
         )
     )
-    return {item["title"]: item["number"] for item in existing}
+    issue_map: dict[str, ExistingIssue] = {}
+    for item in existing:
+        normalized_title = normalize_issue_title(item["title"])
+        candidate = ExistingIssue(
+            number=item["number"],
+            title=item["title"],
+            state=item["state"],
+        )
+        current = issue_map.get(normalized_title)
+        if current is None or candidate.number < current.number:
+            issue_map[normalized_title] = candidate
+    return issue_map
 
 
 def build_catalog_number_map(
     issues: tuple[IssueItem, ...],
-    existing_issue_map: dict[str, int],
+    existing_issue_map: dict[str, ExistingIssue],
 ) -> dict[int, int]:
     mapping: dict[int, int] = {}
     for issue in issues:
         if issue.catalog_number is None:
             continue
-        github_number = existing_issue_map.get(issue.title)
-        if github_number is not None:
-            mapping[issue.catalog_number] = github_number
+        existing_issue = existing_issue_map.get(normalize_issue_title(issue.title))
+        if existing_issue is not None:
+            mapping[issue.catalog_number] = existing_issue.number
     return mapping
 
 
 def build_epic_issue_number_map(
     epics: tuple[IssueItem, ...],
-    existing_issue_map: dict[str, int],
+    existing_issue_map: dict[str, ExistingIssue],
 ) -> dict[str, int]:
     mapping: dict[str, int] = {}
     for epic in epics:
-        github_number = existing_issue_map.get(epic.title)
-        if github_number is None or not epic.milestone:
+        existing_issue = existing_issue_map.get(normalize_issue_title(epic.title))
+        if existing_issue is None or not epic.milestone:
             continue
-        mapping[epic.milestone] = github_number
+        mapping[epic.milestone] = existing_issue.number
     return mapping
 
 
@@ -321,14 +420,19 @@ def ensure_milestones(gh_exe: str, repo: str, milestones: tuple[str, ...], dry_r
         print(f"milestone created: {milestone}")
 
 
-def ensure_issues(gh_exe: str, repo: str, issues: tuple[IssueItem, ...], dry_run: bool) -> dict[str, int]:
-    existing_issue_map: dict[str, int] = {}
+def ensure_issues(
+    gh_exe: str,
+    repo: str,
+    issues: tuple[IssueItem, ...],
+    dry_run: bool,
+) -> dict[str, ExistingIssue]:
+    existing_issue_map: dict[str, ExistingIssue] = {}
     if not dry_run:
         existing_issue_map = get_existing_issue_map(gh_exe, repo)
     existing_titles = set(existing_issue_map)
 
     for issue in issues:
-        if not dry_run and issue.title in existing_titles:
+        if not dry_run and normalize_issue_title(issue.title) in existing_titles:
             print(f"issue exists: {issue.title}")
             continue
 
@@ -356,19 +460,25 @@ def sync_epic_bodies(
     repo: str,
     epics: tuple[IssueItem, ...],
     *,
-    existing_issue_map: dict[str, int],
+    issues: tuple[IssueItem, ...],
+    existing_issue_map: dict[str, ExistingIssue],
     dry_run: bool,
 ) -> None:
     for epic in epics:
-        issue_number = existing_issue_map.get(epic.title)
+        existing_epic = existing_issue_map.get(normalize_issue_title(epic.title))
+        issue_number = existing_epic.number if existing_epic is not None else None
+        body = build_epic_body(
+            epic,
+            child_issues=tuple(issue for issue in issues if issue.milestone == epic.milestone),
+            existing_issues=existing_issue_map,
+        )
         if dry_run:
-            print(
-                f"[DRY-RUN] epic body sync skipped for {epic.title}"
-            )
+            print(f"[DRY-RUN] gh issue edit --repo {repo} {issue_number or '<pending>'} --body <epic>")
             continue
         if issue_number is None:
             continue
-        print(f"epic body preserved: {epic.title}")
+        invoke_gh(gh_exe, "issue", "edit", str(issue_number), "--repo", repo, "--body", body)
+        print(f"epic body synced: {epic.title}")
 
 
 def sync_issue_bodies(
@@ -376,13 +486,14 @@ def sync_issue_bodies(
     repo: str,
     issues: tuple[IssueItem, ...],
     *,
-    existing_issue_map: dict[str, int],
+    existing_issue_map: dict[str, ExistingIssue],
     catalog_number_map: dict[int, int],
     epic_reference_map: dict[str, str],
     dry_run: bool,
 ) -> None:
     for issue in issues:
-        issue_number = existing_issue_map.get(issue.title)
+        existing_issue = existing_issue_map.get(normalize_issue_title(issue.title))
+        issue_number = existing_issue.number if existing_issue is not None else None
         body = build_issue_body(
             issue,
             depends_on=translate_depends_on(issue.depends_on, catalog_number_map),
@@ -492,7 +603,7 @@ def sync_sub_issue_links(
     repo: str,
     issues: tuple[IssueItem, ...],
     *,
-    existing_issue_map: dict[str, int],
+    existing_issue_map: dict[str, ExistingIssue],
     epic_issue_number_map: dict[str, int],
     dry_run: bool,
 ) -> None:
@@ -500,7 +611,8 @@ def sync_sub_issue_links(
     for issue in issues:
         if not sub_issue_api_available:
             break
-        issue_number = existing_issue_map.get(issue.title)
+        existing_issue = existing_issue_map.get(normalize_issue_title(issue.title))
+        issue_number = existing_issue.number if existing_issue is not None else None
         parent_issue_number = epic_issue_number_map.get(issue.milestone)
         if issue_number is None or parent_issue_number is None:
             continue
@@ -577,6 +689,7 @@ def main() -> int:
         gh_exe,
         args.repo,
         parsed.epics,
+        issues=parsed.issues,
         existing_issue_map=combined_issue_map,
         dry_run=args.dry_run,
     )

@@ -441,7 +441,7 @@ Last synced to GitHub: 2026-03-13
   - Placeholder-only docs are replaced with implementation-specific guidance.
   - Each major stage doc includes concrete runtime behavior, relevant config files, and example commands or outputs.
 
-### 38) Prepare `v0.1.0` release checklist, changelog, and tag procedure
+### 38) Prepare v0.1.0 release checklist, changelog, and tag procedure
 
 - Status: `closed`
 - Milestone: `M6`
@@ -532,12 +532,14 @@ Snapshot date: 2026-03-13
 The GitHub issue backlog is fully executed as of 2026-03-13.
 
 - All milestone child issues and epic issues are now closed.
-- The remaining repository follow-up is release execution, not backlog implementation.
+- Release `v0.1.0` was published on 2026-03-13.
+- Ongoing tracker maintenance should focus on post-release follow-up work rather than the bootstrap backlog.
 
-## Current Phase Gaps To Close Before `v0.1.0`
+## Post-Release Tracker Notes
 
-- Publish the first tagged release using the documented checklist and tag procedure.
-- Attach or archive a fresh `run-all --profile small` sample artifact set with the release notes.
+- Epic issue bodies and native sub-issue links are synced from the milestone-to-child-issue mapping in `scripts/create_github_backlog.py`.
+- Re-running the backlog automation should refresh epic progress checklists instead of preserving stale milestone summaries.
+- New post-release work should be added as new issues rather than reopening the completed bootstrap backlog.
 
 ## Tracker Sync Notes
 
@@ -555,4 +557,5 @@ The GitHub issue backlog is fully executed as of 2026-03-13.
 - Issue `#41` was completed after documenting pipeline artifact schemas and adding dedicated contract tests.
 - Issue `#38` was completed after adding a release-process doc and `CHANGELOG.md` for the planned `v0.1.0` release.
 - Issue `#42` was completed after rewriting the README into clean GitHub-flavored markdown and removing malformed encoding artifacts.
+- Epic bodies and child-issue progress are now intended to be re-synced from the backlog automation instead of being maintained manually in GitHub.
 - The local backlog now mirrors the fully closed live tracker.
