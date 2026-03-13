@@ -32,7 +32,9 @@ check baseline.
 - Artifact contract tests pass for the documented pipeline outputs.
 - `README.md`, `CHANGELOG.md`, and the release notes reflect the current
   behavior.
-- A fresh small-profile `run-all` execution completes successfully.
+- The backlog dry-run still parses the active planning backlog.
+- A fresh packaged small-profile release sample bundle is produced
+  successfully.
 
 ## Release Line Guidance
 
@@ -61,13 +63,16 @@ check baseline.
 
 ## Sample Output Set
 
-Generate a release-candidate sample with:
+Generate a release-candidate sample bundle with:
 
 ```bash
-python -m etl_identity_engine.cli run-all --profile small
+python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet
 ```
 
-The resulting sample bundle should include at least:
+The script writes a zip archive named like
+`etl-identity-engine-vX.Y.Z-sample-small.zip`.
+
+That bundle should include at least:
 
 - `data/normalized/normalized_person_records.csv`
 - `data/matches/candidate_scores.csv`
@@ -76,8 +81,12 @@ The resulting sample bundle should include at least:
 - `data/golden/golden_person_records.csv`
 - `data/golden/source_to_golden_crosswalk.csv`
 - `data/review_queue/manual_review_queue.csv`
+- `data/exceptions/invalid_dobs.csv`
+- `data/exceptions/malformed_phones.csv`
+- `data/exceptions/normalization_failures.csv`
 - `data/exceptions/run_summary.json`
 - `data/exceptions/run_report.md`
+- `manifest.json`
 
 See [output-contracts.md](output-contracts.md) for the stable file
 shapes.
@@ -89,9 +98,11 @@ shapes.
 - Run the local validation path:
   - `./scripts/run_checks.ps1` on Windows
   - `./scripts/run_checks.sh` on systems that already provide `bash`
-- Run a fresh small-profile pipeline sample:
-  - `python -m etl_identity_engine.cli run-all --profile small`
-- Review the generated output set against
+- Run the backlog dry-run:
+  - `python scripts/create_github_backlog.py --repo "<OWNER/REPO>" --dry-run`
+- Build the packaged release sample:
+  - `python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet`
+- Review the packaged output set against
   [output-contracts.md](output-contracts.md).
 - Verify the required GitHub checks passed on the release commit.
 - Draft release notes summarizing:
@@ -99,9 +110,10 @@ shapes.
   - patch or hotfix scope, if the release is not the initial tag in a line
   - known limitations
   - validation commands
-  - sample output locations or attachments
+  - sample output attachment location
 - Create and push the annotated tag.
-- Publish the GitHub release using the tag and changelog summary.
+- Publish the GitHub release using the tag and changelog summary, then
+  attach the packaged sample zip.
 
 ## Tag Procedure
 

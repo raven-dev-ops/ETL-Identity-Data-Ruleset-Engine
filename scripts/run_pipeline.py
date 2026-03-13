@@ -14,4 +14,4 @@ if str(SRC_DIR) not in sys.path:
 if __name__ == "__main__":
     from etl_identity_engine.cli import main
 
-    raise SystemExit(main(["run-all"]))
+    raise SystemExit(main(["run-all", *sys.argv[1:]]))

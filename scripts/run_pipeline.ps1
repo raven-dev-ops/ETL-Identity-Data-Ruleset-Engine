@@ -1,13 +1,11 @@
 Param(
-    [string]$BaseDir = ".",
-    [ValidateSet("small", "medium", "large")]
-    [string]$Profile = "small",
-    [int]$Seed = 42
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CliArgs
 )
 
 $venvPython = Join-Path ".venv" "Scripts\python.exe"
 if (Test-Path $venvPython) {
-    & $venvPython -m etl_identity_engine.cli run-all --base-dir $BaseDir --profile $Profile --seed $Seed
+    & $venvPython -m etl_identity_engine.cli run-all @CliArgs
     exit $LASTEXITCODE
 }
 

@@ -39,6 +39,14 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _write_parquet(path: Path, rows: list[dict[str, str]]) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.Table.from_pylist(rows), path)
+
+
 def test_normalize_cli_combines_discovered_source_inputs(tmp_path: Path) -> None:
     input_dir = tmp_path / "synthetic_sources"
     _write_csv(
@@ -92,6 +100,60 @@ def test_normalize_cli_combines_discovered_source_inputs(tmp_path: Path) -> None
     assert len(rows) == 2
     assert {row["source_record_id"] for row in rows} == {"A-1", "B-1"}
     assert {"canonical_name", "canonical_dob", "canonical_address", "canonical_phone"} <= set(rows[0])
+
+
+def test_normalize_cli_discovers_parquet_inputs_when_csv_is_absent(tmp_path: Path) -> None:
+    input_dir = tmp_path / "synthetic_sources"
+    _write_parquet(
+        input_dir / "person_source_a.parquet",
+        [
+            {
+                "source_record_id": "A-1",
+                "person_entity_id": "P-1",
+                "source_system": "source_a",
+                "first_name": "John",
+                "last_name": "Smith",
+                "dob": "1985-03-12",
+                "address": "123 Main St.",
+                "phone": "(555) 123-4567",
+            }
+        ],
+    )
+    _write_parquet(
+        input_dir / "person_source_b.parquet",
+        [
+            {
+                "source_record_id": "B-1",
+                "person_entity_id": "P-1",
+                "source_system": "source_b",
+                "first_name": "Smith, John",
+                "last_name": "",
+                "dob": "03/12/1985",
+                "address": "123 Main Street",
+                "phone": "5551234567",
+            }
+        ],
+    )
+
+    output_path = tmp_path / "normalized" / "normalized_person_records.csv"
+
+    assert (
+        main(
+            [
+                "normalize",
+                "--input-dir",
+                str(input_dir),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    rows = _read_csv(output_path)
+
+    assert len(rows) == 2
+    assert {row["source_record_id"] for row in rows} == {"A-1", "B-1"}
 
 
 def test_normalize_cli_requires_discoverable_inputs_when_no_explicit_files_are_passed(

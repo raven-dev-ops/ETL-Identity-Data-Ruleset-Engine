@@ -3,6 +3,11 @@
 The current reporting path emits both markdown and machine-readable run
 metrics under `data/exceptions/`.
 
+The standalone `report` stage reads the normalized artifact plus the
+current match, cluster, golden, and review-queue artifacts so the
+summary matches the end-to-end pipeline state rather than only the
+normalization step.
+
 ## Current Outputs
 
 - `data/exceptions/run_report.md`
@@ -12,6 +17,22 @@ Generate the current reporting outputs through the end-to-end path:
 
 ```bash
 python -m etl_identity_engine.cli run-all
+```
+
+Or rerun reporting against existing artifacts:
+
+```bash
+python -m etl_identity_engine.cli report \
+  --input data/normalized/normalized_person_records.csv \
+  --output data/exceptions/run_report.md
+```
+
+To rebuild the manual review queue before rerunning reporting:
+
+```bash
+python -m etl_identity_engine.cli review-queue \
+  --input data/matches/candidate_scores.csv \
+  --output data/review_queue/manual_review_queue.csv
 ```
 
 ## Current Metrics

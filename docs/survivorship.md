@@ -24,6 +24,11 @@ This strategy is applied independently to:
 
 `run-all` writes `data/golden/golden_person_records.csv`.
 
+The standalone `golden` stage expects normalized input plus
+`data/matches/entity_clusters.csv` unless the input rows already contain
+`cluster_id` values. It does not infer entity groups from the synthetic
+`person_entity_id` field during normal CLI usage.
+
 Each golden row now includes:
 
 - selected field values
@@ -66,5 +71,15 @@ Run the full clustered golden-record path:
 python -m etl_identity_engine.cli run-all
 ```
 
-This produces both the golden-record output and the source-to-golden
-crosswalk under `data/golden/`.
+To rerun only the golden stage against previously normalized and matched
+artifacts:
+
+```bash
+python -m etl_identity_engine.cli golden \
+  --input data/normalized/normalized_person_records.csv \
+  --clusters data/matches/entity_clusters.csv \
+  --output data/golden/golden_person_records.csv
+```
+
+This produces the golden-record output under `data/golden/`. `run-all`
+also writes the source-to-golden crosswalk there.

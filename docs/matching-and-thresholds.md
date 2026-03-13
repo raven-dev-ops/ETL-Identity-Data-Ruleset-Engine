@@ -70,9 +70,9 @@ Current decision bands:
 
 ## Cluster Construction
 
-`run-all` converts `auto_merge` links into deterministic connected
-components and assigns stable `cluster_id` values in
-`data/matches/entity_clusters.csv`.
+The standalone `cluster` stage and `run-all` both convert `auto_merge`
+links into deterministic connected components and assign stable
+`cluster_id` values in `data/matches/entity_clusters.csv`.
 
 Every source record receives a cluster assignment:
 
@@ -82,7 +82,7 @@ Every source record receives a cluster assignment:
 This keeps the runtime deterministic for fixed input and config while
 preserving unresolved duplicates for manual review.
 
-## Command Example
+## Command Examples
 
 Run the matching stage against the normalized artifact:
 
@@ -94,3 +94,12 @@ python -m etl_identity_engine.cli match \
 
 This command writes both `candidate_scores.csv` and
 `blocking_metrics.csv` into `data/matches/`.
+
+Build entity clusters from the normalized and matching artifacts:
+
+```bash
+python -m etl_identity_engine.cli cluster \
+  --input data/normalized/normalized_person_records.csv \
+  --matches data/matches/candidate_scores.csv \
+  --output data/matches/entity_clusters.csv
+```

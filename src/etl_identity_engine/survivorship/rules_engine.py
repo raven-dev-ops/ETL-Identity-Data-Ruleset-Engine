@@ -1,6 +1,7 @@
 """Deterministic survivorship helpers."""
 
 from __future__ import annotations
+
 from typing import Sequence
 
 from etl_identity_engine.survivorship.provenance import build_provenance, flatten_provenance
@@ -30,9 +31,17 @@ def choose_value(values: list[dict[str, str]], source_priority: Sequence[str] | 
     return _choose_item(values, source_priority=source_priority).get("value", "")
 
 
-def _group_records(records: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+def _group_records(
+    records: list[dict[str, str]],
+    *,
+    allow_person_entity_fallback: bool = False,
+) -> list[list[dict[str, str]]]:
     grouping_field = None
-    for field_name in ("cluster_id", "person_entity_id"):
+    grouping_fields = ["cluster_id"]
+    if allow_person_entity_fallback:
+        grouping_fields.append("person_entity_id")
+
+    for field_name in grouping_fields:
         if any(str(row.get(field_name, "")).strip() for row in records):
             grouping_field = field_name
             break
@@ -113,8 +122,12 @@ def build_golden_records(
     *,
     source_priority: Sequence[str] | None = None,
     field_rules: dict[str, str] | None = None,
+    allow_person_entity_fallback: bool = False,
 ) -> list[dict[str, str]]:
-    grouped_records = _group_records(records)
+    grouped_records = _group_records(
+        records,
+        allow_person_entity_fallback=allow_person_entity_fallback,
+    )
     return [
         merge_records(
             group,

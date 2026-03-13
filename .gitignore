@@ -5,3 +5,5 @@ __pycache__/
 .venv/
 .tools/
 *.egg-info/
+dist/
+*.zip

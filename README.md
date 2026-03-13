@@ -139,6 +139,7 @@ is included in the repository.
 ## Planning Artifacts
 
 - [Project Structure Outline](planning/project-structure-outline.md)
+- [Remaining Work Task List](planning/remaining-work-task-list.md)
 - [Active Post-v0.1.0 GitHub Issues Backlog](planning/post-v0.1.0-github-issues-backlog.md)
 - [Bootstrap GitHub Issues Backlog (Historical)](planning/github-issues-backlog.md)
 
@@ -154,6 +155,18 @@ is included in the repository.
 - [Release Process](docs/release-process.md)
 - [Standards Mapping](docs/standards-mapping.md)
 
+## Maintainer Release Bundle
+
+Package the documented release sample archive with:
+
+```bash
+python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet
+```
+
+The release process treats that script as the authoritative bundle
+entrypoint, and the resulting zip should be attached to the GitHub
+release for the matching tag.
+
 ## Governance and Safety
 
 - [License](LICENSE)
@@ -167,8 +180,8 @@ is included in the repository.
 This repository now includes a working `M1` scaffold:
 
 - Python package skeleton under `src/etl_identity_engine/`
-- stage CLI commands: `generate`, `normalize`, `match`, `golden`,
-  `report`, `run-all`
+- stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
+  `review-queue`, `golden`, `report`, `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
 - governance files: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
@@ -188,6 +201,9 @@ configurable conflict injection:
 - `generation_summary.json`
 
 Formats are configurable (`csv`, `parquet`) and default to both.
+The `normalize` stage auto-discovers CSV inputs first and falls back to
+Parquet only when CSV inputs are absent, so one discovered format set is
+used per run.
 
 ## Current Runtime Outputs
 
@@ -207,6 +223,15 @@ Formats are configurable (`csv`, `parquet`) and default to both.
 
 The stable output shapes for those files are documented in
 [docs/output-contracts.md](docs/output-contracts.md).
+
+The standalone `golden` stage uses normalized records plus
+`data/matches/entity_clusters.csv` unless the input already includes
+`cluster_id` values. The standalone `report` stage reads the normalized
+artifact plus the current match, cluster, golden, and review-queue
+artifacts so its counts match the pipeline state.
+`run-all` also accepts `--formats` and will normalize from the generated
+CSV outputs when available, or from generated Parquet outputs when CSV
+is not part of the requested format set.
 
 ## Local Quickstart (Venv-First)
 
@@ -228,6 +253,9 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 ./scripts/run_pipeline.ps1
 ```
 
+`run_pipeline.ps1` forwards any additional `run-all` CLI arguments, for
+example `./scripts/run_pipeline.ps1 --base-dir tmp --config-dir config`.
+
 ### macOS / Linux (bash)
 
 Use the bash path only on systems that already provide `bash`. That path
@@ -241,6 +269,9 @@ source .venv/bin/activate
 python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 --formats csv,parquet
 ./scripts/run_pipeline.sh
 ```
+
+`run_pipeline.sh` forwards any additional `run-all` CLI arguments, for
+example `./scripts/run_pipeline.sh --base-dir tmp --config-dir config`.
 
 ### Direct Commands (Any Platform)
 

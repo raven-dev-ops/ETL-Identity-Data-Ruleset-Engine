@@ -60,7 +60,7 @@ def test_choose_value_prefers_most_recent_timestamp_within_same_priority() -> No
     assert chosen == "456 NEW ST"
 
 
-def test_build_golden_records_groups_by_person_entity_id() -> None:
+def test_build_golden_records_can_group_by_person_entity_id_when_explicitly_enabled() -> None:
     records = [
         {
             "source_record_id": "A-1",
@@ -94,12 +94,42 @@ def test_build_golden_records_groups_by_person_entity_id() -> None:
         },
     ]
 
-    golden_records = build_golden_records(records)
+    golden_records = build_golden_records(records, allow_person_entity_fallback=True)
 
     assert len(golden_records) == 2
     assert [row["golden_id"] for row in golden_records] == ["G-00001", "G-00002"]
     assert golden_records[0]["person_entity_id"] == "P-000001"
     assert golden_records[0]["source_record_count"] == "2"
+
+
+def test_build_golden_records_keeps_singletons_without_cluster_ids() -> None:
+    records = [
+        {
+            "source_record_id": "A-1",
+            "person_entity_id": "P-000001",
+            "source_system": "source_a",
+            "first_name": "JOHN",
+            "last_name": "SMITH",
+            "dob": "1985-03-12",
+            "address": "123 MAIN ST",
+            "phone": "5551234567",
+        },
+        {
+            "source_record_id": "B-1",
+            "person_entity_id": "P-000001",
+            "source_system": "source_b",
+            "first_name": "JON",
+            "last_name": "SMITH",
+            "dob": "1985-03-12",
+            "address": "123 MAIN STREET",
+            "phone": "5551234567",
+        },
+    ]
+
+    golden_records = build_golden_records(records)
+
+    assert len(golden_records) == 2
+    assert [row["source_record_count"] for row in golden_records] == ["1", "1"]
 
 
 def test_build_golden_records_prefers_cluster_id_when_present() -> None:

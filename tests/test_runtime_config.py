@@ -212,7 +212,25 @@ field_rules:
     )
 
     match_output = tmp_path / "candidate_scores.csv"
+    cluster_input = tmp_path / "entity_clusters.csv"
     golden_output = tmp_path / "golden.csv"
+    _write_csv(
+        cluster_input,
+        [
+            {
+                "cluster_id": "C-00001",
+                "source_record_id": "A-1",
+                "source_system": "source_a",
+                "person_entity_id": "P-1",
+            },
+            {
+                "cluster_id": "C-00001",
+                "source_record_id": "B-1",
+                "source_system": "source_b",
+                "person_entity_id": "P-1",
+            },
+        ],
+    )
 
     assert (
         main(
@@ -234,6 +252,8 @@ field_rules:
                 "golden",
                 "--input",
                 str(normalized_input),
+                "--clusters",
+                str(cluster_input),
                 "--output",
                 str(golden_output),
                 "--config-dir",
@@ -249,7 +269,89 @@ field_rules:
     assert len(match_rows) == 1
     assert match_rows[0]["score"] == "1.0"
     assert match_rows[0]["decision"] == "auto_merge"
+    assert len(golden_rows) == 1
     assert golden_rows[0]["first_name"] == "JONATHAN"
+
+
+def test_match_cli_requires_existing_input_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match=r"Input file not found"):
+        main(
+            [
+                "match",
+                "--input",
+                str(tmp_path / "missing.csv"),
+                "--output",
+                str(tmp_path / "candidate_scores.csv"),
+            ]
+        )
+
+
+def test_golden_cli_requires_cluster_assignments_for_normalized_input(tmp_path: Path) -> None:
+    normalized_input = tmp_path / "normalized.csv"
+    _write_csv(
+        normalized_input,
+        [
+            {
+                "source_record_id": "A-1",
+                "person_entity_id": "P-1",
+                "source_system": "source_a",
+                "first_name": "JOHN",
+                "last_name": "SMITH",
+                "dob": "1985-03-12",
+                "address": "123 MAIN ST",
+                "phone": "5551234567",
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_address": "123 MAIN ST",
+                "canonical_phone": "5551234567",
+            }
+        ],
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"entity_clusters\.csv"):
+        main(
+            [
+                "golden",
+                "--input",
+                str(normalized_input),
+                "--output",
+                str(tmp_path / "golden.csv"),
+            ]
+        )
+
+
+def test_report_cli_requires_downstream_artifacts(tmp_path: Path) -> None:
+    normalized_input = tmp_path / "normalized.csv"
+    _write_csv(
+        normalized_input,
+        [
+            {
+                "source_record_id": "A-1",
+                "person_entity_id": "P-1",
+                "source_system": "source_a",
+                "first_name": "JOHN",
+                "last_name": "SMITH",
+                "dob": "1985-03-12",
+                "address": "123 MAIN ST",
+                "phone": "5551234567",
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_address": "123 MAIN ST",
+                "canonical_phone": "5551234567",
+            }
+        ],
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"candidate_scores\.csv"):
+        main(
+            [
+                "report",
+                "--input",
+                str(normalized_input),
+                "--output",
+                str(tmp_path / "run_report.md"),
+            ]
+        )
 
 
 def test_load_pipeline_config_rejects_missing_required_sections(tmp_path: Path) -> None:

@@ -172,8 +172,13 @@ Create these 2 epics first, then link child issues:
 
 Snapshot date: 2026-03-13
 
-- Open issues in this post-release set: `#44`, `#46`, `#48`
+- Open issues represented in this local post-release catalog: `#46`,
+  `#48`
 - Closed issues in this post-release set: `#45`, `#47`, `#49`, `#50`, `#51`
+- GitHub also shows open epic `#44`, which corresponds to the local
+  `v0.1.1` epic entry in `## Suggested Epic Issues`.
+- Keep epic `#44` aligned with child issues `#46` and `#48` when the
+  next backlog sync or release closeout runs.
 - Bootstrap milestones `M1` through `M6` were closed in GitHub after the
   bootstrap backlog was fully executed.
 - Active milestones remain `v0.1.1` and `v0.2.0`.

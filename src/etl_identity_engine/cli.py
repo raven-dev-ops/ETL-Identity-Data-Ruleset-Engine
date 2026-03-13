@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
-from etl_identity_engine.io.read import read_csv_dicts
+from etl_identity_engine.io.read import read_dict_rows
 from etl_identity_engine.io.write import write_csv_dicts, write_markdown
 from etl_identity_engine.matching.blocking import BlockingPassMetric, generate_candidates_with_metrics
 from etl_identity_engine.matching.clustering import assign_cluster_ids
@@ -74,17 +74,23 @@ def _normalize_rows(rows: list[dict[str, str]], config: PipelineConfig) -> list[
 def _read_rows(paths: Sequence[Path]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for path in paths:
-        rows.extend(read_csv_dicts(path))
+        rows.extend(read_dict_rows(path))
     return rows
 
 
 def _discover_normalize_input_paths(input_dir: Path) -> tuple[Path, ...]:
-    input_paths = tuple(sorted(input_dir.glob("person_source_*.csv")))
-    if not input_paths:
-        raise FileNotFoundError(
-            f"No normalization input files found in {input_dir} matching person_source_*.csv"
-        )
-    return input_paths
+    csv_paths = tuple(sorted(input_dir.glob("person_source_*.csv")))
+    if csv_paths:
+        return csv_paths
+
+    parquet_paths = tuple(sorted(input_dir.glob("person_source_*.parquet")))
+    if parquet_paths:
+        return parquet_paths
+
+    raise FileNotFoundError(
+        "No normalization input files found in "
+        f"{input_dir} matching person_source_*.csv or person_source_*.parquet"
+    )
 
 
 def _resolve_normalize_input_paths(args: argparse.Namespace) -> tuple[Path, ...]:
@@ -92,6 +98,183 @@ def _resolve_normalize_input_paths(args: argparse.Namespace) -> tuple[Path, ...]
     if explicit_inputs:
         return explicit_inputs
     return _discover_normalize_input_paths(Path(args.input_dir))
+
+
+def _parse_formats(value: str) -> tuple[str, ...]:
+    formats = tuple(part.strip().lower() for part in value.split(",") if part.strip())
+    if not formats:
+        raise ValueError("At least one format must be provided")
+    return formats
+
+
+def _resolve_generated_person_input_paths(
+    input_dir: Path,
+    *,
+    formats: Sequence[str],
+) -> tuple[Path, ...]:
+    normalized_formats = tuple(fmt.strip().lower() for fmt in formats if fmt.strip())
+    if "csv" in normalized_formats:
+        return (
+            input_dir / "person_source_a.csv",
+            input_dir / "person_source_b.csv",
+        )
+    if "parquet" in normalized_formats:
+        return (
+            input_dir / "person_source_a.parquet",
+            input_dir / "person_source_b.parquet",
+        )
+    raise ValueError(
+        "run-all requires a supported input format for normalization: csv or parquet"
+    )
+
+
+def _default_data_root(input_file: Path) -> Path:
+    if input_file.parent.name == "normalized":
+        return input_file.parent.parent
+    return input_file.parent
+
+
+def _resolve_related_artifact(
+    input_file: Path,
+    explicit_path: str | None,
+    *relative_path: str,
+) -> Path:
+    if explicit_path:
+        return Path(explicit_path)
+    return _default_data_root(input_file).joinpath(*relative_path)
+
+
+def _resolve_match_rows(
+    input_file: Path,
+    explicit_matches: str | None,
+) -> list[dict[str, str]]:
+    matches_file = _resolve_related_artifact(
+        input_file,
+        explicit_matches,
+        "matches",
+        "candidate_scores.csv",
+    )
+    return read_dict_rows(matches_file)
+
+
+def _build_cluster_assignment_index(cluster_rows: list[dict[str, str]]) -> dict[str, str]:
+    assignments: dict[str, str] = {}
+    for row in cluster_rows:
+        source_record_id = str(row.get("source_record_id", "")).strip()
+        cluster_id = str(row.get("cluster_id", "")).strip()
+        if not source_record_id:
+            raise ValueError("Cluster assignment rows must include source_record_id")
+        if not cluster_id:
+            raise ValueError(f"Cluster assignment for {source_record_id} is missing cluster_id")
+
+        existing_cluster_id = assignments.get(source_record_id)
+        if existing_cluster_id is not None and existing_cluster_id != cluster_id:
+            raise ValueError(
+                f"Cluster assignment for {source_record_id} is duplicated with conflicting cluster_id values"
+            )
+        assignments[source_record_id] = cluster_id
+    return assignments
+
+
+def _rows_include_cluster_ids(rows: list[dict[str, str]]) -> bool:
+    record_rows = [
+        row for row in rows if str(row.get("source_record_id", "")).strip()
+    ]
+    return bool(record_rows) and all(str(row.get("cluster_id", "")).strip() for row in record_rows)
+
+
+def _apply_cluster_assignments(
+    rows: list[dict[str, str]],
+    cluster_rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    assignments = _build_cluster_assignment_index(cluster_rows)
+    enriched_rows: list[dict[str, str]] = []
+
+    for row in rows:
+        source_record_id = str(row.get("source_record_id", "")).strip()
+        if not source_record_id:
+            raise ValueError("Golden-record input rows must include source_record_id")
+
+        cluster_id = assignments.get(source_record_id, "").strip()
+        if not cluster_id:
+            raise ValueError(
+                f"No cluster assignment found for source_record_id {source_record_id}"
+            )
+        enriched_rows.append({**row, "cluster_id": cluster_id})
+
+    return enriched_rows
+
+
+def _resolve_golden_input_rows(args: argparse.Namespace) -> list[dict[str, str]]:
+    input_file = Path(args.input)
+    rows = read_dict_rows(input_file)
+    if _rows_include_cluster_ids(rows):
+        return rows
+
+    cluster_file = _resolve_related_artifact(
+        input_file,
+        args.clusters,
+        "matches",
+        "entity_clusters.csv",
+    )
+    return _apply_cluster_assignments(rows, read_dict_rows(cluster_file))
+
+
+def _resolve_cluster_command_inputs(args: argparse.Namespace) -> tuple[list[dict[str, str]], list[dict[str, str | float]]]:
+    input_file = Path(args.input)
+    rows = read_dict_rows(input_file)
+    match_rows = _resolve_match_rows(input_file, args.matches)
+    return rows, match_rows
+
+
+def _collect_report_context(
+    args: argparse.Namespace,
+) -> tuple[Path, list[dict[str, str]], dict[str, int], int, int, int, int]:
+    input_file = Path(args.input)
+    normalized_rows = read_dict_rows(input_file)
+    match_rows = _resolve_match_rows(input_file, args.matches)
+    cluster_rows = read_dict_rows(
+        _resolve_related_artifact(
+            input_file,
+            args.clusters,
+            "matches",
+            "entity_clusters.csv",
+        )
+    )
+    golden_rows = read_dict_rows(
+        _resolve_related_artifact(
+            input_file,
+            args.golden_file,
+            "golden",
+            "golden_person_records.csv",
+        )
+    )
+    review_rows = read_dict_rows(
+        _resolve_related_artifact(
+            input_file,
+            args.review_queue,
+            "review_queue",
+            "manual_review_queue.csv",
+        )
+    )
+
+    decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
+    cluster_count = len(
+        {
+            str(row.get("cluster_id", "")).strip()
+            for row in cluster_rows
+            if str(row.get("cluster_id", "")).strip()
+        }
+    )
+    return (
+        input_file,
+        normalized_rows,
+        dict(decision_counts),
+        len(match_rows),
+        cluster_count,
+        len(golden_rows),
+        len(review_rows),
+    )
 
 
 def _write_normalized_output(
@@ -353,7 +536,7 @@ def _write_quality_outputs(
 
 def _cmd_generate(args: argparse.Namespace) -> None:
     output_dir = Path(args.output)
-    formats = tuple(part.strip() for part in args.formats.split(",") if part.strip())
+    formats = _parse_formats(args.formats)
     result = generate_synthetic_sources(
         output_dir=output_dir,
         profile=args.profile,
@@ -383,25 +566,53 @@ def _cmd_normalize(args: argparse.Namespace) -> None:
 def _cmd_match(args: argparse.Namespace) -> None:
     input_file = Path(args.input)
     output_file = Path(args.output)
-    _write_match_output(output_file, read_csv_dicts(input_file), _load_config(args.config_dir))
+    _write_match_output(output_file, read_dict_rows(input_file), _load_config(args.config_dir))
+
+
+def _cmd_cluster(args: argparse.Namespace) -> None:
+    output_file = Path(args.output)
+    rows, match_rows = _resolve_cluster_command_inputs(args)
+    _write_cluster_output(output_file, rows, match_rows)
+
+
+def _cmd_review_queue(args: argparse.Namespace) -> None:
+    input_file = Path(args.input)
+    output_file = Path(args.output)
+    _write_manual_review_output(output_file, read_dict_rows(input_file))
 
 
 def _cmd_golden(args: argparse.Namespace) -> None:
-    input_file = Path(args.input)
     output_file = Path(args.output)
-    _write_golden_output(output_file, read_csv_dicts(input_file), _load_config(args.config_dir))
+    _write_golden_output(output_file, _resolve_golden_input_rows(args), _load_config(args.config_dir))
 
 
 def _cmd_report(args: argparse.Namespace) -> None:
-    input_file = Path(args.input)
+    (
+        input_file,
+        rows,
+        decision_counts,
+        candidate_pair_count,
+        cluster_count,
+        golden_record_count,
+        review_queue_count,
+    ) = _collect_report_context(args)
     output_file = Path(args.output)
-    rows = read_csv_dicts(input_file)
-    _write_quality_outputs(output_file, input_file, rows)
+    _write_quality_outputs(
+        output_file,
+        input_file,
+        rows,
+        candidate_pair_count=candidate_pair_count,
+        decision_counts=decision_counts,
+        cluster_count=cluster_count,
+        golden_record_count=golden_record_count,
+        review_queue_count=review_queue_count,
+    )
 
 
 def _cmd_run_all(args: argparse.Namespace) -> None:
     base = Path(args.base_dir)
     config = _load_config(args.config_dir)
+    formats = _parse_formats(args.formats)
     synthetic_dir = base / "data" / "synthetic_sources"
     normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
     matches_file = base / "data" / "matches" / "candidate_scores.csv"
@@ -416,16 +627,11 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         profile=args.profile,
         seed=args.seed,
         duplicate_rate=args.duplicate_rate,
-        formats=("csv", "parquet"),
+        formats=formats,
     )
     normalized_rows = _write_normalized_output(
         normalized_file,
-        _read_rows(
-            (
-                synthetic_dir / "person_source_a.csv",
-                synthetic_dir / "person_source_b.csv",
-            )
-        ),
+        _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
         config,
     )
     match_rows, _ = _write_match_output(matches_file, normalized_rows, config)
@@ -465,12 +671,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--input",
         action="append",
         default=[],
-        help="Path to a source CSV file. Repeat to normalize multiple explicit inputs.",
+        help=(
+            "Path to a source CSV or Parquet file. Repeat to normalize multiple explicit inputs."
+        ),
     )
     normalize_parser.add_argument(
         "--input-dir",
         default="data/synthetic_sources",
-        help="Directory to scan for person_source_*.csv files when --input is not provided.",
+        help=(
+            "Directory to scan for person_source_*.csv files, or person_source_*.parquet "
+            "when CSV files are absent, if --input is not provided."
+        ),
     )
     normalize_parser.add_argument(
         "--output",
@@ -485,15 +696,64 @@ def build_parser() -> argparse.ArgumentParser:
     match_parser.add_argument("--config-dir", default=None)
     match_parser.set_defaults(func=_cmd_match)
 
+    cluster_parser = subparsers.add_parser("cluster", help="Build entity clusters from accepted links.")
+    cluster_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
+    cluster_parser.add_argument("--output", default="data/matches/entity_clusters.csv")
+    cluster_parser.add_argument(
+        "--matches",
+        default=None,
+        help="Path to candidate_scores.csv. Defaults relative to --input.",
+    )
+    cluster_parser.set_defaults(func=_cmd_cluster)
+
+    review_queue_parser = subparsers.add_parser(
+        "review-queue",
+        help="Build the manual review queue from candidate scores.",
+    )
+    review_queue_parser.add_argument("--input", default="data/matches/candidate_scores.csv")
+    review_queue_parser.add_argument(
+        "--output",
+        default="data/review_queue/manual_review_queue.csv",
+    )
+    review_queue_parser.set_defaults(func=_cmd_review_queue)
+
     golden_parser = subparsers.add_parser("golden", help="Build golden records.")
     golden_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
     golden_parser.add_argument("--output", default="data/golden/golden_person_records.csv")
+    golden_parser.add_argument(
+        "--clusters",
+        default=None,
+        help=(
+            "Path to entity_clusters.csv when the input rows do not already include cluster_id. "
+            "Defaults to the matching artifact derived from --input."
+        ),
+    )
     golden_parser.add_argument("--config-dir", default=None)
     golden_parser.set_defaults(func=_cmd_golden)
 
     report_parser = subparsers.add_parser("report", help="Produce run report.")
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
     report_parser.add_argument("--output", default="data/exceptions/run_report.md")
+    report_parser.add_argument(
+        "--matches",
+        default=None,
+        help="Path to candidate_scores.csv. Defaults relative to --input.",
+    )
+    report_parser.add_argument(
+        "--clusters",
+        default=None,
+        help="Path to entity_clusters.csv. Defaults relative to --input.",
+    )
+    report_parser.add_argument(
+        "--golden-file",
+        default=None,
+        help="Path to golden_person_records.csv. Defaults relative to --input.",
+    )
+    report_parser.add_argument(
+        "--review-queue",
+        default=None,
+        help="Path to manual_review_queue.csv. Defaults relative to --input.",
+    )
     report_parser.set_defaults(func=_cmd_report)
 
     run_all_parser = subparsers.add_parser("run-all", help="Run all scaffold stages in sequence.")
@@ -501,6 +761,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--profile", default="small", choices=["small", "medium", "large"])
     run_all_parser.add_argument("--seed", default=42, type=int)
     run_all_parser.add_argument("--duplicate-rate", default=None, type=float)
+    run_all_parser.add_argument("--formats", default="csv,parquet")
     run_all_parser.add_argument("--config-dir", default=None)
     run_all_parser.set_defaults(func=_cmd_run_all)
 

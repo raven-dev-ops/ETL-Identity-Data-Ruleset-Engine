@@ -1,7 +1,7 @@
 # Project Structure Outline
 
 Date prepared: 2026-03-12
-Last updated: 2026-03-12
+Last updated: 2026-03-13
 
 ## Objective
 
@@ -9,12 +9,14 @@ Define and track the repository structure for implementing the ETL Identity Data
 
 ## Current Status
 
-`M1` scaffold is implemented in-repo:
+`M1` through `M6` are implemented in-repo and `v0.1.0` has shipped.
+Post-release hardening and release-follow-up planning are now tracked
+separately.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
 - configs in `config/`
-- docs placeholders in `docs/`
+- implementation docs in `docs/`
 - issue templates and CI workflows in `.github/`
 - governance docs at repo root
 
@@ -52,15 +54,26 @@ ETL-Identity-Data-Ruleset-Engine/
     evaluation-and-metrics.md
     matching-and-thresholds.md
     normalization.md
+    output-contracts.md
+    release-process.md
     standards-mapping.md
     survivorship.md
   planning/
     github-issues-backlog.md
+    post-v0.1.0-github-issues-backlog.md
     project-structure-outline.md
+    remaining-work-task-list.md
   scripts/
+    bootstrap_venv.ps1
+    bootstrap_venv.sh
+    create_github_backlog.py
     create_github_backlog.ps1
+    package_release_sample.py
+    run_checks.ps1
+    run_checks.sh
     run_pipeline.ps1
     run_pipeline.py
+    run_pipeline.sh
   src/
     etl_identity_engine/
       cli.py
@@ -71,11 +84,20 @@ ETL-Identity-Data-Ruleset-Engine/
       quality/
       survivorship/
   tests/
+    conftest.py
     test_generate.py
+    test_io_read.py
     test_matching.py
     test_normalize.py
+    test_output_contracts.py
+    test_package_release_sample.py
     test_pipeline_e2e.py
+    test_quality.py
+    test_runtime_config.py
     test_survivorship.py
+    test_create_github_backlog.py
+    test_github_issue_templates.py
+    test_verify_github_issue_metadata.py
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
   LICENSE
@@ -85,14 +107,14 @@ ETL-Identity-Data-Ruleset-Engine/
   SECURITY.md
 ```
 
-## Next Structure Expansion (M2+)
+## Next Structure Expansion
 
 The following are planned to deepen implementation layers:
 
-- richer source schemas and synthetic conflict recipes
-- normalization, matching, and survivorship rule files with versioning
-- formal output schemas for `normalized`, `matches`, `golden`, and review queues
-- additional docs for threshold tuning and runbook operations
+- richer normalization and matching strategies beyond the current
+  prototype heuristics
+- operational workflow support beyond file-based manual review handoff
+- post-release planning and tracker synchronization maintenance
 
 ## Build Order
 
@@ -100,23 +122,10 @@ The following are planned to deepen implementation layers:
 
 - scaffold, governance, CI, templates, CLI baseline
 
-## Phase 2 (`M2`)
+## Post-Release Focus
 
-- synthetic generator enhancements and deterministic conflict injection
-
-## Phase 3 (`M3`)
-
-- normalization orchestration and DQ exception paths
-
-## Phase 4 (`M4`)
-
-- candidate generation, scoring, thresholding, clustering
-
-## Phase 5 (`M5`)
-
-- survivorship rules, provenance, crosswalk outputs
-
-## Phase 6 (`M6`)
-
-- metrics, docs hardening, release packaging
+- cut and publish the `v0.1.1` patch release with the packaged sample
+  bundle
+- tracker and backlog maintenance
+- prototype-to-operations hardening for stage composability and runbooks
 

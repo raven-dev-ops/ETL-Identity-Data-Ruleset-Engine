@@ -85,3 +85,108 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     assert summary["duplicate_reduction"]["records_consolidated"] == len(normalized_rows) - len(golden_rows)
     if review_queue_rows:
         assert {"reason_codes", "top_contributing_match_signals"} <= set(review_queue_rows[0])
+
+
+def test_standalone_golden_and_report_reuse_pipeline_artifacts(tmp_path: Path) -> None:
+    assert main(["run-all", "--base-dir", str(tmp_path), "--profile", "small", "--seed", "42"]) == 0
+
+    normalized_file = tmp_path / "data" / "normalized" / "normalized_person_records.csv"
+    matches_file = tmp_path / "data" / "matches" / "candidate_scores.csv"
+    clusters_file = tmp_path / "data" / "matches" / "entity_clusters.csv"
+    rerun_clusters_file = tmp_path / "data" / "matches" / "entity_clusters_rerun.csv"
+    rerun_review_queue_file = tmp_path / "data" / "review_queue" / "manual_review_queue_rerun.csv"
+    rerun_golden_file = tmp_path / "data" / "golden" / "golden_person_records_rerun.csv"
+    rerun_report_file = tmp_path / "data" / "exceptions" / "run_report_rerun.md"
+    rerun_summary_file = tmp_path / "data" / "exceptions" / "run_summary.json"
+
+    original_cluster_rows = _read_csv_rows(clusters_file)
+    original_review_queue_rows = _read_csv_rows(tmp_path / "data" / "review_queue" / "manual_review_queue.csv")
+    original_golden_rows = _read_csv_rows(tmp_path / "data" / "golden" / "golden_person_records.csv")
+    original_summary = json.loads((tmp_path / "data" / "exceptions" / "run_summary.json").read_text(encoding="utf-8"))
+
+    assert (
+        main(
+            [
+                "cluster",
+                "--input",
+                str(normalized_file),
+                "--matches",
+                str(matches_file),
+                "--output",
+                str(rerun_clusters_file),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "review-queue",
+                "--input",
+                str(matches_file),
+                "--output",
+                str(rerun_review_queue_file),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "golden",
+                "--input",
+                str(normalized_file),
+                "--clusters",
+                str(rerun_clusters_file),
+                "--output",
+                str(rerun_golden_file),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "report",
+                "--input",
+                str(normalized_file),
+                "--output",
+                str(rerun_report_file),
+            ]
+        )
+        == 0
+    )
+
+    rerun_cluster_rows = _read_csv_rows(rerun_clusters_file)
+    rerun_review_queue_rows = _read_csv_rows(rerun_review_queue_file)
+    rerun_golden_rows = _read_csv_rows(rerun_golden_file)
+    rerun_summary = json.loads(rerun_summary_file.read_text(encoding="utf-8"))
+
+    assert rerun_cluster_rows == original_cluster_rows
+    assert rerun_review_queue_rows == original_review_queue_rows
+    assert rerun_golden_rows == original_golden_rows
+    assert rerun_summary == original_summary
+
+
+def test_run_all_supports_parquet_only_generation_inputs(tmp_path: Path) -> None:
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(tmp_path),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--formats",
+                "parquet",
+            ]
+        )
+        == 0
+    )
+
+    assert (tmp_path / "data" / "synthetic_sources" / "person_source_a.parquet").exists()
+    assert not (tmp_path / "data" / "synthetic_sources" / "person_source_a.csv").exists()
+    assert (tmp_path / "data" / "normalized" / "normalized_person_records.csv").exists()
+    assert (tmp_path / "data" / "golden" / "golden_person_records.csv").exists()

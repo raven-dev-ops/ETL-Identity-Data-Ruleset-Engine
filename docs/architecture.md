@@ -11,20 +11,31 @@ artifacts.
    - Writes synthetic source datasets under `data/synthetic_sources/`
    - Supports CSV and Parquet outputs
 2. `normalize`
-   - Reads `person_source_*.csv` inputs
+   - Reads `person_source_*.csv` inputs, or `person_source_*.parquet`
+     when CSV inputs are absent
    - Writes `data/normalized/normalized_person_records.csv`
 3. `match`
    - Reads normalized records
    - Writes `data/matches/candidate_scores.csv`
    - Writes `data/matches/blocking_metrics.csv`
-4. `golden`
-   - Builds golden records from normalized or clustered records
+4. `cluster`
+   - Reads normalized records plus candidate scores
+   - Writes `data/matches/entity_clusters.csv`
+5. `review-queue`
+   - Reads candidate scores
+   - Writes `data/review_queue/manual_review_queue.csv`
+6. `golden`
+   - Builds golden records from normalized records plus cluster
+     assignments, or from already-clustered full rows
    - Writes `data/golden/golden_person_records.csv`
-5. `report`
-   - Builds markdown and JSON quality summaries
+7. `report`
+   - Builds markdown and JSON quality summaries from normalized records
+     plus match, cluster, golden, and review-queue artifacts
    - Writes under `data/exceptions/`
-6. `run-all`
+8. `run-all`
    - Executes the end-to-end prototype path in one command
+   - Accepts the same synthetic output formats as `generate` and chooses
+     the generated normalization inputs accordingly
 
 ## Config Surfaces
 
