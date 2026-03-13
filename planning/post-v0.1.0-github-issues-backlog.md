@@ -6,6 +6,7 @@ and `v0.1.0` release. It is intentionally separate from
 for the bootstrap delivery.
 
 Date prepared: 2026-03-13
+Last synced to GitHub: 2026-03-13
 
 ## Milestones
 
@@ -56,7 +57,7 @@ Date prepared: 2026-03-13
 
 ### 47) Generalize release-process docs for patch and hotfix releases
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.1.1`
 - Labels: `type:docs`, `area:repo`, `priority:p1`
 - Depends on: none
@@ -95,7 +96,7 @@ Date prepared: 2026-03-13
 
 ### 49) Add CI validation for backlog sync integrity and title-normalization collisions
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.2.0`
 - Labels: `type:chore`, `area:ci`, `priority:p1`
 - Depends on: none
@@ -115,7 +116,7 @@ Date prepared: 2026-03-13
 
 ### 50) Close completed bootstrap milestones and establish active post-release milestones
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.2.0`
 - Labels: `type:chore`, `area:repo`, `priority:p1`
 - Depends on: none
@@ -134,7 +135,7 @@ Date prepared: 2026-03-13
 
 ### 51) Document post-release backlog operating model and source of truth
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.2.0`
 - Labels: `type:docs`, `area:repo`, `priority:p2`
 - Depends on: #49, #50
@@ -166,3 +167,13 @@ Create these 2 epics first, then link child issues:
 3. Create the 2 epics.
 4. Create all child issues and assign them to epics.
 5. Execute `v0.1.1` before `v0.2.0`.
+
+## Tracker Status Snapshot
+
+Snapshot date: 2026-03-13
+
+- Open issues in this post-release set: `#44`, `#46`, `#48`
+- Closed issues in this post-release set: `#45`, `#47`, `#49`, `#50`, `#51`
+- Bootstrap milestones `M1` through `M6` were closed in GitHub after the
+  bootstrap backlog was fully executed.
+- Active milestones remain `v0.1.1` and `v0.2.0`.
