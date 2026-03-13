@@ -530,12 +530,23 @@ def get_parent_issue_number(gh_exe: str, repo: str, issue_number: int) -> int | 
     )
 
 
+def get_issue_database_id(gh_exe: str, repo: str, issue_number: int) -> int:
+    payload = json.loads(
+        invoke_gh(
+            gh_exe,
+            "api",
+            f"repos/{repo}/issues/{issue_number}",
+        )
+    )
+    return int(payload["id"])
+
+
 def try_set_sub_issue_link(
     gh_exe: str,
     repo: str,
     *,
     parent_issue_number: int,
-    child_issue_number: int,
+    child_issue_id: int,
 ) -> bool:
     completed = subprocess.run(
         [
@@ -545,7 +556,7 @@ def try_set_sub_issue_link(
             "--method",
             "POST",
             "-F",
-            f"sub_issue_id={child_issue_number}",
+            f"sub_issue_id={child_issue_id}",
         ],
         capture_output=True,
         text=True,
@@ -559,7 +570,7 @@ def try_set_sub_issue_link(
         return False
     raise SystemExit(
         f"gh command failed ({completed.returncode}): "
-        f"api repos/{repo}/issues/{parent_issue_number}/sub_issues --method POST -F sub_issue_id={child_issue_number}\n"
+        f"api repos/{repo}/issues/{parent_issue_number}/sub_issues --method POST -F sub_issue_id={child_issue_id}\n"
         f"{detail}"
     )
 
@@ -569,7 +580,7 @@ def remove_sub_issue_link(
     repo: str,
     *,
     parent_issue_number: int,
-    child_issue_number: int,
+    child_issue_id: int,
 ) -> bool:
     completed = subprocess.run(
         [
@@ -579,7 +590,7 @@ def remove_sub_issue_link(
             "--method",
             "DELETE",
             "-F",
-            f"sub_issue_id={child_issue_number}",
+            f"sub_issue_id={child_issue_id}",
         ],
         capture_output=True,
         text=True,
@@ -593,7 +604,7 @@ def remove_sub_issue_link(
         return False
     raise SystemExit(
         f"gh command failed ({completed.returncode}): "
-        f"api repos/{repo}/issues/{parent_issue_number}/sub_issue --method DELETE -F sub_issue_id={child_issue_number}\n"
+        f"api repos/{repo}/issues/{parent_issue_number}/sub_issue --method DELETE -F sub_issue_id={child_issue_id}\n"
         f"{detail}"
     )
 
@@ -616,11 +627,12 @@ def sync_sub_issue_links(
         parent_issue_number = epic_issue_number_map.get(issue.milestone)
         if issue_number is None or parent_issue_number is None:
             continue
+        issue_id = get_issue_database_id(gh_exe, repo, issue_number)
 
         if dry_run:
             print(
                 f"[DRY-RUN] gh api repos/{repo}/issues/{parent_issue_number}/sub_issues "
-                f"--method POST -f sub_issue_id={issue_number or '<pending>'}"
+                f"--method POST -f sub_issue_id={issue_id or '<pending>'}"
             )
             continue
 
@@ -633,7 +645,7 @@ def sync_sub_issue_links(
                 gh_exe,
                 repo,
                 parent_issue_number=current_parent_issue_number,
-                child_issue_number=issue_number,
+                child_issue_id=issue_id,
             )
             if not removed:
                 print("native sub-issue API unavailable; skipping native hierarchy sync")
@@ -645,7 +657,7 @@ def sync_sub_issue_links(
             gh_exe,
             repo,
             parent_issue_number=parent_issue_number,
-            child_issue_number=issue_number,
+            child_issue_id=issue_id,
         )
         if not added:
             print("native sub-issue API unavailable; skipping native hierarchy sync")
