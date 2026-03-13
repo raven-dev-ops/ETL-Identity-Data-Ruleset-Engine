@@ -13,7 +13,8 @@ Link the issue, epic, or backlog item this PR addresses.
 
 ## Validation
 
-- [ ] `./scripts/run_checks.ps1` or `./scripts/run_checks.sh`
+- [ ] Platform-appropriate local checks passed (`run_checks.ps1` on Windows or `run_checks.sh` where `bash` is available)
+- [ ] `CI / test-linux` and `CI / test-windows` should pass
 - [ ] `Issue Metadata` workflow should pass after merge if `.github/ISSUE_TEMPLATE/**` changed
 - [ ] manual verification (if applicable)
 

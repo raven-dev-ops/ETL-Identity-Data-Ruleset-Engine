@@ -1,6 +1,8 @@
 import csv
 from pathlib import Path
 
+import pytest
+
 from etl_identity_engine.cli import main
 from etl_identity_engine.runtime_config import load_pipeline_config
 
@@ -23,8 +25,7 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def test_load_pipeline_config_reads_custom_directory(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
+def _write_valid_config(config_dir: Path, *, thresholds: str | None = None) -> None:
     _write_text(
         config_dir / "normalization_rules.yml",
         """
@@ -53,12 +54,16 @@ blocking_passes:
         config_dir / "matching_rules.yml",
         """
 weights:
-  canonical_name: 1.0
+  canonical_name: 0.5
+  canonical_dob: 0.3
+  canonical_phone: 0.1
+  canonical_address: 0.1
 """,
     )
     _write_text(
         config_dir / "thresholds.yml",
-        """
+        thresholds
+        or """
 thresholds:
   auto_merge: 0.95
   manual_review_min: 0.5
@@ -74,8 +79,21 @@ source_priority:
 field_rules:
   first_name:
     strategy: source_priority_then_non_null
+  last_name:
+    strategy: source_priority_then_non_null
+  dob:
+    strategy: source_priority_then_non_null
+  address:
+    strategy: source_priority_then_non_null
+  phone:
+    strategy: source_priority_then_non_null
 """,
     )
+
+
+def test_load_pipeline_config_reads_custom_directory(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
 
     config = load_pipeline_config(config_dir)
 
@@ -83,7 +101,12 @@ field_rules:
     assert config.normalization.name.uppercase is False
     assert config.normalization.date.output_format == "%Y/%m/%d"
     assert [blocking_pass.fields for blocking_pass in config.matching.blocking_passes] == [("birth_year",)]
-    assert config.matching.weights == {"canonical_name": 1.0}
+    assert config.matching.weights == {
+        "canonical_name": 0.5,
+        "canonical_dob": 0.3,
+        "canonical_phone": 0.1,
+        "canonical_address": 0.1,
+    }
     assert config.survivorship.source_priority == ("source_b", "source_a")
 
 
@@ -119,6 +142,9 @@ blocking_passes:
         """
 weights:
   canonical_name: 1.0
+  canonical_dob: 0.0
+  canonical_phone: 0.0
+  canonical_address: 0.0
 """,
     )
     _write_text(
@@ -138,6 +164,14 @@ source_priority:
   - source_a
 field_rules:
   first_name:
+    strategy: source_priority_then_non_null
+  last_name:
+    strategy: source_priority_then_non_null
+  dob:
+    strategy: source_priority_then_non_null
+  address:
+    strategy: source_priority_then_non_null
+  phone:
     strategy: source_priority_then_non_null
 """,
     )
@@ -216,3 +250,150 @@ field_rules:
     assert match_rows[0]["score"] == "1.0"
     assert match_rows[0]["decision"] == "auto_merge"
     assert golden_rows[0]["first_name"] == "JONATHAN"
+
+
+def test_load_pipeline_config_rejects_missing_required_sections(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "thresholds.yml",
+        """
+not_thresholds:
+  auto_merge: 0.95
+""",
+    )
+
+    with pytest.raises(ValueError, match=r"thresholds\.yml: top-level config contains unsupported keys: not_thresholds"):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_unsupported_blocking_fields(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "blocking_rules.yml",
+        """
+blocking_passes:
+  - name: bad_block
+    fields:
+      - nickname
+""",
+    )
+
+    with pytest.raises(ValueError, match=r"blocking_rules\.yml: blocking_passes\[0\]\.fields contains unsupported values: nickname"):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_inconsistent_thresholds(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(
+        config_dir,
+        thresholds="""
+thresholds:
+  auto_merge: 1.1
+  manual_review_min: 0.7
+  no_match_max: 0.7
+""",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"thresholds\.yml: thresholds\.no_match_max must be less than thresholds\.manual_review_min",
+    ):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_auto_merge_threshold_above_total_weight(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(
+        config_dir,
+        thresholds="""
+thresholds:
+  auto_merge: 1.1
+  manual_review_min: 0.7
+  no_match_max: 0.6
+""",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"thresholds\.yml: thresholds\.auto_merge cannot exceed the total configured match weight",
+    ):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_missing_weight_fields(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "matching_rules.yml",
+        """
+weights:
+  canonical_name: 1.0
+  canonical_dob: 0.0
+  canonical_phone: 0.0
+""",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"matching_rules\.yml: weights is missing required fields: canonical_address",
+    ):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_invalid_survivorship_rules(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "survivorship_rules.yml",
+        """
+source_priority:
+  - source_a
+  - source_a
+field_rules:
+  first_name:
+    strategy: source_priority_then_non_null
+  last_name:
+    strategy: source_priority_then_non_null
+  dob:
+    strategy: source_priority_then_non_null
+  address:
+    strategy: source_priority_then_non_null
+  phone:
+    strategy: newest_value
+""",
+    )
+
+    with pytest.raises(ValueError, match=r"survivorship_rules\.yml: source_priority contains duplicate source names"):
+        load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_rejects_unsupported_survivorship_strategy(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "survivorship_rules.yml",
+        """
+source_priority:
+  - source_a
+  - source_b
+field_rules:
+  first_name:
+    strategy: source_priority_then_non_null
+  last_name:
+    strategy: source_priority_then_non_null
+  dob:
+    strategy: source_priority_then_non_null
+  address:
+    strategy: source_priority_then_non_null
+  phone:
+    strategy: newest_value
+""",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"survivorship_rules\.yml: field_rules\.phone\.strategy must be one of: source_priority_then_non_null",
+    ):
+        load_pipeline_config(config_dir)

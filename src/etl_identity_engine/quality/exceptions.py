@@ -77,6 +77,59 @@ def extract_exception_rows(rows: list[dict[str, str]]) -> dict[str, list[dict[st
     }
 
 
+def _build_completeness_metrics(rows: list[dict[str, str]]) -> dict[str, int]:
+    raw_name_present = sum(
+        1
+        for row in rows
+        if any(part.strip() for part in (row.get("first_name", ""), row.get("last_name", "")))
+    )
+    return {
+        "raw_name_present": raw_name_present,
+        "canonical_name_present": sum(1 for row in rows if row.get("canonical_name", "").strip()),
+        "raw_dob_present": sum(1 for row in rows if row.get("dob", "").strip()),
+        "canonical_dob_present": sum(1 for row in rows if row.get("canonical_dob", "").strip()),
+        "raw_phone_present": sum(1 for row in rows if row.get("phone", "").strip()),
+        "canonical_phone_present": sum(1 for row in rows if row.get("canonical_phone", "").strip()),
+    }
+
+
+def _build_before_after_completeness(completeness: dict[str, int]) -> dict[str, dict[str, int]]:
+    return {
+        "name": {
+            "before": completeness["raw_name_present"],
+            "after": completeness["canonical_name_present"],
+            "delta": completeness["canonical_name_present"] - completeness["raw_name_present"],
+        },
+        "dob": {
+            "before": completeness["raw_dob_present"],
+            "after": completeness["canonical_dob_present"],
+            "delta": completeness["canonical_dob_present"] - completeness["raw_dob_present"],
+        },
+        "phone": {
+            "before": completeness["raw_phone_present"],
+            "after": completeness["canonical_phone_present"],
+            "delta": completeness["canonical_phone_present"] - completeness["raw_phone_present"],
+        },
+    }
+
+
+def _build_duplicate_reduction_metrics(
+    *,
+    total_records: int,
+    cluster_count: int,
+    golden_record_count: int,
+) -> dict[str, int | float]:
+    after_record_count = golden_record_count or cluster_count or total_records
+    after_record_count = min(after_record_count, total_records) if total_records else 0
+    records_consolidated = max(total_records - after_record_count, 0)
+    return {
+        "before_record_count": total_records,
+        "after_record_count": after_record_count,
+        "records_consolidated": records_consolidated,
+        "reduction_ratio": round(records_consolidated / total_records, 4) if total_records else 0.0,
+    }
+
+
 def build_run_summary(
     rows: list[dict[str, str]],
     *,
@@ -89,10 +142,12 @@ def build_run_summary(
 ) -> dict[str, object]:
     exceptions = exception_rows or extract_exception_rows(rows)
     decisions = decision_counts or {}
-    raw_name_present = sum(
-        1
-        for row in rows
-        if any(part.strip() for part in (row.get("first_name", ""), row.get("last_name", "")))
+    completeness = _build_completeness_metrics(rows)
+    before_after_completeness = _build_before_after_completeness(completeness)
+    duplicate_reduction = _build_duplicate_reduction_metrics(
+        total_records=len(rows),
+        cluster_count=cluster_count,
+        golden_record_count=golden_record_count,
     )
 
     return {
@@ -110,16 +165,9 @@ def build_run_summary(
         "cluster_count": cluster_count,
         "golden_record_count": golden_record_count,
         "review_queue_count": review_queue_count,
-        "completeness": {
-            "raw_name_present": raw_name_present,
-            "canonical_name_present": sum(1 for row in rows if row.get("canonical_name", "").strip()),
-            "raw_dob_present": sum(1 for row in rows if row.get("dob", "").strip()),
-            "canonical_dob_present": sum(1 for row in rows if row.get("canonical_dob", "").strip()),
-            "raw_phone_present": sum(1 for row in rows if row.get("phone", "").strip()),
-            "canonical_phone_present": sum(
-                1 for row in rows if row.get("canonical_phone", "").strip()
-            ),
-        },
+        "completeness": completeness,
+        "before_after_completeness": before_after_completeness,
+        "duplicate_reduction": duplicate_reduction,
     }
 
 
@@ -127,6 +175,8 @@ def build_run_report_markdown(input_path: str, summary: dict[str, object]) -> st
     exception_counts = summary.get("exception_counts", {})
     decision_counts = summary.get("decision_counts", {})
     completeness = summary.get("completeness", {})
+    before_after_completeness = summary.get("before_after_completeness", {})
+    duplicate_reduction = summary.get("duplicate_reduction", {})
     missing_field_counts = summary.get("missing_field_counts", {})
 
     lines = [
@@ -150,8 +200,29 @@ def build_run_report_markdown(input_path: str, summary: dict[str, object]) -> st
         f"- `raw_phone_present`: `{completeness.get('raw_phone_present', 0)}`",
         f"- `canonical_phone_present`: `{completeness.get('canonical_phone_present', 0)}`",
         "",
-        "## Missing Field Counts",
+        "## Before/After Completeness",
     ]
+
+    for field_name in ("name", "dob", "phone"):
+        field_metrics = before_after_completeness.get(field_name, {})
+        lines.append(
+            f"- `{field_name}`: before=`{field_metrics.get('before', 0)}`, "
+            f"after=`{field_metrics.get('after', 0)}`, "
+            f"delta=`{field_metrics.get('delta', 0)}`"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Duplicate Reduction",
+            f"- `before_record_count`: `{duplicate_reduction.get('before_record_count', 0)}`",
+            f"- `after_record_count`: `{duplicate_reduction.get('after_record_count', 0)}`",
+            f"- `records_consolidated`: `{duplicate_reduction.get('records_consolidated', 0)}`",
+            f"- `reduction_ratio`: `{duplicate_reduction.get('reduction_ratio', 0.0)}`",
+            "",
+        "## Missing Field Counts",
+        ]
+    )
 
     for key, value in sorted(missing_field_counts.items()):
         lines.append(f"- `{key}`: `{value}`")

@@ -361,17 +361,14 @@ def sync_epic_bodies(
 ) -> None:
     for epic in epics:
         issue_number = existing_issue_map.get(epic.title)
-        body = build_issue_body(epic)
         if dry_run:
             print(
-                f"[DRY-RUN] gh issue edit --repo {repo} "
-                f"{issue_number or '<pending>'} --body <epic>"
+                f"[DRY-RUN] epic body sync skipped for {epic.title}"
             )
             continue
         if issue_number is None:
             continue
-        invoke_gh(gh_exe, "issue", "edit", str(issue_number), "--repo", repo, "--body", body)
-        print(f"issue body synced: {epic.title}")
+        print(f"epic body preserved: {epic.title}")
 
 
 def sync_issue_bodies(

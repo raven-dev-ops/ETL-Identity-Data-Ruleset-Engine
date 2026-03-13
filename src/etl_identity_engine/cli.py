@@ -11,13 +11,23 @@ from typing import Sequence
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
 from etl_identity_engine.io.read import read_csv_dicts
 from etl_identity_engine.io.write import write_csv_dicts, write_markdown
-from etl_identity_engine.matching.blocking import generate_candidates
+from etl_identity_engine.matching.blocking import BlockingPassMetric, generate_candidates_with_metrics
 from etl_identity_engine.matching.clustering import assign_cluster_ids
 from etl_identity_engine.matching.scoring import classify_score, explain_pair_score
 from etl_identity_engine.normalize.addresses import normalize_address
 from etl_identity_engine.normalize.dates import normalize_date
 from etl_identity_engine.normalize.names import normalize_name
 from etl_identity_engine.normalize.phones import normalize_phone
+from etl_identity_engine.output_contracts import (
+    BLOCKING_METRICS_HEADERS,
+    CROSSWALK_HEADERS,
+    ENTITY_CLUSTER_HEADERS,
+    EXCEPTION_HEADERS,
+    GOLDEN_HEADERS,
+    MANUAL_REVIEW_HEADERS,
+    MATCH_SCORE_HEADERS,
+    NORMALIZED_HEADERS,
+)
 from etl_identity_engine.quality.exceptions import (
     build_run_report_markdown,
     build_run_summary,
@@ -68,13 +78,29 @@ def _read_rows(paths: Sequence[Path]) -> list[dict[str, str]]:
     return rows
 
 
+def _discover_normalize_input_paths(input_dir: Path) -> tuple[Path, ...]:
+    input_paths = tuple(sorted(input_dir.glob("person_source_*.csv")))
+    if not input_paths:
+        raise FileNotFoundError(
+            f"No normalization input files found in {input_dir} matching person_source_*.csv"
+        )
+    return input_paths
+
+
+def _resolve_normalize_input_paths(args: argparse.Namespace) -> tuple[Path, ...]:
+    explicit_inputs = tuple(Path(path) for path in (args.input or []))
+    if explicit_inputs:
+        return explicit_inputs
+    return _discover_normalize_input_paths(Path(args.input_dir))
+
+
 def _write_normalized_output(
     output_file: Path,
     rows: list[dict[str, str]],
     config: PipelineConfig,
 ) -> list[dict[str, str]]:
     normalized_rows = _normalize_rows(rows, config)
-    write_csv_dicts(output_file, normalized_rows)
+    write_csv_dicts(output_file, normalized_rows, fieldnames=NORMALIZED_HEADERS)
     print(f"normalized rows written: {output_file}")
     return normalized_rows
 
@@ -82,10 +108,13 @@ def _write_normalized_output(
 def _build_match_rows(
     rows: list[dict[str, str]],
     config: PipelineConfig,
-) -> list[dict[str, str | float]]:
-    pairs = generate_candidates(
+) -> tuple[list[dict[str, str | float]], list[BlockingPassMetric]]:
+    blocking_passes = [blocking_pass.fields for blocking_pass in config.matching.blocking_passes]
+    blocking_pass_names = [blocking_pass.name for blocking_pass in config.matching.blocking_passes]
+    pairs, blocking_metrics = generate_candidates_with_metrics(
         rows,
-        blocking_passes=[blocking_pass.fields for blocking_pass in config.matching.blocking_passes],
+        blocking_passes=blocking_passes,
+        pass_names=blocking_pass_names,
     )
     scored_rows: list[dict[str, str | float]] = []
     for left, right in pairs:
@@ -105,18 +134,47 @@ def _build_match_rows(
                 "reason_trace": ";".join(detail.reason_trace),
             }
         )
-    return scored_rows
+    return scored_rows, blocking_metrics
+
+
+def _build_blocking_metrics_rows(
+    blocking_metrics: list[BlockingPassMetric],
+    *,
+    overall_candidate_pair_count: int,
+) -> list[dict[str, str | int]]:
+    return [
+        {
+            "pass_name": metric.pass_name,
+            "fields": ";".join(metric.fields),
+            "raw_candidate_pair_count": metric.raw_candidate_pair_count,
+            "new_candidate_pair_count": metric.new_candidate_pair_count,
+            "cumulative_candidate_pair_count": metric.cumulative_candidate_pair_count,
+            "overall_deduplicated_candidate_pair_count": overall_candidate_pair_count,
+        }
+        for metric in blocking_metrics
+    ]
 
 
 def _write_match_output(
     output_file: Path,
     rows: list[dict[str, str]],
     config: PipelineConfig,
-) -> list[dict[str, str | float]]:
-    scored_rows = _build_match_rows(rows, config)
-    write_csv_dicts(output_file, scored_rows)
+) -> tuple[list[dict[str, str | float]], list[dict[str, str | int]]]:
+    scored_rows, blocking_metrics = _build_match_rows(rows, config)
+    blocking_metrics_rows = _build_blocking_metrics_rows(
+        blocking_metrics,
+        overall_candidate_pair_count=len(scored_rows),
+    )
+    write_csv_dicts(output_file, scored_rows, fieldnames=MATCH_SCORE_HEADERS)
+    blocking_metrics_file = output_file.with_name("blocking_metrics.csv")
+    write_csv_dicts(
+        blocking_metrics_file,
+        blocking_metrics_rows,
+        fieldnames=BLOCKING_METRICS_HEADERS,
+    )
     print(f"candidate scores written: {output_file}")
-    return scored_rows
+    print(f"blocking metrics written: {blocking_metrics_file}")
+    return scored_rows, blocking_metrics_rows
 
 
 def _build_clustered_rows(
@@ -164,7 +222,7 @@ def _write_cluster_output(
         }
         for row in sorted(clustered_rows, key=lambda row: row.get("source_record_id", ""))
     ]
-    write_csv_dicts(output_file, cluster_output_rows)
+    write_csv_dicts(output_file, cluster_output_rows, fieldnames=ENTITY_CLUSTER_HEADERS)
     print(f"cluster assignments written: {output_file}")
     return clustered_rows
 
@@ -203,7 +261,7 @@ def _write_manual_review_output(
     match_rows: list[dict[str, str | float]],
 ) -> list[dict[str, str | float]]:
     review_rows = _build_manual_review_rows(match_rows)
-    write_csv_dicts(output_file, review_rows)
+    write_csv_dicts(output_file, review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
     print(f"manual review queue written: {output_file}")
     return review_rows
 
@@ -218,7 +276,7 @@ def _write_golden_output(
         source_priority=config.survivorship.source_priority,
         field_rules=config.survivorship.field_rules,
     )
-    write_csv_dicts(output_file, golden_records)
+    write_csv_dicts(output_file, golden_records, fieldnames=GOLDEN_HEADERS)
     print(f"golden output written: {output_file}")
     return golden_records
 
@@ -250,7 +308,7 @@ def _write_crosswalk_output(
     golden_rows: list[dict[str, str]],
 ) -> list[dict[str, str]]:
     crosswalk_rows = _build_crosswalk_rows(rows, golden_rows)
-    write_csv_dicts(output_file, crosswalk_rows)
+    write_csv_dicts(output_file, crosswalk_rows, fieldnames=CROSSWALK_HEADERS)
     print(f"crosswalk written: {output_file}")
     return crosswalk_rows
 
@@ -268,7 +326,11 @@ def _write_quality_outputs(
 ) -> dict[str, object]:
     exception_rows = extract_exception_rows(rows)
     for exception_type, records in exception_rows.items():
-        write_csv_dicts(output_file.parent / f"{exception_type}.csv", records)
+        write_csv_dicts(
+            output_file.parent / f"{exception_type}.csv",
+            records,
+            fieldnames=EXCEPTION_HEADERS,
+        )
 
     summary = build_run_summary(
         rows,
@@ -310,9 +372,12 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
 
 def _cmd_normalize(args: argparse.Namespace) -> None:
-    input_file = Path(args.input)
     output_file = Path(args.output)
-    _write_normalized_output(output_file, read_csv_dicts(input_file), _load_config(args.config_dir))
+    input_paths = _resolve_normalize_input_paths(args)
+    print(f"normalizing {len(input_paths)} input file(s)")
+    for path in input_paths:
+        print(f" - {path}")
+    _write_normalized_output(output_file, _read_rows(input_paths), _load_config(args.config_dir))
 
 
 def _cmd_match(args: argparse.Namespace) -> None:
@@ -363,7 +428,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         ),
         config,
     )
-    match_rows = _write_match_output(matches_file, normalized_rows, config)
+    match_rows, _ = _write_match_output(matches_file, normalized_rows, config)
     clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
     review_rows = _write_manual_review_output(review_queue_file, match_rows)
     golden_rows = _write_golden_output(golden_file, clustered_rows, config)
@@ -396,7 +461,17 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.set_defaults(func=_cmd_generate)
 
     normalize_parser = subparsers.add_parser("normalize", help="Normalize source records.")
-    normalize_parser.add_argument("--input", default="data/synthetic_sources/person_source_a.csv")
+    normalize_parser.add_argument(
+        "--input",
+        action="append",
+        default=[],
+        help="Path to a source CSV file. Repeat to normalize multiple explicit inputs.",
+    )
+    normalize_parser.add_argument(
+        "--input-dir",
+        default="data/synthetic_sources",
+        help="Directory to scan for person_source_*.csv files when --input is not provided.",
+    )
     normalize_parser.add_argument(
         "--output",
         default="data/normalized/normalized_person_records.csv",

@@ -34,6 +34,7 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
         tmp_path / "data" / "synthetic_sources" / "generation_summary.json",
         tmp_path / "data" / "normalized" / "normalized_person_records.csv",
         tmp_path / "data" / "matches" / "candidate_scores.csv",
+        tmp_path / "data" / "matches" / "blocking_metrics.csv",
         tmp_path / "data" / "matches" / "entity_clusters.csv",
         tmp_path / "data" / "golden" / "golden_person_records.csv",
         tmp_path / "data" / "golden" / "source_to_golden_crosswalk.csv",
@@ -49,6 +50,7 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
 
     normalized_rows = _read_csv_rows(tmp_path / "data" / "normalized" / "normalized_person_records.csv")
     match_rows = _read_csv_rows(tmp_path / "data" / "matches" / "candidate_scores.csv")
+    blocking_metrics_rows = _read_csv_rows(tmp_path / "data" / "matches" / "blocking_metrics.csv")
     cluster_rows = _read_csv_rows(tmp_path / "data" / "matches" / "entity_clusters.csv")
     golden_rows = _read_csv_rows(tmp_path / "data" / "golden" / "golden_person_records.csv")
     crosswalk_rows = _read_csv_rows(tmp_path / "data" / "golden" / "source_to_golden_crosswalk.csv")
@@ -57,8 +59,16 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
 
     assert len(normalized_rows) == 48
     assert match_rows
+    assert blocking_metrics_rows
     assert any(float(row["score"]) > 0.0 for row in match_rows)
     assert {"decision", "matched_fields", "reason_trace"} <= set(match_rows[0])
+    assert {
+        "pass_name",
+        "raw_candidate_pair_count",
+        "new_candidate_pair_count",
+        "overall_deduplicated_candidate_pair_count",
+    } <= set(blocking_metrics_rows[0])
+    assert int(blocking_metrics_rows[-1]["overall_deduplicated_candidate_pair_count"]) == len(match_rows)
     assert len(cluster_rows) == len(normalized_rows)
     assert len(crosswalk_rows) == len(normalized_rows)
     assert len(golden_rows) == len({row["cluster_id"] for row in cluster_rows})
@@ -70,5 +80,8 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     assert summary["cluster_count"] == len(golden_rows)
     assert summary["golden_record_count"] == len(golden_rows)
     assert summary["review_queue_count"] == len(review_queue_rows)
+    assert summary["before_after_completeness"]["name"]["after"] == summary["completeness"]["canonical_name_present"]
+    assert summary["duplicate_reduction"]["after_record_count"] == len(golden_rows)
+    assert summary["duplicate_reduction"]["records_consolidated"] == len(normalized_rows) - len(golden_rows)
     if review_queue_rows:
         assert {"reason_codes", "top_contributing_match_signals"} <= set(review_queue_rows[0])

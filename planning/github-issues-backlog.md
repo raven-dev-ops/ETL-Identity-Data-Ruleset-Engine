@@ -3,6 +3,7 @@
 This backlog is scoped for the full ETL Identity Data Ruleset Engine project and is organized for milestone-based delivery.
 
 Date prepared: 2026-03-12
+Last synced to GitHub: 2026-03-13
 
 ## Milestones
 
@@ -36,8 +37,9 @@ Date prepared: 2026-03-12
 
 ## M1: Project bootstrap and repo standards
 
-### 1) Bootstrap repository skeleton
+### 7) Bootstrap repository skeleton
 
+- Status: `closed`
 - Milestone: `M1`
 - Labels: `type:chore`, `area:repo`, `priority:p0`
 - Depends on: none
@@ -48,11 +50,12 @@ Date prepared: 2026-03-12
   - All target directories exist.
   - Repository tree matches `planning/project-structure-outline.md`.
 
-### 2) Add Python package scaffolding and CLI entrypoint
+### 8) Add Python package scaffolding and CLI entrypoint
 
+- Status: `closed`
 - Milestone: `M1`
 - Labels: `type:feature`, `area:repo`, `priority:p0`
-- Depends on: #1
+- Depends on: #7
 - Description:
   - Add package namespace `src/etl_identity_engine`.
   - Add `cli.py` with subcommands: `generate`, `normalize`, `match`, `golden`, `report`, `run-all`.
@@ -60,21 +63,27 @@ Date prepared: 2026-03-12
   - Running CLI help returns usage and commands.
   - Package imports successfully in tests.
 
-### 3) Add project governance files
+### 9) Link governance and safety files from README
 
+- Status: `closed`
 - Milestone: `M1`
 - Labels: `type:docs`, `area:repo`, `priority:p1`
-- Depends on: #1
+- Depends on: #7
 - Description:
-  - Add `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md`.
+  - Governance and safety files already exist in the repository.
+  - Remaining work is to make them directly discoverable from the main documentation surface.
+  - Update the README so governance, safety, and contribution paths are linked explicitly instead of only being mentioned in prose.
 - Acceptance criteria:
-  - Files exist and are linked from `README.md`.
+  - `README.md` links `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and `SAFETY.md`.
+  - The links appear in a dedicated documentation or governance section.
+  - The README distinguishes governance docs from planning artifacts and stage docs.
 
-### 4) Add GitHub issue forms and PR template
+### 10) Add GitHub issue forms and PR template
 
+- Status: `closed`
 - Milestone: `M1`
 - Labels: `type:chore`, `area:ci`, `priority:p1`
-- Depends on: #1
+- Depends on: #7
 - Description:
   - Create `.github/ISSUE_TEMPLATE/{bug,feature,epic,docs}.yml`.
   - Add `.github/PULL_REQUEST_TEMPLATE.md`.
@@ -82,22 +91,27 @@ Date prepared: 2026-03-12
   - GitHub detects issue templates in chooser.
   - PR template loads on new pull requests.
 
-### 5) Add CI workflow for tests and linting
+### 11) Document required checks and branch protection baseline
 
+- Status: `closed`
 - Milestone: `M1`
 - Labels: `type:chore`, `area:ci`, `priority:p1`
-- Depends on: #2
+- Depends on: #8
 - Description:
-  - Create GitHub Actions workflow for unit tests and lint checks.
+  - The repository already has CI and issue-metadata workflows.
+  - Remaining work is to define the expected merge gate for `main` and document which checks are required before release or merge.
+  - This issue is about repository operating policy, not creating the initial workflow from scratch.
 - Acceptance criteria:
-  - Workflow runs on push and pull request.
-  - Failing tests block merge.
+  - The required checks for `main` are documented in repo docs or the release checklist.
+  - The documentation names the workflows that must pass before merge.
+  - Any branch-protection or ruleset settings that cannot be stored in git are explicitly documented for maintainers.
 
-### 6) Add project-level task runner scripts
+### 12) Add project-level task runner scripts
 
+- Status: `closed`
 - Milestone: `M1`
 - Labels: `type:chore`, `area:repo`, `priority:p2`
-- Depends on: #2
+- Depends on: #8
 - Description:
   - Add `scripts/run_pipeline.ps1` and `scripts/run_pipeline.py`.
   - Support local end-to-end execution.
@@ -106,52 +120,57 @@ Date prepared: 2026-03-12
 
 ## M2: Synthetic data generation
 
-### 7) Define canonical data model
+### 13) Define canonical data model
 
+- Status: `closed`
 - Milestone: `M2`
 - Labels: `type:feature`, `area:generate`, `priority:p0`
-- Depends on: #2
+- Depends on: #8
 - Description:
   - Document person and incident entities, keys, and constraints in `docs/data-model.md`.
 - Acceptance criteria:
-  - Data model includes required/optional fields and key relationships.
+  - Data model includes required and optional fields plus key relationships.
 
-### 8) Implement synthetic source generator
+### 14) Implement synthetic source generator
 
+- Status: `closed`
 - Milestone: `M2`
 - Labels: `type:feature`, `area:generate`, `priority:p0`
-- Depends on: #7
+- Depends on: #13
 - Description:
   - Build deterministic generator using a seed to create person and incident source records.
 - Acceptance criteria:
   - Same seed reproduces identical outputs.
   - Supports small, medium, and large generation profiles.
 
-### 9) Implement conflict recipe engine
+### 15) Implement conflict recipe engine
 
+- Status: `closed`
 - Milestone: `M2`
 - Labels: `type:feature`, `area:generate`, `priority:p0`
-- Depends on: #8
+- Depends on: #14
 - Description:
-  - Add realistic duplicate/variation patterns: name token flips, nickname variants, DOB transpositions, stale addresses.
+  - Add realistic duplicate and variation patterns: name token flips, nickname variants, DOB transpositions, and stale addresses.
 - Acceptance criteria:
-  - Each generated conflict type is measurable in output summary.
+  - Each generated conflict type is measurable in the output summary.
 
-### 10) Add output writer for CSV and Parquet
+### 16) Add output writer for CSV and Parquet
 
+- Status: `closed`
 - Milestone: `M2`
 - Labels: `type:feature`, `area:generate`, `priority:p1`
-- Depends on: #8
+- Depends on: #14
 - Description:
   - Write generated datasets to both CSV and Parquet in `data/synthetic_sources/`.
 - Acceptance criteria:
-  - Both formats generated from one command.
+  - Both formats are generated from one command.
 
-### 11) Add generator unit tests
+### 17) Add generator unit tests
 
+- Status: `closed`
 - Milestone: `M2`
 - Labels: `type:feature`, `area:generate`, `priority:p1`
-- Depends on: #8, #9
+- Depends on: #14, #15
 - Description:
   - Test schema validity, deterministic seed behavior, and duplicate-rate controls.
 - Acceptance criteria:
@@ -159,165 +178,211 @@ Date prepared: 2026-03-12
 
 ## M3: Normalization and data quality
 
-### 12) Implement name normalization module
+### 18) Implement name normalization module
 
+- Status: `closed`
 - Milestone: `M3`
 - Labels: `type:feature`, `area:normalize`, `priority:p0`
-- Depends on: #8
+- Depends on: #14
 - Description:
   - Normalize punctuation, casing, whitespace, token order, and common aliases.
 - Acceptance criteria:
   - Canonical name fields are emitted for downstream matching.
 
-### 13) Implement DOB and timestamp normalization module
+### 19) Implement DOB and timestamp normalization module
 
+- Status: `closed`
 - Milestone: `M3`
 - Labels: `type:feature`, `area:normalize`, `priority:p0`
-- Depends on: #8
+- Depends on: #14
 - Description:
   - Normalize incoming dates to one canonical format and flag invalid date values.
 - Acceptance criteria:
   - Invalid and ambiguous dates are routed to exceptions.
 
-### 14) Implement address normalization module
+### 20) Implement address normalization module
 
+- Status: `closed`
 - Milestone: `M3`
 - Labels: `type:feature`, `area:normalize`, `priority:p1`
-- Depends on: #8
+- Depends on: #14
 - Description:
   - Normalize common street suffixes, directional terms, and unit patterns.
 - Acceptance criteria:
   - Equivalent addresses map to standardized canonical output.
 
-### 15) Implement phone normalization module
+### 21) Implement phone normalization module
 
+- Status: `closed`
 - Milestone: `M3`
 - Labels: `type:feature`, `area:normalize`, `priority:p2`
-- Depends on: #8
+- Depends on: #14
 - Description:
-  - Normalize to digits-only baseline and optional E.164-like output.
+  - Normalize to a digits-only baseline and optional E.164-like output.
 - Acceptance criteria:
-  - Invalid phone patterns are flagged in quality report.
+  - Invalid phone patterns are flagged in the quality report.
 
-### 16) Build normalization orchestration pipeline
+### 22) Harden normalization orchestration for multi-input flows
 
+- Status: `closed`
 - Milestone: `M3`
 - Labels: `type:feature`, `area:normalize`, `priority:p0`
-- Depends on: #12, #13, #14, #15
+- Depends on: #39
 - Description:
-  - Add orchestration that applies all normalization modules and writes `data/normalized/`.
+  - Normalization modules already exist and the `run-all` path normalizes the synthetic source inputs.
+  - Remaining work is to make normalization orchestration a first-class, standalone flow for multiple source inputs and a stable output layout.
+  - This includes reducing stage-specific hardcoding and making the normalize command align with the documented pipeline behavior.
 - Acceptance criteria:
-  - One command normalizes all sources.
+  - A standalone normalization command can process the supported source inputs in one run.
+  - Normalization behavior reads repo config consistently for the supported field modules.
+  - Normalized artifact naming and output layout are documented and covered by tests.
 
-### 17) Implement data-quality checks and exception output
+### 23) Implement data-quality checks and exception output
 
+- Status: `closed`
 - Milestone: `M3`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #16
+- Depends on: #22
 - Description:
   - Add completeness, validity, and integrity checks with exception records.
 - Acceptance criteria:
-  - DQ summary and exception files are generated each run.
+  - Data-quality summary and exception files are generated each run.
+
+### 39) Validate runtime config semantics and cross-file consistency
+
+- Status: `closed`
+- Milestone: `M3`
+- Labels: `type:feature`, `area:repo`, `priority:p0`
+- Depends on: #22, #23
+- Description:
+  - A shared config loader already exists for normalization, blocking, matching, thresholds, and survivorship.
+  - Remaining work is validation depth: required keys, allowed values, numeric bounds, and cross-file consistency are not yet enforced in a fail-fast way.
+- Acceptance criteria:
+  - Missing required config sections fail fast with actionable errors.
+  - Threshold values are validated for logical consistency.
+  - Blocking, matching, and survivorship config values are validated for allowed structure and types.
+  - Automated tests cover invalid and inconsistent config cases.
 
 ## M4: Matching, scoring, and clustering
 
-### 18) Implement candidate generation with blocking rules
+### 24) Emit blocking-pass metrics for candidate generation
 
+- Status: `closed`
 - Milestone: `M4`
 - Labels: `type:feature`, `area:matching`, `priority:p0`
-- Depends on: #16
+- Depends on: #22
 - Description:
-  - Build multi-pass blocking strategy to reduce pairwise comparisons.
+  - Multi-pass blocking and candidate generation already exist.
+  - Remaining work is to emit per-pass observability so blocking effectiveness can be inspected and tuned.
+  - The tracker should reflect reporting and hardening work rather than initial implementation.
 - Acceptance criteria:
-  - Candidate pair counts are emitted by blocking pass.
+  - Candidate metrics are emitted for each blocking pass.
+  - Output distinguishes raw per-pass counts from the de-duplicated overall candidate count.
+  - Tests verify deterministic per-pass metrics for fixed input and config.
 
-### 19) Implement weighted match scoring engine
+### 25) Improve weighted match scoring beyond exact-match field equality
 
+- Status: `closed`
 - Milestone: `M4`
 - Labels: `type:feature`, `area:matching`, `priority:p0`
-- Depends on: #18
+- Depends on: #24
 - Description:
-  - Compute confidence scores from name, DOB, address, phone, and identifier signals.
+  - Base weighted scoring, threshold routing, and reason traces already exist.
+  - Remaining work is to improve scoring quality with additional signals beyond strict exact equality while keeping the scoring path explainable.
+  - Candidate examples include nickname, partial-address, or other near-match scenarios that are not well represented by the current exact-match scoring behavior.
 - Acceptance criteria:
-  - Score and reason trace returned for every candidate pair.
+  - The scoring path supports at least one non-exact or derived match signal.
+  - Scored outputs remain inspectable through weighted reason traces.
+  - Tests demonstrate improved handling for representative false-positive and false-negative edge cases.
 
-### 20) Add match decision thresholds
+### 26) Add match decision thresholds
 
+- Status: `closed`
 - Milestone: `M4`
 - Labels: `type:feature`, `area:matching`, `priority:p0`
-- Depends on: #19
+- Depends on: #25
 - Description:
   - Define `auto-merge`, `manual-review`, and `no-match` cutoffs in config.
 - Acceptance criteria:
   - Thresholds are externalized in `config/thresholds.yml`.
 
-### 21) Implement cluster construction from accepted links
+### 27) Implement cluster construction from accepted links
 
+- Status: `closed`
 - Milestone: `M4`
 - Labels: `type:feature`, `area:matching`, `priority:p1`
-- Depends on: #20
+- Depends on: #26
 - Description:
   - Group linked records into entity clusters with stable cluster IDs.
 - Acceptance criteria:
-  - Cluster IDs are deterministic for fixed input + config.
+  - Cluster IDs are deterministic for fixed input and config.
 
-### 22) Add matching module tests
+### 28) Expand matching tests for regression and edge-case coverage
 
+- Status: `closed`
 - Milestone: `M4`
 - Labels: `type:feature`, `area:matching`, `priority:p1`
-- Depends on: #19, #20, #21
+- Depends on: #24, #25
 - Description:
-  - Validate blocking behavior, score reproducibility, threshold routing, and clustering.
+  - Basic matching tests already cover blocking, scoring, thresholds, and deterministic clustering.
+  - Remaining work is to add regression-oriented coverage for boundary conditions and known error modes.
 - Acceptance criteria:
-  - Test coverage includes false positive and false negative edge cases.
+  - Tests include false-positive and false-negative scenarios.
+  - Tests cover threshold-boundary behavior and multi-pass blocking de-duplication.
+  - Tests verify deterministic cluster stability for fixed input and accepted links.
 
 ## M5: Survivorship and golden records
 
-### 23) Implement survivorship rule engine
+### 29) Implement survivorship rule engine
 
+- Status: `closed`
 - Milestone: `M5`
 - Labels: `type:feature`, `area:survivorship`, `priority:p0`
-- Depends on: #21
+- Depends on: #27
 - Description:
   - Build rule-based field selection for golden record output.
 - Acceptance criteria:
   - Rule precedence is deterministic and config-driven.
 
-### 24) Add source priority and recency strategies
+### 30) Add source priority and recency strategies
 
+- Status: `closed`
 - Milestone: `M5`
 - Labels: `type:feature`, `area:survivorship`, `priority:p1`
-- Depends on: #23
+- Depends on: #29
 - Description:
   - Support source ranking and effective-date recency logic in survivorship.
 - Acceptance criteria:
-  - Tie-break behavior documented and tested.
+  - Tie-break behavior is documented and tested.
 
-### 25) Add provenance tracking for every selected field
+### 31) Add provenance tracking for every selected field
 
+- Status: `closed`
 - Milestone: `M5`
 - Labels: `type:feature`, `area:survivorship`, `priority:p0`
-- Depends on: #23
+- Depends on: #29
 - Description:
   - Store which source record and rule produced each golden value.
 - Acceptance criteria:
   - Golden output includes provenance metadata for every field.
 
-### 26) Generate crosswalk output (source ID to golden ID)
+### 32) Generate crosswalk output (source ID to golden ID)
 
+- Status: `closed`
 - Milestone: `M5`
 - Labels: `type:feature`, `area:survivorship`, `priority:p0`
-- Depends on: #21, #23
+- Depends on: #27, #29
 - Description:
-  - Produce mapping table for downstream joins and traceability.
+  - Produce a mapping table for downstream joins and traceability.
 - Acceptance criteria:
-  - Crosswalk covers all source records with deterministic golden IDs.
+  - The crosswalk covers all source records with deterministic golden IDs.
 
-### 27) Add survivorship and crosswalk tests
+### 33) Add survivorship and crosswalk tests
 
+- Status: `closed`
 - Milestone: `M5`
 - Labels: `type:feature`, `area:survivorship`, `priority:p1`
-- Depends on: #23, #24, #25, #26
+- Depends on: #29, #30, #31, #32
 - Description:
   - Test field-level precedence, provenance completeness, and crosswalk integrity.
 - Acceptance criteria:
@@ -325,98 +390,113 @@ Date prepared: 2026-03-12
 
 ## M6: Reporting, hardening, and release
 
-### 28) Implement run summary and before/after quality metrics
+### 34) Add before/after quality metrics and duplicate-reduction deltas
 
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:feature`, `area:quality`, `priority:p0`
-- Depends on: #17, #26
+- Depends on: #22, #32
 - Description:
-  - Report duplicate reduction, completeness delta, and review queue volume.
+  - The runtime already emits a run summary, exception counts, and review queue volume.
+  - Remaining work is to publish comparative before and after quality metrics that show whether the pipeline improved the data.
 - Acceptance criteria:
-  - Metrics exported in both machine-readable and markdown formats.
+  - The run summary includes before and after completeness deltas for key fields.
+  - The reporting output includes duplicate-reduction or cluster-consolidation metrics.
+  - Metrics are emitted in both machine-readable output and markdown reporting form.
+  - Tests cover the expected metric fields.
 
-### 29) Implement manual review queue output
+### 35) Implement manual review queue output
 
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #20, #26
+- Depends on: #26, #32
 - Description:
-  - Emit actionable queue for low-confidence clusters.
+  - Emit an actionable queue for low-confidence clusters.
 - Acceptance criteria:
   - Output includes reason codes and top contributing match signals.
 
-### 30) Add end-to-end integration test on small synthetic dataset
+### 36) Add end-to-end integration test on small synthetic dataset
 
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:feature`, `area:quality`, `priority:p0`
-- Depends on: #8, #16, #21, #26
+- Depends on: #14, #22, #27, #32
 - Description:
-  - Validate entire pipeline from generation to golden outputs.
+  - Validate the entire pipeline from generation to golden outputs.
 - Acceptance criteria:
-  - Pipeline completes in CI and validates expected outputs.
+  - The pipeline completes in CI and validates expected outputs.
 
-### 31) Expand documentation for each processing stage
+### 37) Replace placeholder stage docs and link them from README
 
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:docs`, `area:docs`, `priority:p1`
-- Depends on: #16, #21, #26
+- Depends on: #22, #32, #34
 - Description:
-  - Complete stage docs: architecture, normalization, matching, survivorship, evaluation.
+  - Stage docs exist, but several are still placeholders or too thin to operate from.
+  - Remaining work is to replace placeholder content with real runbooks and make those docs discoverable from the README.
 - Acceptance criteria:
-  - All stage docs link from README and include run examples.
+  - `README.md` links all stage documentation pages.
+  - Placeholder-only docs are replaced with implementation-specific guidance.
+  - Each major stage doc includes concrete runtime behavior, relevant config files, and example commands or outputs.
 
-### 32) Prepare `v0.1.0` release checklist and tag plan
+### 38) Prepare `v0.1.0` release checklist, changelog, and tag procedure
 
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:chore`, `area:repo`, `priority:p1`
-- Depends on: #28, #30, #31
+- Depends on: #34, #37, #40, #41
 - Description:
-  - Finalize release checklist, known limitations, and sample outputs.
+  - The package version is already declared, but the repository does not yet have a documented release procedure.
+  - Remaining work is to define the release checklist, known limitations, sample outputs, and tagging steps for the first tagged release.
 - Acceptance criteria:
-  - Release checklist complete and version plan documented.
+  - A release checklist is committed to the repository.
+  - Known limitations and release-readiness criteria are documented.
+  - The tag and versioning procedure for `v0.1.0` is documented for maintainers.
 
-### 33) Add runtime config loading and validation layer
+### 40) Expand CI to Linux and Windows matrix with coverage reporting
 
-- Milestone: `M3`
-- Labels: `type:feature`, `area:repo`, `priority:p0`
-- Depends on: #16, #17
-- Description:
-  - Add a shared loader for `config/*.yml` used by normalization,
-    blocking, matching, thresholds, and survivorship flows.
-  - Validate required keys, allowed values, and cross-file consistency at
-    startup.
-- Acceptance criteria:
-  - Runtime behavior reads configuration from the repo config files
-    instead of duplicating defaults in multiple modules.
-  - Invalid or incomplete configuration fails fast with actionable error
-    messages.
-
-### 34) Expand CI to Linux and Windows matrix with coverage reporting
-
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:chore`, `area:ci`, `priority:p1`
-- Depends on: #30
+- Depends on: #36
 - Description:
-  - Extend CI to validate the documented bash and PowerShell execution
-    paths.
-  - Publish test coverage and define the minimum release-readiness gate.
+  - CI currently validates a single Ubuntu and Python path.
+  - Remaining work is to validate both documented shell environments and publish test coverage in CI results.
 - Acceptance criteria:
-  - CI runs on Linux and Windows for the supported Python version.
+  - CI runs on Linux and Windows for the supported Python runtime.
+  - The documented bash and PowerShell paths are exercised or validated in CI.
   - Coverage output is generated and visible in CI results.
+  - The minimum release-readiness coverage expectation is documented.
 
-### 35) Formalize output schemas and contract tests for pipeline artifacts
+### 41) Define output schemas and add contract tests for pipeline artifacts
 
+- Status: `closed`
 - Milestone: `M6`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #26, #28, #29
+- Depends on: #34, #37
 - Description:
-  - Define stable schema contracts for normalized, matches, golden,
-    crosswalk, exceptions, and review-queue outputs.
-  - Add contract tests that fail when required fields, types, or file
-    naming conventions drift.
+  - End-to-end tests already assert the presence of several artifact fields.
+  - Remaining work is to formalize those outputs as stable contracts rather than relying on incidental shape assertions.
 - Acceptance criteria:
-  - Output schemas are documented and exercised by automated tests.
-  - Breaking output-shape changes fail CI before release.
+  - Stable schemas are documented for normalized, matches, clusters, golden, crosswalk, exceptions, review-queue, and summary artifacts.
+  - Contract tests fail when required fields, field types, or file naming conventions drift.
+  - CI fails on breaking output-shape changes before release.
+
+### 42) Clean up README encoding and formatting artifacts
+
+- Status: `closed`
+- Milestone: `M6`
+- Labels: `type:docs`, `area:docs`, `priority:p2`
+- Depends on: none
+- Description:
+  - The README currently contains malformed encoded characters in the high-level pipeline section and inconsistent markdown formatting in a few rendered sections.
+  - Clean up the markdown so GitHub renders the project overview cleanly and consistently.
+- Acceptance criteria:
+  - Malformed encoded characters are removed from the README.
+  - The high-level pipeline section renders cleanly on GitHub.
+  - Example tables and list sections render consistently and remain readable on both GitHub web and local markdown viewers.
 
 ## Suggested Epic Issues
 
@@ -435,81 +515,44 @@ Create these 6 epics first, then link child issues:
 2. Create milestones (`M1` through `M6`).
 3. Create 6 epics.
 4. Create all child issues and assign them to epics.
-5. Sort by dependency path and execute `M1` to `M6`.
+5. Sort by dependency path and execute milestone work from `M1` to `M6`.
 
-## Recommended Near-Term Execution Order (Current State)
+## Tracker Status Snapshot
 
-This sequence reflects the repository's current implementation state:
-`M1` and `M2` are effectively in place, while `M3` through `M5` are
-partially implemented and `M6` is mostly planning scaffolding.
+Snapshot date: 2026-03-13
 
-1. Execute `#16` Build normalization orchestration pipeline
-   - Expand the current CLI normalization path into the one supported
-     multi-source orchestration entrypoint.
-   - Wire `config/normalization_rules.yml` into runtime behavior instead
-     of leaving normalization policy hardcoded.
-2. Execute `#17` Implement data-quality checks and exception output
-   - Emit concrete exception artifacts for invalid DOBs, malformed
-     phones, and normalization failures under `data/exceptions/`.
-3. Execute `#33` Add runtime config loading and validation layer
-   - Centralize parsing and validation for `config/*.yml` so blocking,
-     scoring, thresholds, and survivorship are not split between config
-     files and hardcoded defaults.
-4. Execute `#18` Implement candidate generation with blocking rules
-   - Replace the single hardcoded blocking strategy with multi-pass,
-     config-backed blocking and per-pass candidate metrics.
-5. Execute `#19` Implement weighted match scoring engine
-   - Return score reasons and contributing signals so scoring is
-     inspectable and auditable.
-6. Execute `#20` Add match decision thresholds
-   - Use `config/thresholds.yml` at runtime and route candidate pairs to
-     `auto-merge`, `manual-review`, and `no-match`.
-7. Execute `#21` Implement cluster construction from accepted links
-   - Generate deterministic cluster IDs and make downstream golden
-     record construction consume clusters instead of implicit entity IDs.
-8. Execute `#23` through `#26` as one vertical slice
-   - Finish config-driven survivorship, add field-level provenance, and
-     write the source-to-golden crosswalk.
-9. Execute `#34` Expand CI to Linux and Windows matrix with coverage
-   reporting
-   - Add Linux and Windows CI coverage, publish test coverage, and
-     define the branch protection expectation for release readiness.
-10. Execute `#35` Formalize output schemas and contract tests for
-    pipeline artifacts
-    - Define stable contracts for normalized, matches, golden,
-      crosswalk, exceptions, and review-queue outputs.
-11. Execute `#28` through `#31`
-    - Add before/after quality metrics, manual review outputs, and
-      replace placeholder stage docs with actual runbooks and examples.
+- Total issues tracked by GitHub: `42`
+- Open issues: `0`
+- Closed issues: `42`
+- Open epics: none
+- Closed epics: `#1`, `#2`, `#3`, `#4`, `#5`, `#6`
+
+## Backlog Status
+
+The GitHub issue backlog is fully executed as of 2026-03-13.
+
+- All milestone child issues and epic issues are now closed.
+- The remaining repository follow-up is release execution, not backlog implementation.
 
 ## Current Phase Gaps To Close Before `v0.1.0`
 
-- Config files exist for normalization, blocking, matching, thresholds,
-  and survivorship, but runtime behavior is still only partially wired
-  to them.
-- Threshold routing, deterministic clustering, provenance, and
-  crosswalk outputs are not yet implemented end to end.
-- Exception artifacts and manual review queues are not yet produced.
-- Several stage documents are still placeholders rather than operating
-  documentation.
-- CI currently validates only one OS / Python runtime path and does not
-  enforce a coverage target.
+- Publish the first tagged release using the documented checklist and tag procedure.
+- Attach or archive a fresh `run-all --profile small` sample artifact set with the release notes.
 
-## Follow-On Issues Added To Catalog
+## Tracker Sync Notes
 
-- `#33` Runtime config loading and validation layer
-  - Milestone: `M3`
-  - Labels: `type:feature`, `area:repo`, `priority:p0`
-  - Why: make `config/*.yml` authoritative and fail fast on invalid or
-    incomplete rule configuration.
-- `#34` Expand CI to Linux and Windows matrix with coverage reporting
-  - Milestone: `M6`
-  - Labels: `type:chore`, `area:ci`, `priority:p1`
-  - Why: validate the documented PowerShell path and raise release
-    confidence with coverage visibility.
-- `#35` Formalize output schemas and contract tests for pipeline artifacts
-  - Milestone: `M6`
-  - Labels: `type:feature`, `area:quality`, `priority:p1`
-  - Why: define stable contracts for normalized, matches, golden,
-    crosswalk, exceptions, and review-queue outputs.
-
+- Completed child issues were closed in GitHub on 2026-03-13 after verifying implementation against the codebase and test suite.
+- Open issues were retitled or rewritten where the original backlog still described work that was already done.
+- Issue `#39` was completed after adding fail-fast runtime config validation and invalid-config test coverage.
+- Issue `#22` was completed after making the normalize CLI a documented multi-input stage path.
+- Issue `#24` was completed after adding blocking-pass metrics and emitting a matching-stage metrics artifact.
+- Issues `#25` and `#28` were completed after adding explainable partial-name scoring and broader matching regression coverage.
+- Issue `#34` was completed after adding before/after completeness deltas and duplicate-reduction metrics to the reporting outputs.
+- Issues `#37` and `#9` were completed after replacing placeholder stage docs and adding direct governance and safety links to the README.
+- New issue `#42` was added to track README encoding and markdown rendering cleanup.
+- Issue `#11` was completed after documenting the required `main` merge gates and branch-protection baseline for maintainers.
+- Issue `#40` was completed after expanding CI to Linux and Windows and adding coverage publishing with an `85%` floor.
+- Issue `#41` was completed after documenting pipeline artifact schemas and adding dedicated contract tests.
+- Issue `#38` was completed after adding a release-process doc and `CHANGELOG.md` for the planned `v0.1.0` release.
+- Issue `#42` was completed after rewriting the README into clean GitHub-flavored markdown and removing malformed encoding artifacts.
+- The local backlog now mirrors the fully closed live tracker.

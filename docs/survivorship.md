@@ -57,3 +57,14 @@ The crosswalk maps every source record to:
 
 This output is the downstream join surface for traceability and
 analytics.
+
+## Command Example
+
+Run the full clustered golden-record path:
+
+```bash
+python -m etl_identity_engine.cli run-all
+```
+
+This produces both the golden-record output and the source-to-golden
+crosswalk under `data/golden/`.

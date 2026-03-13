@@ -1,4 +1,8 @@
-from etl_identity_engine.quality.exceptions import build_run_summary, extract_exception_rows
+from etl_identity_engine.quality.exceptions import (
+    build_run_report_markdown,
+    build_run_summary,
+    extract_exception_rows,
+)
 
 
 def test_extract_exception_rows_detects_invalid_dob_and_malformed_phone() -> None:
@@ -65,3 +69,54 @@ def test_build_run_summary_includes_exception_and_decision_counts() -> None:
         "malformed_phones": 0,
         "normalization_failures": 0,
     }
+    assert summary["before_after_completeness"] == {
+        "name": {"before": 1, "after": 1, "delta": 0},
+        "dob": {"before": 1, "after": 1, "delta": 0},
+        "phone": {"before": 1, "after": 1, "delta": 0},
+    }
+    assert summary["duplicate_reduction"] == {
+        "before_record_count": 1,
+        "after_record_count": 1,
+        "records_consolidated": 0,
+        "reduction_ratio": 0.0,
+    }
+
+
+def test_build_run_report_markdown_includes_before_after_and_duplicate_metrics() -> None:
+    summary = {
+        "total_records": 4,
+        "candidate_pair_count": 3,
+        "cluster_count": 2,
+        "golden_record_count": 2,
+        "review_queue_count": 1,
+        "decision_counts": {"auto_merge": 1, "manual_review": 1, "no_match": 1},
+        "completeness": {
+            "raw_name_present": 4,
+            "canonical_name_present": 4,
+            "raw_dob_present": 4,
+            "canonical_dob_present": 3,
+            "raw_phone_present": 4,
+            "canonical_phone_present": 3,
+        },
+        "before_after_completeness": {
+            "name": {"before": 4, "after": 4, "delta": 0},
+            "dob": {"before": 4, "after": 3, "delta": -1},
+            "phone": {"before": 4, "after": 3, "delta": -1},
+        },
+        "duplicate_reduction": {
+            "before_record_count": 4,
+            "after_record_count": 2,
+            "records_consolidated": 2,
+            "reduction_ratio": 0.5,
+        },
+        "missing_field_counts": {"phone": 1},
+        "exception_counts": {"invalid_dobs": 1, "malformed_phones": 1, "normalization_failures": 0},
+    }
+
+    report = build_run_report_markdown("data/normalized/normalized_person_records.csv", summary)
+
+    assert "## Before/After Completeness" in report
+    assert "- `dob`: before=`4`, after=`3`, delta=`-1`" in report
+    assert "## Duplicate Reduction" in report
+    assert "- `records_consolidated`: `2`" in report
+    assert "- `reduction_ratio`: `0.5`" in report

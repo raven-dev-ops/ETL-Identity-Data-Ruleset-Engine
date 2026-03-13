@@ -21,14 +21,11 @@ def test_parse_backlog_current_catalog() -> None:
     assert parsed.milestones == ("M1", "M2", "M3", "M4", "M5", "M6")
     assert len(parsed.labels) == 16
     assert len(parsed.epics) == 6
-    assert len(parsed.issues) == 35
-    assert parsed.issues[0].catalog_number == 1
-    assert parsed.issues[-1].catalog_number == 35
+    assert len(parsed.issues) == 36
+    assert parsed.issues[0].catalog_number == 7
+    assert parsed.issues[-1].catalog_number == 42
     assert parsed.issues[0].title == "Bootstrap repository skeleton"
-    assert (
-        parsed.issues[-1].title
-        == "Formalize output schemas and contract tests for pipeline artifacts"
-    )
+    assert parsed.issues[-1].title == "Clean up README encoding and formatting artifacts"
 
 
 def test_build_issue_body_uses_expected_sections() -> None:
