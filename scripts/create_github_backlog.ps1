@@ -2,7 +2,7 @@ Param(
     [Parameter(Mandatory = $true)]
     [string]$Repo,
 
-    [string]$BacklogPath = "planning/post-v0.1.0-github-issues-backlog.md",
+    [string]$BacklogPath = "planning/active-github-issues-backlog.md",
 
     [switch]$DryRun
 )

@@ -4,18 +4,19 @@ Date prepared: 2026-03-13
 Last updated: 2026-03-13
 
 This checklist captures the remaining work after the `v0.1.1` release
-closeout. It is intentionally separate from the GitHub issue-sync
-backlog files so maintainers can track immediate follow-up tasks
-without changing the automation source of truth.
+closeout. The active GitHub backlog source is now
+`planning/active-github-issues-backlog.md`; this checklist remains a
+short maintainer view of the same follow-up themes.
 
-## Active Release Tasks
+## Tracked Follow-Up Tasks
 
-- [ ] Define the next post-`v0.1.1` release line and decide which
-  remaining follow-up items below should be promoted into new GitHub
-  milestones and issues.
-- [ ] Decide whether the closed `planning/post-v0.1.0-github-issues-backlog.md`
-  catalog should remain a historical record only or be replaced with a
-  new active backlog file for future work.
+- [ ] `#54` Expand normalization fidelity for addresses and phone
+  outputs.
+- [ ] `#55` Expand non-exact matching signals and threshold-tuning
+  fixtures.
+- [ ] `#56` Decide the supported manual-review operating model.
+- [ ] `#57` Define how the remaining-work checklist and GitHub backlog
+  should coexist.
 
 ## Pipeline Follow-Up Tasks
 
@@ -33,6 +34,3 @@ without changing the automation source of truth.
 
 - [ ] Keep `planning/project-structure-outline.md` aligned with the live
   tree when new planning files, tests, scripts, or docs are added.
-- [ ] Decide whether the remaining-work checklist should be mirrored into
-  GitHub as tracked issues or remain an in-repo maintainer artifact
-  between release cuts.

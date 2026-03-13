@@ -16,7 +16,7 @@ REST_API_ROOT = "https://api.github.com"
 EXPECTED_CONTACT_LINKS = {
     "Private security report": "/security/advisories/new",
     "Contribution guide": "/blob/main/CONTRIBUTING.md",
-    "Project backlog": "/blob/main/planning/post-v0.1.0-github-issues-backlog.md",
+    "Project backlog": "/blob/main/planning/active-github-issues-backlog.md",
 }
 EXPECTED_TEMPLATE_FILES = {
     "bug.yml",

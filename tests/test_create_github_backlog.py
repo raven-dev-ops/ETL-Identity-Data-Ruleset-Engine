@@ -14,7 +14,7 @@ SPEC.loader.exec_module(MODULE)
 
 HISTORICAL_BACKLOG_PATH = Path(__file__).resolve().parents[1] / "planning" / "github-issues-backlog.md"
 ACTIVE_BACKLOG_PATH = (
-    Path(__file__).resolve().parents[1] / "planning" / "post-v0.1.0-github-issues-backlog.md"
+    Path(__file__).resolve().parents[1] / "planning" / "active-github-issues-backlog.md"
 )
 
 
@@ -37,17 +37,17 @@ def test_parse_backlog_current_catalog() -> None:
 def test_parse_backlog_active_catalog() -> None:
     parsed = MODULE.parse_backlog(
         ACTIVE_BACKLOG_PATH.read_text(encoding="utf-8"),
-        source_label="planning/post-v0.1.0-github-issues-backlog.md",
+        source_label="planning/active-github-issues-backlog.md",
     )
 
-    assert parsed.milestones == ("v0.1.1", "v0.2.0")
+    assert parsed.milestones == ("v0.2.0", "v0.3.0")
     assert len(parsed.labels) == 16
     assert len(parsed.epics) == 2
-    assert len(parsed.issues) == 6
-    assert parsed.issues[0].catalog_number == 46
-    assert parsed.issues[-1].catalog_number == 51
+    assert len(parsed.issues) == 4
+    assert parsed.issues[0].catalog_number == 54
+    assert parsed.issues[-1].catalog_number == 57
     assert parsed.epics[0].description_items == (
-        "Epic created from planning/post-v0.1.0-github-issues-backlog.md",
+        "Epic created from planning/active-github-issues-backlog.md",
     )
 
 

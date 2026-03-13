@@ -1,9 +1,9 @@
 # Post-v0.1.0 GitHub Issues Backlog
 
-This backlog captures the next issue set after the completed bootstrap
-and `v0.1.0` release. It is intentionally separate from
-`planning/github-issues-backlog.md`, which remains the historical record
-for the bootstrap delivery.
+This backlog captures the completed issue set that followed the
+bootstrap backlog and `v0.1.0` release. It is now a historical record.
+The current active source of truth for new GitHub issues is
+`planning/active-github-issues-backlog.md`.
 
 Date prepared: 2026-03-13
 Last synced to GitHub: 2026-03-13
@@ -38,7 +38,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 46) Package and attach reproducible sample output bundle to GitHub releases
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.1.1`
 - Labels: `type:chore`, `area:repo`, `priority:p1`
 - Depends on: none
@@ -75,7 +75,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 48) Prepare and publish v0.1.1 patch release for post-v0.1.0 automation fixes
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.1.1`
 - Labels: `type:chore`, `area:repo`, `priority:p0`
 - Depends on: #46, #47
@@ -182,5 +182,8 @@ Snapshot date: 2026-03-13
   post-release set.
 - Bootstrap milestones `M1` through `M6` were closed in GitHub after the
   bootstrap backlog was fully executed.
-- Historical post-release milestones remain `v0.1.1` and `v0.2.0`;
-  define the next active milestone before syncing new work.
+- Milestone `v0.1.1` was closed on 2026-03-13 after the release
+  closeout completed.
+- Milestone `v0.2.0` remains open and is now referenced by
+  `planning/active-github-issues-backlog.md` for the next delivery
+  cycle.

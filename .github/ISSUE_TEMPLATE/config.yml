@@ -7,5 +7,5 @@ contact_links:
     url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/CONTRIBUTING.md
     about: Review setup, validation, and PR expectations before filing work.
   - name: Project backlog
-    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/post-v0.1.0-github-issues-backlog.md
+    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/active-github-issues-backlog.md
     about: Check planned milestones, issue types, and existing delivery streams first.

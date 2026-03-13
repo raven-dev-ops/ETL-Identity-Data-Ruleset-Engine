@@ -140,7 +140,8 @@ is included in the repository.
 
 - [Project Structure Outline](planning/project-structure-outline.md)
 - [Remaining Work Task List](planning/remaining-work-task-list.md)
-- [Active Post-v0.1.0 GitHub Issues Backlog](planning/post-v0.1.0-github-issues-backlog.md)
+- [Active GitHub Issues Backlog](planning/active-github-issues-backlog.md)
+- [Post-v0.1.0 GitHub Issues Backlog (Historical)](planning/post-v0.1.0-github-issues-backlog.md)
 - [Bootstrap GitHub Issues Backlog (Historical)](planning/github-issues-backlog.md)
 
 ## Documentation
@@ -305,9 +306,10 @@ python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-
 ```
 
 The default backlog source is
-`planning/post-v0.1.0-github-issues-backlog.md`. The bootstrap backlog
-at `planning/github-issues-backlog.md` is historical and should be used
-only when re-syncing the completed `M1` through `M6` tracker state:
+`planning/active-github-issues-backlog.md`. The bootstrap backlog at
+`planning/github-issues-backlog.md` and the completed
+`planning/post-v0.1.0-github-issues-backlog.md` file are historical and
+should be used only when re-syncing closed tracker history:
 
 ```powershell
 python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --backlog-path planning/github-issues-backlog.md --dry-run

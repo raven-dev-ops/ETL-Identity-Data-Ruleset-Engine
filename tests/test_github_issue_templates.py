@@ -92,7 +92,7 @@ def test_issue_template_config_has_required_contact_links() -> None:
     assert {"Private security report", "Contribution guide", "Project backlog"}.issubset(names)
     assert backlog_url == (
         "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/"
-        "blob/main/planning/post-v0.1.0-github-issues-backlog.md"
+        "blob/main/planning/active-github-issues-backlog.md"
     )
 
 

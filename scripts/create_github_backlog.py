@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BACKLOG_PATH = REPO_ROOT / "planning" / "post-v0.1.0-github-issues-backlog.md"
+DEFAULT_BACKLOG_PATH = REPO_ROOT / "planning" / "active-github-issues-backlog.md"
 ISSUE_PATTERN = re.compile(
     r"(?ms)^###\s+(?P<number>\d+)\)\s+(?P<title>.+?)\r?\n\r?\n(?P<body>.*?)(?=^###\s+\d+\)|^##\s+Suggested Epic Issues)"
 )
