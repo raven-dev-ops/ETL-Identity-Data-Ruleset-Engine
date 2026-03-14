@@ -103,7 +103,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 65) Introduce migration tooling and environment-specific runtime configuration
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.4.0`
 - Labels: `type:chore`, `area:storage`, `priority:p1`
 - Depends on: #63
@@ -350,10 +350,10 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#65`
+- Open child issues represented in this local active catalog: `#66`
   through `#80`
 - Open milestones in GitHub for this backlog:
-  - `v0.4.0` with epic `#58` plus child issues `#65` through `#67`
+  - `v0.4.0` with epic `#58` plus child issues `#66` through `#67`
   - `v0.5.0` with epic `#59` plus child issues `#68` through `#73`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
@@ -375,3 +375,7 @@ Snapshot date: 2026-03-13
   `running`, `completed`, and `failed` attempts, reuses completed runs
   idempotently, and cleanly restarts failed attempts under the same
   `run_key`.
+- Issue `#65` is complete in-repo: persisted state now upgrades through
+  Alembic-backed migration commands, and named runtime environments can
+  supply config overlays plus `${ENV_VAR}`-resolved secrets without
+  editing committed YAML files in place.

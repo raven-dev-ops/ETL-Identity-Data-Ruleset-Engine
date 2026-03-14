@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 
@@ -20,6 +21,7 @@ SUPPORTED_WEIGHT_FIELDS = (
 SUPPORTED_PHONE_OUTPUT_FORMATS = frozenset({"digits_only", "e164"})
 SUPPORTED_SURVIVORSHIP_FIELDS = ("first_name", "last_name", "dob", "address", "phone")
 SUPPORTED_SURVIVORSHIP_STRATEGIES = frozenset({"source_priority_then_non_null"})
+ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
 
 
 class ConfigValidationError(ValueError):
@@ -86,22 +88,112 @@ class PipelineConfig:
     survivorship: SurvivorshipConfig
 
 
+@dataclass(frozen=True)
+class RuntimeEnvironmentConfig:
+    name: str
+    config_dir: Path
+    state_db: Path | None
+    secrets: dict[str, str]
+
+
 def default_config_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "config"
+
+
+def default_runtime_config_path() -> Path:
+    return default_config_dir() / "runtime_environments.yml"
 
 
 def _config_error(path: Path, message: str) -> ConfigValidationError:
     return ConfigValidationError(f"{path.name}: {message}")
 
 
-def _load_yaml(path: Path) -> dict[str, object]:
+def _resolve_env_placeholders(value: str, *, path: Path, context: str) -> str:
+    def replacer(match: re.Match[str]) -> str:
+        env_name = match.group(1)
+        default_value = match.group(3)
+        resolved = os.environ.get(env_name)
+        if resolved is None:
+            if default_value is not None:
+                return default_value
+            raise _config_error(
+                path,
+                f"{context} references required environment variable {env_name}",
+            )
+        return resolved
+
+    return ENV_VAR_PATTERN.sub(replacer, value)
+
+
+def _resolve_node_env_placeholders(
+    value: object,
+    *,
+    path: Path,
+    context: str,
+) -> object:
+    if isinstance(value, str):
+        return _resolve_env_placeholders(value, path=path, context=context)
+    if isinstance(value, list):
+        return [
+            _resolve_node_env_placeholders(item, path=path, context=context)
+            for item in value
+        ]
+    if isinstance(value, Mapping):
+        return {
+            key: _resolve_node_env_placeholders(item, path=path, context=context)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _load_yaml(path: Path, *, allow_missing: bool = False) -> dict[str, object]:
     if not path.exists():
+        if allow_missing:
+            return {}
         raise FileNotFoundError(f"Configuration file not found: {path}")
 
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if data is None:
+        if allow_missing:
+            return {}
+        raise _config_error(path, "configuration file must contain a mapping")
     if not isinstance(data, dict):
         raise _config_error(path, "configuration file must contain a mapping")
-    return data
+    resolved = _resolve_node_env_placeholders(data, path=path, context="configuration")
+    if not isinstance(resolved, dict):
+        raise _config_error(path, "configuration file must contain a mapping")
+    return resolved
+
+
+def _merge_mappings(
+    base: Mapping[str, object],
+    overlay: Mapping[str, object],
+) -> dict[str, object]:
+    merged = dict(base)
+    for key, value in overlay.items():
+        existing = merged.get(key)
+        if isinstance(existing, Mapping) and isinstance(value, Mapping):
+            merged[key] = _merge_mappings(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_pipeline_yaml(
+    root: Path,
+    file_name: str,
+    *,
+    environment: str | None,
+) -> dict[str, object]:
+    base_rules = _load_yaml(root / file_name)
+    if not environment:
+        return base_rules
+
+    overlay_rules = _load_yaml(
+        root / "environments" / environment / file_name,
+        allow_missing=True,
+    )
+    return _merge_mappings(base_rules, overlay_rules)
 
 
 def _validate_allowed_keys(
@@ -207,7 +299,105 @@ def _optional_non_empty_string(
     return value.strip()
 
 
-def load_pipeline_config(config_dir: Path | None = None) -> PipelineConfig:
+def load_runtime_environment(
+    environment: str | None = None,
+    runtime_config_path: Path | None = None,
+) -> RuntimeEnvironmentConfig:
+    config_path = runtime_config_path or default_runtime_config_path()
+    raw_config = _load_yaml(config_path)
+    _validate_allowed_keys(
+        raw_config,
+        allowed_keys={"default_environment", "environments"},
+        path=config_path,
+        context="top-level runtime config",
+    )
+
+    default_environment = environment or os.environ.get("ETL_IDENTITY_ENV")
+    if default_environment is None:
+        default_environment = _optional_non_empty_string(
+            raw_config,
+            "default_environment",
+            path=config_path,
+            context="runtime_config",
+            default="dev",
+        )
+    environments = _require_mapping(
+        raw_config,
+        "environments",
+        path=config_path,
+        context="runtime_config",
+    )
+    selected = environments.get(default_environment)
+    if not isinstance(selected, Mapping):
+        raise _config_error(
+            config_path,
+            f"environments must define a mapping for '{default_environment}'",
+        )
+    _validate_allowed_keys(
+        selected,
+        allowed_keys={"description", "config_dir", "state_db", "secrets"},
+        path=config_path,
+        context=f"environments.{default_environment}",
+    )
+
+    config_dir_value = _optional_non_empty_string(
+        selected,
+        "config_dir",
+        path=config_path,
+        context=f"environments.{default_environment}",
+        default=".",
+    )
+    config_dir = Path(config_dir_value)
+    if not config_dir.is_absolute():
+        config_dir = (config_path.parent / config_dir).resolve()
+
+    raw_state_db = selected.get("state_db")
+    state_db: Path | None
+    if raw_state_db in (None, ""):
+        state_db = None
+    elif isinstance(raw_state_db, str) and raw_state_db.strip():
+        state_db = Path(raw_state_db.strip())
+        if not state_db.is_absolute():
+            state_db = (config_path.parent / state_db).resolve()
+    else:
+        raise _config_error(
+            config_path,
+            f"environments.{default_environment}.state_db must be a non-empty string when provided",
+        )
+
+    raw_secrets = selected.get("secrets", {})
+    if not isinstance(raw_secrets, Mapping):
+        raise _config_error(
+            config_path,
+            f"environments.{default_environment}.secrets must be a mapping",
+        )
+    secrets: dict[str, str] = {}
+    for key, value in raw_secrets.items():
+        if not isinstance(key, str) or not key.strip():
+            raise _config_error(
+                config_path,
+                f"environments.{default_environment}.secrets contains an invalid key",
+            )
+        if not isinstance(value, str) or not value.strip():
+            raise _config_error(
+                config_path,
+                f"environments.{default_environment}.secrets.{key} must be a non-empty string",
+            )
+        secrets[key.strip()] = value.strip()
+
+    return RuntimeEnvironmentConfig(
+        name=default_environment,
+        config_dir=config_dir,
+        state_db=state_db,
+        secrets=secrets,
+    )
+
+
+def load_pipeline_config(
+    config_dir: Path | None = None,
+    *,
+    environment: str | None = None,
+) -> PipelineConfig:
     root = config_dir or default_config_dir()
 
     normalization_path = root / "normalization_rules.yml"
@@ -216,11 +406,11 @@ def load_pipeline_config(config_dir: Path | None = None) -> PipelineConfig:
     thresholds_path = root / "thresholds.yml"
     survivorship_path = root / "survivorship_rules.yml"
 
-    normalization_rules = _load_yaml(normalization_path)
-    blocking_rules = _load_yaml(blocking_path)
-    matching_rules = _load_yaml(matching_path)
-    thresholds_rules = _load_yaml(thresholds_path)
-    survivorship_rules = _load_yaml(survivorship_path)
+    normalization_rules = _load_pipeline_yaml(root, "normalization_rules.yml", environment=environment)
+    blocking_rules = _load_pipeline_yaml(root, "blocking_rules.yml", environment=environment)
+    matching_rules = _load_pipeline_yaml(root, "matching_rules.yml", environment=environment)
+    thresholds_rules = _load_pipeline_yaml(root, "thresholds.yml", environment=environment)
+    survivorship_rules = _load_pipeline_yaml(root, "survivorship_rules.yml", environment=environment)
 
     _validate_allowed_keys(
         normalization_rules,

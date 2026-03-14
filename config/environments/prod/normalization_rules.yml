@@ -1,0 +1,3 @@
+phone_normalization:
+  output_format: ${ETL_IDENTITY_PHONE_OUTPUT_FORMAT:-e164}
+  default_country_code: ${ETL_IDENTITY_PHONE_COUNTRY_CODE:-1}

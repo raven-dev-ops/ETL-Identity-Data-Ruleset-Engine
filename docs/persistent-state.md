@@ -25,6 +25,16 @@ python -m etl_identity_engine.cli report \
   --output data/exceptions/run_report.md
 ```
 
+You can bootstrap or inspect the SQLite schema through the runtime CLI:
+
+```bash
+python -m etl_identity_engine.cli state-db-upgrade \
+  --state-db data/state/pipeline_state.sqlite
+
+python -m etl_identity_engine.cli state-db-current \
+  --state-db data/state/pipeline_state.sqlite
+```
+
 ## Tables
 
 The current schema includes:
@@ -114,12 +124,11 @@ reloaded in the same sequence as the file artifacts.
 
 ## Current Boundary
 
-This issue adds durable relational persistence and a basic run registry,
-not full orchestration.
+This issue adds durable relational persistence, a basic run registry,
+and first-class schema migrations, not full orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints
-- migration tooling beyond schema bootstrap
 - service APIs over the persisted store
 
 Those remain tracked follow-on work in the active backlog.

@@ -14,9 +14,11 @@ authors = [
   { name = "ETL Identity Data Ruleset Engine Contributors" }
 ]
 dependencies = [
+  "alembic>=1.14.0",
   "fsspec>=2024.6.0",
   "pyarrow>=16.0.0",
-  "PyYAML>=6.0.2"
+  "PyYAML>=6.0.2",
+  "SQLAlchemy>=2.0.36"
 ]
 
 [project.optional-dependencies]

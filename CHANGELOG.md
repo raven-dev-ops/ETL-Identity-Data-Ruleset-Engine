@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
   `running`/`completed`/`failed` status, failure detail capture,
   idempotent completed-run reuse, and clean restart attempts after
   failure.
+- Alembic-backed state database migrations with CLI bootstrap and
+  revision inspection commands.
+- Runtime environment configuration with per-environment overlays and
+  `${ENV_VAR}` resolution for secret-backed settings.
 
 ### Changed
 
@@ -26,6 +30,9 @@ All notable changes to this project will be documented in this file.
   fail fast without writing partial normalized outputs.
 - Manifest-driven runtime inputs now support both local filesystem and
   object-storage-compatible landing-zone resolution.
+- Commands that consume matching or normalization rules can now resolve
+  `config_dir` defaults from a named runtime environment without editing
+  committed YAML files in place.
 
 ## [0.1.4] - 2026-03-13
 

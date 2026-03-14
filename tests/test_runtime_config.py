@@ -4,7 +4,10 @@ from pathlib import Path
 import pytest
 
 from etl_identity_engine.cli import main
-from etl_identity_engine.runtime_config import load_pipeline_config
+from etl_identity_engine.runtime_config import (
+    load_pipeline_config,
+    load_runtime_environment,
+)
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -89,6 +92,25 @@ field_rules:
     strategy: source_priority_then_non_null
   phone:
     strategy: source_priority_then_non_null
+""",
+    )
+
+
+def _write_runtime_environment_file(path: Path, content: str | None = None) -> None:
+    _write_text(
+        path,
+        content
+        or """
+default_environment: dev
+environments:
+  dev:
+    config_dir: ./config
+    state_db: ./state/dev.sqlite
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    secrets:
+      object_storage_access_key: ${TEST_OBJECT_STORAGE_ACCESS_KEY}
 """,
     )
 
@@ -532,3 +554,143 @@ field_rules:
         match=r"survivorship_rules\.yml: field_rules\.phone\.strategy must be one of: source_priority_then_non_null",
     ):
         load_pipeline_config(config_dir)
+
+
+def test_load_pipeline_config_merges_environment_overlay(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "environments" / "prod" / "thresholds.yml",
+        """
+thresholds:
+  auto_merge: 0.88
+  manual_review_min: 0.58
+  no_match_max: 0.57
+""",
+    )
+    _write_text(
+        config_dir / "environments" / "prod" / "normalization_rules.yml",
+        """
+phone_normalization:
+  output_format: ${TEST_PHONE_OUTPUT_FORMAT:-e164}
+""",
+    )
+
+    config = load_pipeline_config(config_dir, environment="prod")
+
+    assert config.matching.thresholds.auto_merge == 0.88
+    assert config.matching.thresholds.manual_review_min == 0.58
+    assert config.normalization.phone.output_format == "e164"
+
+
+def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+
+    environment = load_runtime_environment("prod", runtime_config)
+
+    assert environment.name == "prod"
+    assert environment.config_dir == (tmp_path / "config").resolve()
+    assert environment.state_db == (tmp_path / "state" / "prod.sqlite").resolve()
+    assert environment.secrets == {"object_storage_access_key": "access-key"}
+
+
+def test_load_runtime_environment_requires_declared_secret_env_vars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    monkeypatch.delenv("TEST_STATE_DB", raising=False)
+    monkeypatch.delenv("TEST_OBJECT_STORAGE_ACCESS_KEY", raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: configuration references required environment variable TEST_STATE_DB",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
+def test_cli_match_uses_runtime_environment_overlay(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_valid_config(config_dir)
+    _write_text(
+        config_dir / "environments" / "prod" / "matching_rules.yml",
+        """
+weights:
+  canonical_name: 1.0
+  canonical_dob: 0.0
+  canonical_phone: 0.0
+  canonical_address: 0.0
+""",
+    )
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: dev
+environments:
+  prod:
+    config_dir: ./config
+""",
+    )
+
+    normalized_input = tmp_path / "normalized.csv"
+    _write_csv(
+        normalized_input,
+        [
+            {
+                "source_record_id": "A-1",
+                "person_entity_id": "P-1",
+                "source_system": "source_a",
+                "first_name": "JOHN",
+                "last_name": "SMITH",
+                "dob": "1985-03-12",
+                "address": "123 MAIN ST",
+                "phone": "5551234567",
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_address": "123 MAIN ST",
+                "canonical_phone": "5551234567",
+            },
+            {
+                "source_record_id": "B-1",
+                "person_entity_id": "P-1",
+                "source_system": "source_b",
+                "first_name": "JONATHAN",
+                "last_name": "SMITH",
+                "dob": "1985-04-12",
+                "address": "123 MAIN STREET",
+                "phone": "5551230000",
+                "canonical_name": "JOHN SMITH",
+                "canonical_dob": "1985-04-12",
+                "canonical_address": "123 MAIN STREET",
+                "canonical_phone": "5551230000",
+            },
+        ],
+    )
+    match_output = tmp_path / "candidate_scores.csv"
+
+    assert (
+        main(
+            [
+                "match",
+                "--input",
+                str(normalized_input),
+                "--output",
+                str(match_output),
+                "--environment",
+                "prod",
+                "--runtime-config",
+                str(runtime_config),
+            ]
+        )
+        == 0
+    )
+
+    match_rows = _read_csv(match_output)
+    assert len(match_rows) == 1
+    assert match_rows[0]["decision"] == "auto_merge"
+    assert match_rows[0]["score"] == "1.0"

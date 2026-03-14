@@ -1,0 +1,18 @@
+default_environment: dev
+
+environments:
+  dev:
+    description: Local developer defaults for repository execution.
+    config_dir: .
+    state_db: ../data/state/dev/pipeline_state.sqlite
+  test:
+    description: Automated test and CI defaults.
+    config_dir: .
+    state_db: ../data/state/test/pipeline_state.sqlite
+  prod:
+    description: Production defaults sourced from deployment environment variables.
+    config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}
+    state_db: ${ETL_IDENTITY_STATE_DB}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY}

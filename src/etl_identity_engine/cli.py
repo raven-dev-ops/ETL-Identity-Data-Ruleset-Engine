@@ -36,7 +36,16 @@ from etl_identity_engine.quality.exceptions import (
     build_run_summary,
     extract_exception_rows,
 )
-from etl_identity_engine.runtime_config import PipelineConfig, load_pipeline_config
+from etl_identity_engine.runtime_config import (
+    PipelineConfig,
+    load_pipeline_config,
+    load_runtime_environment,
+)
+from etl_identity_engine.storage.migration_runner import (
+    current_sqlite_store_revision,
+    head_revision,
+    upgrade_sqlite_store,
+)
 from etl_identity_engine.storage.sqlite_store import (
     PersistRunMetadata,
     SQLitePipelineStore,
@@ -45,8 +54,54 @@ from etl_identity_engine.storage.sqlite_store import (
 from etl_identity_engine.survivorship.rules_engine import build_golden_records
 
 
-def _load_config(config_dir: str | None) -> PipelineConfig:
-    return load_pipeline_config(Path(config_dir) if config_dir else None)
+def _load_config(config_dir: str | None, environment: str | None = None) -> PipelineConfig:
+    return load_pipeline_config(
+        Path(config_dir) if config_dir else None,
+        environment=environment,
+    )
+
+
+def _resolve_runtime_environment(args: argparse.Namespace):
+    environment = getattr(args, "environment", None)
+    runtime_config = getattr(args, "runtime_config", None)
+    if environment is None and runtime_config is None and os.environ.get("ETL_IDENTITY_ENV") is None:
+        return None
+    return load_runtime_environment(
+        environment,
+        Path(runtime_config) if runtime_config else None,
+    )
+
+
+def _apply_runtime_defaults(args: argparse.Namespace) -> None:
+    runtime_environment = _resolve_runtime_environment(args)
+    if runtime_environment is None:
+        return
+
+    if hasattr(args, "config_dir") and getattr(args, "config_dir") is None:
+        args.config_dir = str(runtime_environment.config_dir)
+
+    state_db_should_default = False
+    command = getattr(args, "command", None)
+    if command in {"state-db-upgrade", "state-db-current", "run-all"}:
+        state_db_should_default = True
+    if command == "report" and getattr(args, "run_id", None):
+        state_db_should_default = True
+
+    if (
+        state_db_should_default
+        and hasattr(args, "state_db")
+        and getattr(args, "state_db") is None
+        and runtime_environment.state_db is not None
+    ):
+        args.state_db = str(runtime_environment.state_db)
+
+    args.environment = runtime_environment.name
+
+
+def _require_state_db(args: argparse.Namespace) -> Path:
+    if not args.state_db:
+        raise ValueError("This command requires --state-db or a runtime environment with state_db configured")
+    return Path(args.state_db)
 
 
 def _normalize_rows(rows: list[dict[str, str]], config: PipelineConfig) -> list[dict[str, str]]:
@@ -689,13 +744,17 @@ def _cmd_normalize(args: argparse.Namespace) -> None:
     print(f"normalizing {len(input_paths)} input file(s)")
     for path in input_paths:
         print(f" - {path}")
-    _write_normalized_output(output_file, rows, _load_config(args.config_dir))
+    _write_normalized_output(output_file, rows, _load_config(args.config_dir, args.environment))
 
 
 def _cmd_match(args: argparse.Namespace) -> None:
     input_file = Path(args.input)
     output_file = Path(args.output)
-    _write_match_output(output_file, read_dict_rows(input_file), _load_config(args.config_dir))
+    _write_match_output(
+        output_file,
+        read_dict_rows(input_file),
+        _load_config(args.config_dir, args.environment),
+    )
 
 
 def _cmd_cluster(args: argparse.Namespace) -> None:
@@ -712,7 +771,24 @@ def _cmd_review_queue(args: argparse.Namespace) -> None:
 
 def _cmd_golden(args: argparse.Namespace) -> None:
     output_file = Path(args.output)
-    _write_golden_output(output_file, _resolve_golden_input_rows(args), _load_config(args.config_dir))
+    _write_golden_output(
+        output_file,
+        _resolve_golden_input_rows(args),
+        _load_config(args.config_dir, args.environment),
+    )
+
+
+def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    upgrade_sqlite_store(state_db, revision=args.revision)
+    current_revision = current_sqlite_store_revision(state_db) or "uninitialized"
+    print(f"state db upgraded: {state_db} (revision={current_revision})")
+
+
+def _cmd_state_db_current(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    current_revision = current_sqlite_store_revision(state_db) or "uninitialized"
+    print(f"state db revision: {current_revision} (head={head_revision()})")
 
 
 def _cmd_report(args: argparse.Namespace) -> None:
@@ -777,7 +853,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         attempt_number = start_decision.attempt_number
 
     try:
-        config = _load_config(args.config_dir)
+        config = _load_config(args.config_dir, args.environment)
         manifest_path = getattr(args, "manifest", None)
         resolved_manifest: ResolvedBatchManifest | None = None
         input_mode = "manifest" if manifest_path else "synthetic"
@@ -912,12 +988,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default="data/normalized/normalized_person_records.csv",
     )
+    normalize_parser.add_argument("--environment", default=None)
+    normalize_parser.add_argument("--runtime-config", default=None)
     normalize_parser.add_argument("--config-dir", default=None)
     normalize_parser.set_defaults(func=_cmd_normalize)
 
     match_parser = subparsers.add_parser("match", help="Generate and score candidate pairs.")
     match_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
     match_parser.add_argument("--output", default="data/matches/candidate_scores.csv")
+    match_parser.add_argument("--environment", default=None)
+    match_parser.add_argument("--runtime-config", default=None)
     match_parser.add_argument("--config-dir", default=None)
     match_parser.set_defaults(func=_cmd_match)
 
@@ -953,12 +1033,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Defaults to the matching artifact derived from --input."
         ),
     )
+    golden_parser.add_argument("--environment", default=None)
+    golden_parser.add_argument("--runtime-config", default=None)
     golden_parser.add_argument("--config-dir", default=None)
     golden_parser.set_defaults(func=_cmd_golden)
 
     report_parser = subparsers.add_parser("report", help="Produce run report.")
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
     report_parser.add_argument("--output", default="data/exceptions/run_report.md")
+    report_parser.add_argument("--environment", default=None)
+    report_parser.add_argument("--runtime-config", default=None)
     report_parser.add_argument(
         "--state-db",
         default=None,
@@ -991,12 +1075,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report_parser.set_defaults(func=_cmd_report)
 
+    state_db_upgrade_parser = subparsers.add_parser(
+        "state-db-upgrade",
+        help="Upgrade a persisted SQLite state database to the latest Alembic revision.",
+    )
+    state_db_upgrade_parser.add_argument("--environment", default=None)
+    state_db_upgrade_parser.add_argument("--runtime-config", default=None)
+    state_db_upgrade_parser.add_argument("--state-db", default=None)
+    state_db_upgrade_parser.add_argument("--revision", default="head")
+    state_db_upgrade_parser.set_defaults(func=_cmd_state_db_upgrade)
+
+    state_db_current_parser = subparsers.add_parser(
+        "state-db-current",
+        help="Show the current Alembic revision for a persisted SQLite state database.",
+    )
+    state_db_current_parser.add_argument("--environment", default=None)
+    state_db_current_parser.add_argument("--runtime-config", default=None)
+    state_db_current_parser.add_argument("--state-db", default=None)
+    state_db_current_parser.set_defaults(func=_cmd_state_db_current)
+
     run_all_parser = subparsers.add_parser("run-all", help="Run all scaffold stages in sequence.")
     run_all_parser.add_argument("--base-dir", default=".")
     run_all_parser.add_argument("--profile", default="small", choices=["small", "medium", "large"])
     run_all_parser.add_argument("--seed", default=42, type=int)
     run_all_parser.add_argument("--duplicate-rate", default=None, type=float)
     run_all_parser.add_argument("--formats", default="csv,parquet")
+    run_all_parser.add_argument("--environment", default=None)
+    run_all_parser.add_argument("--runtime-config", default=None)
     run_all_parser.add_argument(
         "--state-db",
         default=None,
@@ -1019,6 +1124,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _apply_runtime_defaults(args)
     args.func(args)
     return 0
 

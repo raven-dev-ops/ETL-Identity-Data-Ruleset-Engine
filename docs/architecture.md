@@ -8,9 +8,9 @@ golden records, and reporting artifacts.
 ## Public Scope Boundaries
 
 - The current runtime supports synthetic generation plus manifest-driven
-  local and object-storage-compatible landed batches. Persisted state
-  and service workflows are still tracked follow-on work rather than
-  implicit capabilities of the current line.
+  local and object-storage-compatible landed batches. Persisted SQLite
+  state is now supported; service workflows remain tracked follow-on
+  work rather than implicit capabilities of the current line.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -60,6 +60,13 @@ The current runtime reads these repo config files at startup:
 - `config/matching_rules.yml`
 - `config/thresholds.yml`
 - `config/survivorship_rules.yml`
+- `config/runtime_environments.yml`
+
+Named runtime environments can now layer per-environment overrides from
+`config/environments/<environment>/` and resolve secret-backed values
+from `${ENV_VAR}` placeholders. The CLI can consume those defaults
+through `--environment` and `--runtime-config` rather than requiring
+operators to edit committed YAML in place.
 
 Runtime config now fails fast when required sections, supported fields,
 or threshold semantics are invalid.
@@ -87,6 +94,8 @@ state schema is documented in [persistent-state.md](persistent-state.md).
 The registry now records `running`, `completed`, and `failed` attempts,
 reuses completed runs idempotently, and treats failed reruns as clean
 restart attempts under the same `run_key`.
+Schema bootstrap is now managed through Alembic-backed `state-db-upgrade`
+and `state-db-current` commands instead of ad hoc table creation.
 
 ## Output Layout
 
