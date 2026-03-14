@@ -2,21 +2,23 @@
 
 This backlog is the current source of truth for new GitHub issues after
 the completed bootstrap backlog, the completed `post-v0.1.0` follow-up
-backlog, and the completed `v0.6.0` production-readiness cycle.
-Historical backlog files remain available as read-only records:
+backlog, the completed `v0.6.0` production-readiness cycle, and the
+completed `v0.7.0`-`v0.9.0` delivery cycle. Historical backlog files
+remain available as read-only records:
 
 - `planning/github-issues-backlog.md`
 - `planning/post-v0.1.0-github-issues-backlog.md`
 - `planning/post-v0.6.0-github-issues-backlog.md`
+- `planning/post-v0.9.0-github-issues-backlog.md`
 
 Date prepared: 2026-03-14
 Last synced to GitHub: 2026-03-14
 
 ## Milestones
 
-- `v0.7.0`: Durable replay and database platform
-- `v0.8.0`: Enterprise access and service control plane
-- `v0.9.0`: Distributed deployment and event-driven runtime
+- `v1.0.0`: CAD/RMS source contracts and validation
+- `v1.1.0`: Public safety onboarding and identity mapping
+- `v1.2.0`: Customer deployment packaging and pilot handoff
 
 ## Label Set To Create
 
@@ -44,248 +46,267 @@ Last synced to GitHub: 2026-03-14
 
 ## Issue Catalog
 
-## v0.7.0: Durable replay and database platform
+## v1.0.0: CAD/RMS source contracts and validation
 
-### 93) Add PostgreSQL state-store backend and dialect test coverage
+### 105) Add versioned CAD call-for-service source contracts and validators
 
-- Status: `closed`
-- Milestone: `v0.7.0`
-- Labels: `type:feature`, `area:storage`, `priority:p0`
-- Depends on: none
-- Description:
-  - The published `v0.6.0` line relies on SQLite as the supported
-    persisted-state backend.
-  - The next production step needs a networked relational backend that
-    can support concurrent service and batch usage without the
-    single-host SQLite constraint.
-- Acceptance criteria:
-  - The runtime supports PostgreSQL-backed persisted state alongside
-    SQLite.
-  - Alembic migrations run cleanly against PostgreSQL in CI.
-  - Persistence, replay, publication, and service integration tests pass
-    against the PostgreSQL backend.
-
-### 94) Archive manifest and landed-input snapshots as immutable replay bundles
-
-- Status: `closed`
-- Milestone: `v0.7.0`
+- Status: `open`
+- Milestone: `v1.0.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
-- Depends on: #93
-- Description:
-  - The current recovery model depends on operators restoring the
-    original manifest path and landed input locations.
-  - Production replay needs an immutable archived snapshot of those
-    inputs so recovery does not depend on the original landing zone.
-- Acceptance criteria:
-  - Manifest-driven runs can persist an immutable replay bundle that
-    includes the manifest plus referenced landed inputs.
-  - Replay bundles are addressable from persisted run metadata.
-  - Operators can verify bundle completeness before a run is marked
-    recoverable.
-
-### 95) Support replay from archived bundles without original landing paths
-
-- Status: `closed`
-- Milestone: `v0.7.0`
-- Labels: `type:feature`, `area:storage`, `priority:p0`
-- Depends on: #94
-- Description:
-  - Archived inputs only help if operators can replay directly from the
-    archived bundle.
-  - The runtime currently requires the original `manifest_path` and
-    landing-zone layout to exist again.
-- Acceptance criteria:
-  - `replay-run` can execute from an archived replay bundle without the
-    original landing-zone paths.
-  - Recovery docs and smoke coverage prove replay from archived inputs.
-  - Persisted run metadata records whether a run is replayable from an
-    archived bundle alone.
-
-### 96) Add checkpointed resume for failed persisted runs
-
-- Status: `closed`
-- Milestone: `v0.7.0`
-- Labels: `type:feature`, `area:operations`, `priority:p1`
-- Depends on: #93
-- Description:
-  - The current restart model is a clean rerun after failure.
-  - Larger production batches need stage checkpoints so operators can
-    resume work instead of rerunning the entire batch.
-- Acceptance criteria:
-  - Failed persisted runs can resume from documented stage checkpoints.
-  - Checkpoint state is durable and auditable.
-  - Integration tests cover resume after failure for at least one
-    manifest-driven persisted batch.
-
-## v0.8.0: Enterprise access and service control plane
-
-### 97) Add OIDC or JWT service authentication for enterprise identity providers
-
-- Status: `closed`
-- Milestone: `v0.8.0`
-- Labels: `type:feature`, `area:security`, `priority:p0`
 - Depends on: none
 - Description:
-  - The current service baseline uses static API keys.
-  - Enterprise deployments need service authentication that can
-    integrate with external identity providers.
+  - The public-safety demo currently relies on synthetic sidecar data
+    and internal assumptions about CAD-shaped records.
+  - Customer onboarding needs an explicit, versioned CAD contract for
+    incident, involved-person, and source-person extracts.
 - Acceptance criteria:
-  - The service supports OIDC or JWT bearer authentication backed by
-    deployment-provided identity metadata.
-  - Existing API-key auth remains documented as a simpler compatibility
-    mode or is explicitly deprecated.
-  - Integration tests cover authenticated service access with external
-    identity claims.
+  - The repo ships a documented CAD batch contract with required files,
+    columns, and version markers.
+  - Validation rejects missing or malformed CAD contract inputs before
+    runtime execution.
+  - Tests cover valid and invalid CAD contract examples.
 
-### 98) Add fine-grained RBAC scopes and actor identity propagation
+### 106) Add versioned RMS report/person source contracts and validators
 
-- Status: `closed`
-- Milestone: `v0.8.0`
-- Labels: `type:feature`, `area:security`, `priority:p0`
-- Depends on: #97
+- Status: `open`
+- Milestone: `v1.0.0`
+- Labels: `type:feature`, `area:ingest`, `priority:p0`
+- Depends on: none
 - Description:
-  - The current service and operator surface distinguishes only
-    `reader` and `operator`.
-  - Production control planes need narrower permissions and auditable
-    end-user identity propagation.
+  - The current runtime does not expose a formal RMS onboarding
+    contract, even though the demo narrative depends on RMS-style
+    report and person data.
+  - Customer pilots need a stable RMS contract that can be discussed
+    with source-system owners and integration teams.
 - Acceptance criteria:
-  - Service and operator actions enforce finer-grained scopes than the
-    current two-role model.
-  - Audit events persist the authenticated actor identity and scope
-    context.
-  - Docs define the supported RBAC model for operators and consumers.
+  - The repo ships a documented RMS batch contract with required files,
+    columns, and version markers.
+  - Validation rejects missing or malformed RMS contract inputs before
+    runtime execution.
+  - Tests cover valid and invalid RMS contract examples.
 
-### 99) Expose publish and export-job triggers over the service API
+### 107) Extend the manifest model with named CAD/RMS source bundles and source-class validation
 
-- Status: `closed`
-- Milestone: `v0.8.0`
+- Status: `open`
+- Milestone: `v1.0.0`
+- Labels: `type:feature`, `area:ingest`, `priority:p0`
+- Depends on: #105, #106
+- Description:
+  - The current manifest model is file-oriented but not explicit about
+    public-safety source bundles such as CAD and RMS extracts.
+  - Production onboarding needs manifest-era validation that the full
+    required bundle for each source class is present and internally
+    consistent.
+- Acceptance criteria:
+  - Manifests can declare CAD and RMS source bundles with named source
+    classes and contract versions.
+  - Validation enforces required-file completeness for each declared
+    public-safety source bundle.
+  - Contract-aware manifest tests cover mixed CAD/RMS ingestion.
+
+### 108) Add contract conformance tooling and onboarding fixtures for CAD/RMS batches
+
+- Status: `open`
+- Milestone: `v1.0.0`
+- Labels: `type:feature`, `area:quality`, `priority:p1`
+- Depends on: #107
+- Description:
+  - Contract docs alone are not enough for customer onboarding and
+    vendor conversations.
+  - The repo needs repeatable conformance tooling plus realistic sample
+    fixtures that show how CAD and RMS batches should be structured.
+- Acceptance criteria:
+  - The CLI exposes a contract-conformance check for CAD/RMS bundles.
+  - The repo ships onboarding fixtures and example manifests for
+    contract-valid CAD and RMS batches.
+  - Docs explain how source owners can self-check their payloads before
+    pipeline onboarding.
+
+## v1.1.0: Public safety onboarding and identity mapping
+
+### 109) Add CAD/RMS field-mapping overlays for vendor-specific source columns
+
+- Status: `open`
+- Milestone: `v1.1.0`
+- Labels: `type:feature`, `area:normalize`, `priority:p0`
+- Depends on: #107
+- Description:
+  - Real CAD and RMS feeds will not arrive in the exact canonical field
+    names used by the current synthetic runtime.
+  - The onboarding path needs configurable mapping overlays that
+    translate vendor-specific columns into the supported canonical
+    person and incident shapes.
+- Acceptance criteria:
+  - The runtime can load source-specific mapping overlays for CAD and
+    RMS inputs.
+  - Mapping overlays support both person attributes and incident/link
+    attributes.
+  - Tests cover at least two distinct source-shape examples.
+
+### 110) Add a public-safety activity ingestion path from contract inputs to persisted state
+
+- Status: `open`
+- Milestone: `v1.1.0`
+- Labels: `type:feature`, `area:workflow`, `priority:p0`
+- Depends on: #109
+- Description:
+  - The current public-safety slice is demo-oriented and not yet a
+    first-class persisted ingestion path from formal CAD/RMS contracts.
+  - Customer demonstrations and pilots need the activity model to be
+    built directly from validated contract inputs.
+- Acceptance criteria:
+  - Manifest-driven runs can ingest contract-valid CAD/RMS bundles into
+    persisted state.
+  - The runtime persists incident-to-identity activity data alongside
+    the existing golden-person outputs.
+  - End-to-end tests cover the contract-to-persisted-state path.
+
+### 111) Add service and demo-shell read models for incident-to-identity activity views
+
+- Status: `open`
+- Milestone: `v1.1.0`
 - Labels: `type:feature`, `area:service`, `priority:p1`
-- Depends on: #98
+- Depends on: #110
 - Description:
-  - Publication and export orchestration remain CLI-driven.
-  - Operators and downstream platforms need a service-level control path
-    for those actions.
+  - The current service and demo shell expose identity outputs, but the
+    public-safety activity view is still primarily generated as offline
+    artifacts.
+  - Customer-facing walkthroughs need stable read models that can serve
+    CAD/RMS incident activity directly from persisted state.
 - Acceptance criteria:
-  - The service exposes authenticated publish and export-job trigger
-    endpoints.
-  - Triggered actions remain auditable and idempotent where applicable.
-  - Compatibility and security docs cover the new control-plane
-    endpoints.
+  - The service exposes documented read endpoints for persisted
+    incident-to-identity activity.
+  - The Django demo shell can render the same activity model from the
+    persisted state or packaged pilot bundle.
+  - Compatibility docs define the supported read-model contract.
 
-### 100) Add paginated list and search endpoints for runs, goldens, and review cases
+### 112) Add regression fixtures for cross-system identity scenarios and false-merge guards
 
-- Status: `closed`
-- Milestone: `v0.8.0`
-- Labels: `type:feature`, `area:service`, `priority:p1`
-- Depends on: #97
+- Status: `open`
+- Milestone: `v1.1.0`
+- Labels: `type:feature`, `area:quality`, `priority:p1`
+- Depends on: #110
 - Description:
-  - The current service surface is record-oriented and limited to direct
-    lookups plus a few list endpoints.
-  - Production operators and consumers need stable list, filter, and
-    pagination behavior for larger datasets.
+  - A real public-safety onboarding story needs stronger proof around
+    same-person merges, same-household separations, and cross-system
+    false-positive avoidance.
+  - The current synthetic suite does not yet package those cases as a
+    focused regression set for CAD/RMS onboarding.
 - Acceptance criteria:
-  - The service exposes paginated list endpoints for persisted runs,
-    golden records, and review cases.
-  - Filtering and sort semantics are documented and integration-tested.
-  - The compatibility policy identifies the stable pagination contract.
+  - The repo ships explicit regression fixtures for same-person, same-
+    household, and false-merge public-safety scenarios.
+  - Matching and survivorship tests guard the expected outcomes for
+    those cases.
+  - Demo documentation references the canonical regression scenarios.
 
-## v0.9.0: Distributed deployment and event-driven runtime
+## v1.2.0: Customer deployment packaging and pilot handoff
 
-### 101) Add Kubernetes or Helm deployment manifests for PostgreSQL-backed service topology
+### 113) Package a standalone customer pilot bundle with seeded state and launch scripts
 
-- Status: `closed`
-- Milestone: `v0.9.0`
+- Status: `open`
+- Milestone: `v1.2.0`
 - Labels: `type:feature`, `area:operations`, `priority:p0`
-- Depends on: #93, #97, #98
+- Depends on: #111
 - Description:
-  - The current deployment baseline is a single-host compose topology.
-  - Production teams need a documented clustered deployment option for
-    the service and batch runtime.
+  - The current demo bundle is useful for internal walkthroughs but is
+    not yet shaped like a customer pilot handoff package.
+  - Customer-facing pilots need a deterministic bundle that includes
+    the seeded state, demo shell, launch helpers, and supporting docs.
 - Acceptance criteria:
-  - The repo ships Kubernetes or Helm manifests for the supported
-    PostgreSQL-backed deployment topology.
-  - Deployment docs cover secrets, service exposure, and state-store
-    wiring for the clustered path.
-  - CI validates the deployment assets syntactically and through at
-    least one smoke path.
+  - The repo can build a standalone customer pilot bundle from a seeded
+    public-safety dataset.
+  - The bundle includes the demo shell, persisted state, and startup
+    helpers needed for a local pilot walkthrough.
+  - Packaging tests verify bundle completeness and deterministic naming.
 
-### 102) Add image signing, SBOM attestation, and container scanning gates
+### 114) Add a Windows-first single-host pilot installer/bootstrap for the Django and PostgreSQL baseline
 
-- Status: `closed`
-- Milestone: `v0.9.0`
-- Labels: `type:chore`, `area:ci`, `priority:p1`
-- Depends on: #101
+- Status: `open`
+- Milestone: `v1.2.0`
+- Labels: `type:feature`, `area:operations`, `priority:p1`
+- Depends on: #113
 - Description:
-  - The release path now emits dependency inventory and audit outputs
-    for built Python artifacts.
-  - Containerized deployments need equivalent provenance and image-level
-    security gates.
+  - The current deployment assets assume maintainer-level familiarity
+    with Python, containers, and manual setup.
+  - A customer pilot needs a simpler Windows-first bootstrap path that
+    reflects how the demo will actually be evaluated.
 - Acceptance criteria:
-  - Container images are signed or attested as part of the release path.
-  - CI emits SBOM or provenance data for the image artifacts.
-  - Image scanning is enforced before a production image is published.
+  - The repo ships a documented Windows-first bootstrap path for the
+    supported single-host pilot topology.
+  - The bootstrap prepares the Django shell, state store, and runtime
+    configuration with minimal manual steps.
+  - Smoke coverage validates the pilot bootstrap on the supported host
+    path.
 
-### 103) Add event-driven ingestion and streaming entity-refresh mode
+### 115) Add a customer environment readiness check and signed handoff manifest
 
-- Status: `closed`
-- Milestone: `v0.9.0`
-- Labels: `type:feature`, `area:ingest`, `priority:p1`
-- Depends on: #93, #96
+- Status: `open`
+- Milestone: `v1.2.0`
+- Labels: `type:feature`, `area:security`, `priority:p1`
+- Depends on: #114
 - Description:
-  - The current runtime is batch-oriented.
-  - Some production integrations need near-real-time ingestion and
-    entity refresh without waiting for batch windows.
+  - Customer pilots need a concrete way to prove what artifact set was
+    delivered and whether the target environment meets the documented
+    prerequisites.
+  - The current repo has release-hardening and CJIS preflight checks,
+    but not a customer handoff manifest for pilot installs.
 - Acceptance criteria:
-  - The runtime supports an event-driven or streaming ingestion mode.
-  - Entity refresh semantics remain deterministic and auditable.
-  - Benchmarks and tests cover at least one continuous-ingest scenario.
+  - The repo ships a pilot readiness check for the customer deployment
+    baseline.
+  - The customer pilot bundle includes a signed or hashed manifest of
+    the delivered artifacts and versions.
+  - Docs define the intended operator use of the readiness output and
+    handoff manifest.
 
-### 104) Add clustered benchmark fixtures and SLO targets for distributed deployments
+### 116) Add operator/admin runbooks and a pilot acceptance checklist for customer handoff
 
-- Status: `closed`
-- Milestone: `v0.9.0`
-- Labels: `type:feature`, `area:quality`, `priority:p2`
-- Depends on: #101, #103
+- Status: `open`
+- Milestone: `v1.2.0`
+- Labels: `type:docs`, `area:docs`, `priority:p1`
+- Depends on: #115
 - Description:
-  - The current benchmark target is the single-host container path.
-  - The next deployment line needs measurable throughput and latency
-    expectations for the clustered topology.
+  - A customer pilot is not complete when the artifacts exist but the
+    delivery and acceptance steps still live only in maintainer context.
+  - The repo needs explicit runbooks and acceptance criteria for the
+    handoff itself.
 - Acceptance criteria:
-  - Benchmark fixtures exist for the distributed deployment path.
-  - Benchmark outputs capture SLO-style latency and throughput metrics
-    for the clustered runtime.
-  - Capacity targets are documented for the supported distributed
-    deployment baseline.
+  - The repo ships operator/admin runbooks for install, startup,
+    rollback, backup, and demo execution.
+  - The repo ships a pilot acceptance checklist that can be used during
+    customer handoff.
+  - The README and planning docs point to the pilot handoff material.
 
 ## Suggested Epic Issues
 
 Create these 3 epics first, then link child issues:
 
-1. Epic: Durable Replay and Database Platform (`v0.7.0`)
-2. Epic: Enterprise Access and Service Control Plane (`v0.8.0`)
-3. Epic: Distributed Deployment and Event-Driven Runtime (`v0.9.0`)
+1. Epic: CAD/RMS Source Contracts and Validation (`v1.0.0`)
+2. Epic: Public Safety Onboarding and Identity Mapping (`v1.1.0`)
+3. Epic: Customer Deployment Packaging and Pilot Handoff (`v1.2.0`)
 
 ## Suggested Issue Creation Order
 
 1. Create or confirm labels.
-2. Create milestones `v0.7.0`, `v0.8.0`, and `v0.9.0`.
+2. Create milestones `v1.0.0`, `v1.1.0`, and `v1.2.0`.
 3. Create the 3 epics.
 4. Create all child issues and assign them to epics.
-5. Execute `v0.7.0` before `v0.8.0`, and `v0.8.0` before `v0.9.0`.
+5. Execute `v1.0.0` before `v1.1.0`, and `v1.1.0` before `v1.2.0`.
 
 ## Tracker Status Snapshot
 
 Snapshot date: 2026-03-14
 
-- Active epic issues in GitHub for this backlog: `#81`, `#82`, `#83`
+- Active epic issues in GitHub for this backlog:
+  `#96`, `#97`, `#98`
 - Open child issues represented in this local active catalog:
-  none
+  `#99` through `#110`
 - Open milestones in GitHub for this backlog:
-  none after closeout of epics `#81`, `#82`, and `#83`
+  `v1.0.0`, `v1.1.0`, and `v1.2.0`
 - Closed backlog history remains in:
   `planning/github-issues-backlog.md`,
-  `planning/post-v0.1.0-github-issues-backlog.md`, and
-  `planning/post-v0.6.0-github-issues-backlog.md`
-- This backlog opens the post-`v0.6.0` cycle focused on durable replay,
-  enterprise access control, and distributed deployment/runtime gaps
-  that remain outside the current production target.
+  `planning/post-v0.1.0-github-issues-backlog.md`,
+  `planning/post-v0.6.0-github-issues-backlog.md`, and
+  `planning/post-v0.9.0-github-issues-backlog.md`
+- This backlog opens the post-`v0.9.2` cycle focused on formal CAD/RMS
+  source contracts, public-safety onboarding, and customer-facing pilot
+  packaging needed beyond the current production and demo baseline.

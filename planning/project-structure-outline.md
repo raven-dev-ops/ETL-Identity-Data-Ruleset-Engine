@@ -9,10 +9,11 @@ Define and track the repository structure for implementing the ETL Identity Data
 
 ## Current Status
 
-`M1` through `M6` are implemented in-repo, the `v0.1.x` prototype line
-has now advanced to the published `v0.6.0` production-readiness
-baseline, and the tracked post-`v0.6.0` backlog cycle is now complete
-in-repo.
+`M1` through `M6` are implemented in-repo, the prototype line has now
+advanced through the published `v0.9.2` release, the tracked
+`v0.7.0`-`v0.9.0` backlog cycle is complete in-repo, and the next
+backlog cycle is now focused on CAD/RMS onboarding and customer pilot
+packaging.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -90,6 +91,7 @@ ETL-Identity-Data-Ruleset-Engine/
     github-issues-backlog.md
     post-v0.1.0-github-issues-backlog.md
     post-v0.6.0-github-issues-backlog.md
+    post-v0.9.0-github-issues-backlog.md
     project-structure-outline.md
     remaining-work-task-list.md
   scripts/
@@ -194,7 +196,7 @@ The current public line is now explicitly scoped around:
   clustered deployment baselines
 - keep the event-stream contract and persisted stream-refresh runtime
   aligned with the documented micro-batch operator model
-- execute the new post-`v0.6.0` backlog cycle tracked in
-  `planning/active-github-issues-backlog.md` to closeout, then open a
-  new backlog cycle only for net-new scope
+- execute the new post-`v0.9.2` backlog cycle tracked in
+  `planning/active-github-issues-backlog.md`, focused on formal CAD/RMS
+  source contracts and customer pilot packaging
 
