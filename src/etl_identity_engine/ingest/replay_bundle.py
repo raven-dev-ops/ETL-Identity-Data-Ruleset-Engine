@@ -68,6 +68,7 @@ def replay_bundle_summary_from_result(result: ReplayBundleVerificationResult) ->
         "bundle_version": REPLAY_BUNDLE_VERSION,
         "status": result.status,
         "recoverable": result.recoverable,
+        "replayable_from_bundle": result.recoverable,
         "restore_mode": REPLAY_BUNDLE_RESTORE_MODE,
         "bundle_root": str(result.bundle_root),
         "bundle_manifest_path": str(result.bundle_manifest_path),
@@ -102,6 +103,27 @@ def replay_bundle_manifest_path_from_summary(summary: Mapping[str, object]) -> P
     if not isinstance(manifest_path, str) or not manifest_path.strip():
         return None
     return Path(manifest_path)
+
+
+def replay_bundle_replay_manifest_path_from_summary(summary: Mapping[str, object]) -> Path | None:
+    replay_bundle = summary.get("replay_bundle")
+    if not isinstance(replay_bundle, Mapping):
+        return None
+    manifest_path = replay_bundle.get("replay_manifest_path")
+    if not isinstance(manifest_path, str) or not manifest_path.strip():
+        return None
+    return Path(manifest_path)
+
+
+def replay_bundle_is_replayable_from_summary(summary: Mapping[str, object]) -> bool:
+    replay_bundle = summary.get("replay_bundle")
+    if not isinstance(replay_bundle, Mapping):
+        return False
+    replayable = replay_bundle.get("replayable_from_bundle")
+    if isinstance(replayable, bool):
+        return replayable
+    recoverable = replay_bundle.get("recoverable")
+    return isinstance(recoverable, bool) and recoverable
 
 
 def archive_replay_bundle(
@@ -169,7 +191,7 @@ def archive_replay_bundle(
             "batch_id": resolved_manifest.manifest.batch_id,
             "landing_zone": {
                 "kind": "local_filesystem",
-                "base_path": "./landing_snapshot",
+                "base_path": "../landing_snapshot",
             },
             "sources": replay_sources,
         },

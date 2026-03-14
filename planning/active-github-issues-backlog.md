@@ -85,7 +85,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 95) Support replay from archived bundles without original landing paths
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.7.0`
 - Labels: `type:feature`, `area:storage`, `priority:p0`
 - Depends on: #94
@@ -279,8 +279,7 @@ Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog: `#81`, `#82`, `#83`
 - Open child issues represented in this local active catalog:
-  `#86`, `#87`, `#88`, `#89`, `#90`, `#91`, `#92`, `#93`, `#94`,
-  `#95`
+  `#87`, `#88`, `#89`, `#90`, `#91`, `#92`, `#93`, `#94`, `#95`
 - Open milestones in GitHub for this backlog:
   - `v0.7.0` with epic `#81`
   - `v0.8.0` with epic `#82`

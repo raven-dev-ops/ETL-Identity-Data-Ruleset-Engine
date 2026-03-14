@@ -1871,10 +1871,19 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         review_overrides: dict[tuple[str, str], str] = {}
         forced_review_pairs: set[tuple[str, str]] = set()
         if state_store is not None and resolved_manifest is not None:
-            review_source_run = state_store.latest_completed_run_for_manifest(
-                manifest_path=str(resolved_manifest.manifest_path),
-                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
-            )
+            replay_source_run_id = getattr(args, "replay_source_run_id", None)
+            if replay_source_run_id:
+                review_source_run = state_store.load_run_record(replay_source_run_id)
+                if review_source_run.status != "completed":
+                    raise ValueError(
+                        f"Replay source run must be completed, received status={review_source_run.status!r} "
+                        f"for run_id={review_source_run.run_id}"
+                    )
+            else:
+                review_source_run = state_store.latest_completed_run_for_manifest(
+                    manifest_path=str(resolved_manifest.manifest_path),
+                    config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+                )
             if review_source_run is not None:
                 review_source_bundle = state_store.load_run_bundle(review_source_run.run_id)
                 review_overrides = build_review_override_map(review_source_bundle.review_rows)
@@ -2054,6 +2063,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     "input_mode": input_mode,
                     "batch_id": batch_id or "",
                     "manifest_path": str(resolved_manifest.manifest_path) if resolved_manifest else "",
+                    "replay_source_run_id": getattr(args, "replay_source_run_id", None) or "",
                     "config_fingerprint": config_fingerprint,
                     "refresh_mode": args.refresh_mode,
                     "profile": None if manifest_path else args.profile,
@@ -2147,6 +2157,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                         "bundle_version": REPLAY_BUNDLE_VERSION,
                         "status": "failed",
                         "recoverable": False,
+                        "replayable_from_bundle": False,
                         "restore_mode": REPLAY_BUNDLE_RESTORE_MODE,
                         "bundle_root": str(bundle_root),
                         "bundle_manifest_path": str(bundle_root / "bundle_manifest.json"),
@@ -2758,6 +2769,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--refresh-mode", default="full", choices=["full", "incremental"])
     run_all_parser.add_argument("--environment", default=None)
     run_all_parser.add_argument("--runtime-config", default=None)
+    run_all_parser.add_argument("--replay-source-run-id", default=None, help=argparse.SUPPRESS)
     run_all_parser.add_argument(
         "--state-db",
         default=None,

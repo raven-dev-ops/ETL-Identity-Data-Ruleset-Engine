@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -213,12 +214,12 @@ def test_apply_review_decision_and_replay_run_support_operator_workflow(
     assert noop_payload["action"] == "noop"
     assert noop_payload["case"]["queue_status"] == "approved"
 
-    _write_manifest(
-        manifest_path,
-        batch_id="operator-cli-002",
-        source_a_path="agency_a.csv",
-        source_b_path="agency_b.parquet",
-    )
+    replay_bundle = store.load_run_record(first_run_id).summary["replay_bundle"]
+    assert replay_bundle["replayable_from_bundle"] is True
+    assert Path(str(replay_bundle["replay_manifest_path"])).exists()
+
+    manifest_path.unlink()
+    shutil.rmtree(tmp_path / "landing")
 
     replay_base_dir = tmp_path / "replay-run"
     assert (
@@ -257,7 +258,7 @@ def test_apply_review_decision_and_replay_run_support_operator_workflow(
                 "--state-db",
                 str(db_path),
                 "--run-id",
-                result_run_id,
+                first_run_id,
                 "--base-dir",
                 str(second_replay_base_dir),
                 "--refresh-mode",
@@ -281,6 +282,7 @@ def test_verify_replay_bundle_updates_recoverability_for_manifest_runs(
 
     assert replay_bundle["status"] == "verified"
     assert replay_bundle["recoverable"] is True
+    assert replay_bundle["replayable_from_bundle"] is True
     assert Path(str(replay_bundle["bundle_manifest_path"])).exists()
     assert Path(str(replay_bundle["original_manifest_path"])).exists()
     assert Path(str(replay_bundle["landing_snapshot_root"])).exists()
@@ -320,11 +322,13 @@ def test_verify_replay_bundle_updates_recoverability_for_manifest_runs(
     incomplete_payload = _json_output(capsys)
     assert incomplete_payload["status"] == "incomplete"
     assert incomplete_payload["recoverable"] is False
+    assert incomplete_payload["replay_bundle"]["replayable_from_bundle"] is False
     assert incomplete_payload["replay_bundle"]["verification_errors"]
 
     refreshed_record = store.load_run_record(run_id)
     assert refreshed_record.summary["replay_bundle"]["status"] == "incomplete"
     assert refreshed_record.summary["replay_bundle"]["recoverable"] is False
+    assert refreshed_record.summary["replay_bundle"]["replayable_from_bundle"] is False
 
 
 def test_publish_run_returns_json_and_reuses_existing_snapshot(

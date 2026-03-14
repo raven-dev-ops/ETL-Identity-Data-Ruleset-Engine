@@ -271,15 +271,14 @@ def main(argv: list[str] | None = None) -> int:
         if landing_dir.exists():
             shutil.rmtree(landing_dir)
 
-        restored_manifest_path = manifest_path
-        restored_landing_dir = landing_dir
-        restored_manifest_path.parent.mkdir(parents=True, exist_ok=True)
         backup_replay_bundle_root = backup_root / "replay_bundle"
-        shutil.copy2(
-            backup_replay_bundle_root / "manifest" / "original" / manifest_path.name,
-            restored_manifest_path,
-        )
-        shutil.copytree(backup_replay_bundle_root / "landing_snapshot", restored_landing_dir)
+        restored_bundle_root = replay_bundle_root
+        restored_bundle_root.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(backup_replay_bundle_root, restored_bundle_root)
+        if manifest_path.exists() or landing_dir.exists():
+            raise SystemExit(
+                "expected original manifest and landing paths to remain absent before archived-bundle replay"
+            )
 
         restored_state_db = restored_root / "state" / "pipeline_state.sqlite"
         restored_state_db.parent.mkdir(parents=True, exist_ok=True)
@@ -314,7 +313,6 @@ def main(argv: list[str] | None = None) -> int:
         if not rebuilt_report.exists() or not rebuilt_summary_path.exists():
             raise SystemExit("expected restored persisted state to rebuild report outputs")
 
-        _write_manifest(restored_manifest_path, batch_id="recovery-smoke-002")
         replay_payload = _run_cli(
             [
                 "replay-run",
@@ -362,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
                         "backup_sqlite_and_replay_bundle",
                         "restore_review_state",
                         "rebuild_report_outputs_from_restored_state",
-                        "replay_recovered_run_with_review_override",
+                        "replay_recovered_run_from_archived_bundle",
                     ],
                     "source_run_id": source_run_id,
                     "replay_run_id": replay_run_id,

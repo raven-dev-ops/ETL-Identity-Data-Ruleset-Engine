@@ -18,14 +18,14 @@ That distinction matters operationally:
 
 - `report`, `publish-run`, and `export-job-run` can rebuild downstream
   outputs from the restored persisted state store alone
-- `replay-run` requires the stored `manifest_path` to exist again, and
-  the landed files referenced by that manifest must also be available
+- `replay-run` can now execute directly from the verified archived
+  replay bundle without restoring the original manifest and landing
+  paths
 
-The runtime now archives and verifies replay bundles, but it does not
-yet replay directly from those bundles alone. Recovery therefore means
-backing up the persisted state database plus the replay bundle, then
-restoring the archived manifest and landed snapshot to the expected
-paths before using `replay-run`.
+The runtime now archives, verifies, and replays from replay bundles.
+Recovery therefore means backing up the persisted state database plus
+the replay bundle, then restoring that bundle to its recorded bundle
+path before using `replay-run`.
 
 ## Minimum Backup Set
 
@@ -67,21 +67,18 @@ python -m etl_identity_engine.cli verify-replay-bundle \
 ## Restore Procedure
 
 1. Restore the SQLite DB to the target runtime location.
-2. Restore the archived original manifest copy from the replay bundle to
-   the same absolute path recorded in the persisted run when replay is
-   required.
-3. Restore the archived landing snapshot from the replay bundle to the
-   locations referenced by the restored manifest.
-4. If the original run used a custom config overlay, restore that config
+2. Restore the replay bundle to the recorded bundle path stored in the
+   completed run summary.
+3. If the original run used a custom config overlay, restore that config
    snapshot before replaying.
-5. Verify the restored DB schema is readable:
+4. Verify the restored DB schema is readable:
 
 ```bash
 python -m etl_identity_engine.cli state-db-current \
   --state-db data/state/pipeline_state.sqlite
 ```
 
-6. Verify review state is present for the target run when applicable:
+5. Verify review state is present for the target run when applicable:
 
 ```bash
 python -m etl_identity_engine.cli review-case-list \
@@ -112,13 +109,11 @@ an already-completed run.
 ## Replay Procedure
 
 Use replay when you need a new completed run based on restored review
-decisions plus the restored manifest-era inputs.
+decisions plus the archived replay bundle.
 
-1. Restore the SQLite DB, the archived original manifest, the archived
-   landing snapshot, and any custom config snapshot.
-2. If the replay should create a distinct completed run, update the
-   restored manifest `batch_id` to a new value.
-3. Run `replay-run` against the restored state DB:
+1. Restore the SQLite DB, the archived replay bundle, and any custom
+   config snapshot.
+2. Run `replay-run` against the restored state DB:
 
 ```bash
 python -m etl_identity_engine.cli replay-run \
@@ -128,9 +123,10 @@ python -m etl_identity_engine.cli replay-run \
   --refresh-mode incremental
 ```
 
-4. Validate the new run result:
+3. Validate the new run result:
    - the JSON payload returns a new `result_run_id`
    - the new run summary shows the expected `refresh_mode`
+   - the run summary records `replayable_from_bundle: true`
    - approved and rejected review decisions carried forward into the
      replayed candidate decisions and golden rebuilds
 
@@ -144,8 +140,8 @@ For the compose topology in [container-deployment.md](container-deployment.md):
 
 - back up the mounted runtime path that contains the SQLite DB
 - back up the verified replay bundle for the manifest-driven batch
-- restore the archived manifest and landed files to the same
-  container-visible paths before using `replay-run`
+- restore the archived replay bundle to the same container-visible
+  bundle path before using `replay-run`
 
 The container baseline remains single-host. Recovery is file- and
 volume-oriented rather than orchestrator-managed.
@@ -163,5 +159,6 @@ That smoke path validates:
 - verification plus backup of SQLite state and the archived replay bundle
 - restore of persisted review state
 - report rebuild from restored SQLite state
-- replay of a restored manifest-driven run with an approved review
+- replay of a restored manifest-driven run directly from the archived
+  replay bundle with an approved review
   decision applied during the recovered rebuild

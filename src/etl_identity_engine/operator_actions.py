@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from etl_identity_engine.ingest.manifest import peek_manifest_batch_id
+from etl_identity_engine.ingest.replay_bundle import (
+    replay_bundle_is_replayable_from_summary,
+    replay_bundle_replay_manifest_path_from_summary,
+)
 from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
     PipelineRunRecord,
@@ -36,6 +40,37 @@ class ReplayRunOperationResult:
     base_dir: Path
     refresh_mode: str
     replay_command: tuple[str, ...]
+
+
+def _resolve_replay_manifest_path(source_run: PipelineRunRecord) -> Path:
+    replay_manifest_path = replay_bundle_replay_manifest_path_from_summary(source_run.summary)
+    if replay_manifest_path is not None and replay_bundle_is_replayable_from_summary(source_run.summary):
+        resolved_replay_manifest_path = replay_manifest_path.resolve()
+        if resolved_replay_manifest_path.exists():
+            return resolved_replay_manifest_path
+
+    if source_run.manifest_path:
+        manifest_path = Path(source_run.manifest_path).resolve()
+        if manifest_path.exists():
+            return manifest_path
+
+    if replay_manifest_path is not None:
+        resolved_replay_manifest_path = replay_manifest_path.resolve()
+        if resolved_replay_manifest_path.exists():
+            return resolved_replay_manifest_path
+        raise FileNotFoundError(
+            f"Cannot replay run_id={source_run.run_id} because neither the original manifest nor the "
+            f"archived replay manifest exists: {resolved_replay_manifest_path}"
+        )
+
+    if not source_run.manifest_path:
+        raise ValueError(f"Persisted run {source_run.run_id} is missing manifest_path and cannot be replayed")
+
+    manifest_path = Path(source_run.manifest_path).resolve()
+    raise FileNotFoundError(
+        f"Cannot replay run_id={source_run.run_id} because manifest_path no longer exists "
+        f"and no replayable archived bundle is recorded: {manifest_path}"
+    )
 
 
 def resolve_completed_run_id(store: PipelineStateStore, requested_run_id: str | None) -> str:
@@ -101,20 +136,13 @@ def replay_run_operation(
             f"replay-run currently supports persisted manifest runs only; "
             f"run_id={source_run.run_id} input_mode={source_run.input_mode!r}"
         )
-    if not source_run.manifest_path:
-        raise ValueError(f"Persisted run {source_run.run_id} is missing manifest_path and cannot be replayed")
-
-    manifest_path = Path(source_run.manifest_path)
-    if not manifest_path.exists():
-        raise FileNotFoundError(
-            f"Cannot replay run_id={source_run.run_id} because manifest_path no longer exists: {manifest_path}"
-        )
+    manifest_path = _resolve_replay_manifest_path(source_run)
 
     resolved_refresh_mode = refresh_mode or str(
         source_run.summary.get("run_context", {}).get("refresh_mode", "full")
     )
     replay_base_dir = base_dir if base_dir is not None else Path(source_run.base_dir)
-    resolved_manifest_path = str(manifest_path.resolve())
+    resolved_manifest_path = str(manifest_path)
     run_key = build_run_key(
         input_mode="manifest",
         manifest_path=resolved_manifest_path,
@@ -140,6 +168,7 @@ def replay_run_operation(
         "--refresh-mode",
         resolved_refresh_mode,
     ]
+    replay_argv.extend(["--replay-source-run-id", source_run.run_id])
     if source_run.config_dir:
         replay_argv.extend(["--config-dir", source_run.config_dir])
 

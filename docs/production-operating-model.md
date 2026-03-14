@@ -125,10 +125,10 @@ If a release must be rolled back:
 If the rollback requires reversing persisted run state:
 
 - restore the SQLite DB backup
-- restore the manifest and landed input snapshot required for replay
+- restore the verified replay bundle required for replay
 - rebuild reports or republish outputs from the restored run state
-- use `replay-run` only after the restored manifest and landed files are
-  back in the expected locations
+- use `replay-run` only after the restored replay bundle is back at its
+  recorded bundle path
 
 ### Consumer Rollback Boundary
 

@@ -95,14 +95,13 @@ now documented in [recovery-runbooks.md](recovery-runbooks.md).
 For the single-host compose topology, the recoverable set is:
 
 - the mounted SQLite DB under the runtime volume
-- the manifest file used for a manifest-driven batch
-- the landed input snapshot referenced by that manifest
+- the verified replay bundle for a manifest-driven batch
 - any custom config overlay mounted into the container runtime
 
 Rebuilding reports or downstream publications only requires the
 restored SQLite DB. Replaying a manifest-driven run also requires the
-restored manifest and landed files to exist again at the stored
-container-visible path.
+restored replay bundle to exist again at the stored container-visible
+bundle path.
 
 ## Current Boundary
 

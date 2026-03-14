@@ -25,11 +25,15 @@ of truth for tracked work; this file is the short maintainer view.
   archive immutable replay bundles with the original manifest, landed
   input snapshot, verification metadata, and operator bundle-validation
   support.
+- GitHub issue `#86` is complete: `replay-run` now executes directly
+  from verified archived replay bundles without restoring the original
+  manifest and landing paths, and persisted run metadata records direct
+  bundle replayability.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
-  - Open GitHub issues: `#86`, `#87`
+  - Open GitHub issues: `#87`
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: `#88`, `#89`, `#90`, `#91`
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
@@ -39,7 +43,7 @@ of truth for tracked work; this file is the short maintainer view.
 
 - [x] PostgreSQL-backed persisted state
 - [x] Immutable replay bundles for manifests and landed inputs
-- [ ] Replay independent of original landing paths
+- [x] Replay independent of original landing paths
 - [ ] Checkpointed resume for failed persisted runs
 - [ ] OIDC or JWT service authentication
 - [ ] Fine-grained RBAC and actor identity propagation
@@ -52,5 +56,4 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#86`: Support replay from archived bundles without the
-  original landing paths.
+- Start issue `#87`: Add checkpointed resume for failed persisted runs.

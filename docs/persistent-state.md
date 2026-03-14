@@ -191,6 +191,7 @@ The persisted run summary now records replay-bundle metadata under
 - landing-snapshot root
 - verification status
 - recoverability flag
+- direct bundle-replay flag
 
 Operators can re-verify the archived bundle at any time:
 
@@ -410,9 +411,9 @@ That distinction is important because:
 
 - `report`, `publish-run`, and downstream export jobs can rebuild from a
   restored persisted state store alone
-- `replay-run` still requires the stored `manifest_path` plus the
-  landed input snapshot to exist again, but the verified replay bundle
-  now provides the archived files operators can restore to those paths
+- `replay-run` can now execute directly from a verified archived replay
+  bundle without restoring the original `manifest_path` or landing-zone
+  contents
 
 ## Current Boundary
 
@@ -424,11 +425,10 @@ orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints
-- immutable source-data replay independent of the current manifest and
-  landing-zone contents
+- portable replay-bundle relocation without restoring the archived
+  bundle to its recorded bundle path
 
 Recovery procedures for the current supported model are now documented
 in [recovery-runbooks.md](recovery-runbooks.md). The remaining boundary
-above stays in effect until the runtime can replay directly from the
-stored replay bundle without restoring the original manifest path and
-landing snapshot.
+above stays in effect until the runtime can replay directly from a
+restored bundle at an arbitrary replacement path.
