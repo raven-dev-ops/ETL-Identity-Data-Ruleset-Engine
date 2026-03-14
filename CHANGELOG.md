@@ -10,6 +10,12 @@ All notable changes to this project will be documented in this file.
   `etl-identity-engine` distribution metadata matches
   `pyproject.toml`, so stale editable installs are caught before local
   validation reports a false-green result.
+- `scripts/run_checks.py` now also verifies that the current tree
+  produces exactly one wheel and one source distribution, so packaging
+  failures are caught by the normal local and CI validation path.
+- Package metadata now uses the non-deprecated SPDX-style `MIT` license
+  declaration in `pyproject.toml`, so source and wheel builds no longer
+  emit the setuptools `project.license` deprecation warning.
 
 ## [0.1.3] - 2026-03-13
 

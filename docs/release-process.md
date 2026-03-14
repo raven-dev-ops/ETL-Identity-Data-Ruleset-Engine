@@ -38,6 +38,8 @@ check baseline.
 - `README.md`, `CHANGELOG.md`, and the release notes reflect the current
   behavior.
 - The backlog dry-run still parses the active planning backlog.
+- A source distribution and wheel are both produced successfully from
+  the release commit.
 - A fresh packaged small-profile release sample bundle is produced
   successfully.
 
@@ -121,7 +123,8 @@ shapes.
     shell-free equivalent path
 - Those wrappers cover `ruff`, `pytest`, the active-backlog dry-run, and
   release-sample packaging.
-- The wrapper packaging check uses a temporary output directory; the
+- The wrapper build and packaging checks use temporary output
+  directories; the
   explicit `package_release_sample.py --output-dir dist/release-samples`
   command remains the maintainer path when you want a retained bundle.
 - Run the backlog dry-run:

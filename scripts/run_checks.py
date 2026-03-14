@@ -114,11 +114,45 @@ def verify_installed_distribution_version(
     return project_version, installed_version
 
 
+def verify_distribution_build(
+    python_executable: str,
+    *,
+    temp_root: str | None = None,
+) -> tuple[str, str]:
+    with tempfile.TemporaryDirectory(
+        prefix="etl-identity-engine-build-",
+        dir=temp_root,
+    ) as temp_dir:
+        output_dir = Path(temp_dir)
+        _run_command(
+            (
+                python_executable,
+                "-m",
+                "build",
+                "--sdist",
+                "--wheel",
+                "--outdir",
+                str(output_dir),
+            )
+        )
+
+        wheel_names = sorted(path.name for path in output_dir.glob("*.whl"))
+        sdist_names = sorted(path.name for path in output_dir.glob("*.tar.gz"))
+
+        if len(wheel_names) != 1 or len(sdist_names) != 1:
+            raise SystemExit(
+                "Distribution build did not produce exactly one wheel and one sdist artifact."
+            )
+
+        return sdist_names[0], wheel_names[0]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     python_executable = sys.executable
 
     verify_installed_distribution_version()
+    verify_distribution_build(python_executable)
     _run_command((python_executable, "-m", "ruff", "check", "."))
     _run_command((python_executable, "-m", "pytest"))
     _run_command(

@@ -9,6 +9,8 @@ def test_run_checks_python_entrypoint_covers_active_backlog_and_release_sample()
     python_text = (REPO_ROOT / "scripts" / "run_checks.py").read_text(encoding="utf-8")
 
     expected_fragments = (
+        "-m",
+        "build",
         "create_github_backlog.py",
         "--repo",
         "--dry-run",

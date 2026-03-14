@@ -61,3 +61,47 @@ def test_verify_installed_distribution_version_requires_installed_package(
 
     with pytest.raises(SystemExit, match="The project is not installed in the active environment"):
         MODULE.verify_installed_distribution_version(pyproject_path=pyproject)
+
+
+def test_verify_distribution_build_runs_python_build_and_detects_outputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run_command(command: tuple[str, ...], *, env: dict[str, str] | None = None) -> None:
+        del env
+        commands.append(command)
+        output_dir = Path(command[-1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "etl_identity_engine-1.2.3.tar.gz").write_bytes(b"sdist")
+        (output_dir / "etl_identity_engine-1.2.3-py3-none-any.whl").write_bytes(b"wheel")
+
+    monkeypatch.setattr(MODULE, "_run_command", fake_run_command)
+
+    sdist_name, wheel_name = MODULE.verify_distribution_build("python", temp_root=str(tmp_path))
+
+    assert commands == [
+        ("python", "-m", "build", "--sdist", "--wheel", "--outdir", commands[0][-1])
+    ]
+    assert sdist_name == "etl_identity_engine-1.2.3.tar.gz"
+    assert wheel_name == "etl_identity_engine-1.2.3-py3-none-any.whl"
+
+
+def test_verify_distribution_build_requires_expected_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run_command(command: tuple[str, ...], *, env: dict[str, str] | None = None) -> None:
+        del env
+        output_dir = Path(command[-1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "etl_identity_engine-1.2.3-py3-none-any.whl").write_bytes(b"wheel")
+
+    monkeypatch.setattr(MODULE, "_run_command", fake_run_command)
+
+    with pytest.raises(
+        SystemExit,
+        match="Distribution build did not produce exactly one wheel and one sdist artifact",
+    ):
+        MODULE.verify_distribution_build("python", temp_root=str(tmp_path))
