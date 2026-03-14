@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/run_checks.py` now verifies that the installed
+  `etl-identity-engine` distribution metadata matches
+  `pyproject.toml`, so stale editable installs are caught before local
+  validation reports a false-green result.
+
 ## [0.1.3] - 2026-03-13
 
 ### Changed

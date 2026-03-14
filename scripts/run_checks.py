@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import argparse
 import os
+from importlib import metadata
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine"
+PROJECT_DISTRIBUTION = "etl-identity-engine"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -78,10 +81,44 @@ def _resolve_gh_executable() -> str:
     )
 
 
+def _read_project_version(pyproject_path: Path = REPO_ROOT / "pyproject.toml") -> str:
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    version = str(pyproject["project"]["version"]).strip()
+    if not version:
+        raise SystemExit(f"Missing project.version in {pyproject_path}")
+    return version
+
+
+def verify_installed_distribution_version(
+    *,
+    pyproject_path: Path = REPO_ROOT / "pyproject.toml",
+    distribution_name: str = PROJECT_DISTRIBUTION,
+) -> tuple[str, str]:
+    project_version = _read_project_version(pyproject_path)
+
+    try:
+        installed_version = metadata.version(distribution_name)
+    except metadata.PackageNotFoundError as exc:
+        raise SystemExit(
+            "The project is not installed in the active environment. "
+            "Run the bootstrap script or `python -m pip install -e .[dev]` first."
+        ) from exc
+
+    if installed_version != project_version:
+        raise SystemExit(
+            "Installed distribution metadata is out of date: "
+            f"{distribution_name}=={installed_version} but pyproject.toml declares {project_version}. "
+            "Re-run the bootstrap script or `python -m pip install -e .[dev]`."
+        )
+
+    return project_version, installed_version
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     python_executable = sys.executable
 
+    verify_installed_distribution_version()
     _run_command((python_executable, "-m", "ruff", "check", "."))
     _run_command((python_executable, "-m", "pytest"))
     _run_command(

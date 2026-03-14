@@ -293,6 +293,9 @@ documented CI baseline: `ruff`, `pytest`, the active-backlog dry-run,
 and release-sample packaging. That packaging validation uses a temporary
 output directory, so the wrapper does not leave release bundles under
 `dist/`.
+It also verifies that the installed editable package metadata matches
+`pyproject.toml`, so rerun the bootstrap script or
+`python -m pip install -e .[dev]` after pulling a version bump.
 
 `run_pipeline.ps1` forwards any additional `run-all` CLI arguments, for
 example `./scripts/run_pipeline.ps1 --base-dir tmp --config-dir config`.
@@ -316,6 +319,9 @@ documented CI baseline: `ruff`, `pytest`, the active-backlog dry-run,
 and release-sample packaging. That packaging validation uses a temporary
 output directory, so the wrapper does not leave release bundles under
 `dist/`.
+It also verifies that the installed editable package metadata matches
+`pyproject.toml`, so rerun the bootstrap script or
+`python -m pip install -e .[dev]` after pulling a version bump.
 
 `run_pipeline.sh` forwards any additional `run-all` CLI arguments, for
 example `./scripts/run_pipeline.sh --base-dir tmp --config-dir config`.

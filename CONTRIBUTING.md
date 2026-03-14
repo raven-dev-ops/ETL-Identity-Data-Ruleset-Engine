@@ -75,6 +75,7 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 - Those wrappers now cover `ruff`, `pytest`, the active-backlog dry-run, and release-sample packaging so local validation stays aligned with the documented CI baseline.
 - The wrapper packaging check uses a temporary output directory, so routine local validation does not leave release artifacts behind under `dist/`.
 - `python scripts/run_checks.py` is the shell-free equivalent local validation path when contributors do not want to depend on PowerShell or bash.
+- `run_checks` also verifies that the installed editable distribution metadata matches `pyproject.toml`; after pulling a version bump, rerun the bootstrap script or `python -m pip install -e .[dev]` before using the local checks.
 - `./scripts/run_checks.ps1 -IncludeRemoteGitHubChecks` or `./scripts/run_checks.sh --include-remote-github-checks` is an optional post-push deployed-state check that uses the venv's bundled Python and `gh`.
 - Windows contributors should use the PowerShell scripts locally; the bash path is exercised in Linux CI and is not installed by the venv bootstrap.
 - Your unpushed local issue-template files are validated by the local `pytest` issue-template tests instead of the remote metadata query.
