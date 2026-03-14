@@ -81,6 +81,18 @@ Within `v1`, the runtime does not change without a new API version:
 
 Breaking API changes require a new versioned path such as `/api/v2`.
 
+For documented paginated collection endpoints:
+
+- `page_size`, `page_token`, `sort`, and `items` remain the stable page
+  envelope
+- `page_token` must be treated as opaque by consumers, even if the
+  current implementation uses offset-style tokens
+- a page token is only valid when reused with the same endpoint,
+  filters, and sort order that produced it
+- documented sort names remain stable within the current `0.x` line
+- adding new optional filters or sort names is additive; changing the
+  meaning of an existing sort name is breaking
+
 ### Delivery Contracts
 
 The current downstream contract is `golden_crosswalk_snapshot/v1`.

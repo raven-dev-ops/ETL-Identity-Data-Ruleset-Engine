@@ -113,13 +113,21 @@ sources:
     return path
 
 
-def _create_persisted_manifest_run(tmp_path: Path) -> tuple[Path, str, SQLitePipelineStore]:
-    db_path = tmp_path / "state" / "pipeline_state.sqlite"
-    base_dir = tmp_path / "run"
-    landing_dir = tmp_path / "landing"
+def _create_persisted_manifest_run(
+    tmp_path: Path,
+    *,
+    db_path: Path | None = None,
+    batch_id: str = "service-api-001",
+    run_dir_name: str = "run",
+    manifest_dir_name: str = "manifest-run",
+) -> tuple[Path, str, SQLitePipelineStore]:
+    db_path = db_path or (tmp_path / "state" / "pipeline_state.sqlite")
+    base_dir = tmp_path / run_dir_name
+    manifest_dir = tmp_path / manifest_dir_name
+    landing_dir = manifest_dir / "landing"
     manifest_path = _write_manifest(
-        tmp_path / "manifest.yml",
-        batch_id="service-api-001",
+        manifest_dir / "manifest.yml",
+        batch_id=batch_id,
         source_a_path="agency_a.csv",
         source_b_path="agency_b.parquet",
     )
@@ -171,6 +179,37 @@ def _create_persisted_manifest_run(tmp_path: Path) -> tuple[Path, str, SQLitePip
     run_id = store.latest_completed_run_id()
     assert run_id is not None
     return db_path, run_id, store
+
+
+def _create_persisted_synthetic_run(
+    tmp_path: Path,
+    *,
+    db_path: Path,
+    seed: int = 42,
+    profile: str = "small",
+    base_dir_name: str = "synthetic-run",
+) -> tuple[str, SQLitePipelineStore]:
+    base_dir = tmp_path / base_dir_name
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--profile",
+                profile,
+                "--seed",
+                str(seed),
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+    store = SQLitePipelineStore(db_path)
+    run_id = store.latest_completed_run_id()
+    assert run_id is not None
+    return run_id, store
 
 
 def _service_auth() -> ServiceAuthConfig:
@@ -327,9 +366,206 @@ def test_service_api_validates_request_inputs_and_returns_not_found_for_missing_
         create_service_app(tmp_path / "missing.sqlite", service_auth=_service_auth())
 
 
+def test_service_api_exposes_paginated_run_list_with_filters_and_search(tmp_path: Path) -> None:
+    db_path, first_run_id, _store = _create_persisted_manifest_run(
+        tmp_path,
+        batch_id="service-api-001",
+        run_dir_name="manifest-run-1",
+        manifest_dir_name="manifest-source-1",
+    )
+    _, second_run_id, _store = _create_persisted_manifest_run(
+        tmp_path,
+        db_path=db_path,
+        batch_id="service-api-002",
+        run_dir_name="manifest-run-2",
+        manifest_dir_name="manifest-source-2",
+    )
+    synthetic_run_id, _store = _create_persisted_synthetic_run(
+        tmp_path,
+        db_path=db_path,
+        seed=7,
+        base_dir_name="synthetic-run-7",
+    )
+
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
+
+    first_page_response = client.get(
+        "/api/v1/runs",
+        headers=reader_headers,
+        params={"page_size": 2, "sort": "started_at_asc"},
+    )
+    assert first_page_response.status_code == 200
+    first_page = first_page_response.json()
+    assert first_page["page"] == {
+        "page_size": 2,
+        "total_count": 3,
+        "next_page_token": "2",
+        "sort": "started_at_asc",
+    }
+    assert len(first_page["items"]) == 2
+    assert {item["run_id"] for item in first_page["items"]} == {first_run_id, second_run_id}
+
+    second_page_response = client.get(
+        "/api/v1/runs",
+        headers=reader_headers,
+        params={
+            "page_size": 2,
+            "sort": "started_at_asc",
+            "page_token": first_page["page"]["next_page_token"],
+        },
+    )
+    assert second_page_response.status_code == 200
+    second_page = second_page_response.json()
+    assert second_page["page"]["next_page_token"] is None
+    assert [item["run_id"] for item in second_page["items"]] == [synthetic_run_id]
+
+    manifest_only_response = client.get(
+        "/api/v1/runs",
+        headers=reader_headers,
+        params={"page_size": 10, "input_mode": "manifest", "sort": "started_at_asc"},
+    )
+    assert manifest_only_response.status_code == 200
+    assert [item["run_id"] for item in manifest_only_response.json()["items"]] == [
+        first_run_id,
+        second_run_id,
+    ]
+
+    batch_filter_response = client.get(
+        "/api/v1/runs",
+        headers=reader_headers,
+        params={"page_size": 10, "batch_id": "service-api-002"},
+    )
+    assert batch_filter_response.status_code == 200
+    assert [item["run_id"] for item in batch_filter_response.json()["items"]] == [second_run_id]
+
+    query_filter_response = client.get(
+        "/api/v1/runs",
+        headers=reader_headers,
+        params={"page_size": 10, "query": "synthetic-run-7"},
+    )
+    assert query_filter_response.status_code == 200
+    assert [item["run_id"] for item in query_filter_response.json()["items"]] == [synthetic_run_id]
+
+    invalid_page_token_response = client.get(
+        "/api/v1/runs",
+        headers=reader_headers,
+        params={"page_token": "bad-token"},
+    )
+    assert invalid_page_token_response.status_code == 422
+
+
+def test_service_api_exposes_paginated_golden_and_review_case_lists(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    run_id, store = _create_persisted_synthetic_run(
+        tmp_path,
+        db_path=db_path,
+        seed=42,
+        base_dir_name="synthetic-run-42",
+    )
+    bundle = store.load_run_bundle(run_id)
+    assert len(bundle.golden_rows) > 2
+    assert len(bundle.review_rows) > 2
+
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
+
+    golden_page_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records",
+        headers=reader_headers,
+        params={"page_size": 2, "sort": "golden_id_asc"},
+    )
+    assert golden_page_response.status_code == 200
+    golden_page = golden_page_response.json()
+    assert golden_page["page"]["total_count"] == len(bundle.golden_rows)
+    assert golden_page["page"]["next_page_token"] == "2"
+    assert [item["golden_id"] for item in golden_page["items"]] == [
+        bundle.golden_rows[0]["golden_id"],
+        bundle.golden_rows[1]["golden_id"],
+    ]
+
+    golden_second_page_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records",
+        headers=reader_headers,
+        params={"page_size": 2, "sort": "golden_id_asc", "page_token": "2"},
+    )
+    assert golden_second_page_response.status_code == 200
+    assert [item["golden_id"] for item in golden_second_page_response.json()["items"]] == [
+        bundle.golden_rows[2]["golden_id"],
+        bundle.golden_rows[3]["golden_id"],
+    ]
+
+    first_golden = bundle.golden_rows[0]
+    golden_filter_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records",
+        headers=reader_headers,
+        params={"page_size": 10, "person_entity_id": first_golden["person_entity_id"]},
+    )
+    assert golden_filter_response.status_code == 200
+    assert [item["golden_id"] for item in golden_filter_response.json()["items"]] == [
+        first_golden["golden_id"]
+    ]
+
+    golden_query_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records",
+        headers=reader_headers,
+        params={"page_size": 10, "query": first_golden["last_name"]},
+    )
+    assert golden_query_response.status_code == 200
+    assert any(
+        item["golden_id"] == first_golden["golden_id"]
+        for item in golden_query_response.json()["items"]
+    )
+
+    review_page_response = client.get(
+        f"/api/v1/runs/{run_id}/review-cases/page",
+        headers=reader_headers,
+        params={"page_size": 2, "sort": "score_desc"},
+    )
+    assert review_page_response.status_code == 200
+    review_page = review_page_response.json()
+    assert review_page["page"]["total_count"] == len(bundle.review_rows)
+    assert review_page["page"]["next_page_token"] == "2"
+    assert len(review_page["items"]) == 2
+    assert review_page["items"][0]["score"] >= review_page["items"][1]["score"]
+
+    review_second_page_response = client.get(
+        f"/api/v1/runs/{run_id}/review-cases/page",
+        headers=reader_headers,
+        params={"page_size": 2, "sort": "score_desc", "page_token": "2"},
+    )
+    assert review_second_page_response.status_code == 200
+    assert len(review_second_page_response.json()["items"]) == len(bundle.review_rows) - 2
+
+    first_review = bundle.review_rows[0]
+    review_query_response = client.get(
+        f"/api/v1/runs/{run_id}/review-cases/page",
+        headers=reader_headers,
+        params={"page_size": 10, "query": first_review["review_id"]},
+    )
+    assert review_query_response.status_code == 200
+    assert [item["review_id"] for item in review_query_response.json()["items"]] == [
+        first_review["review_id"]
+    ]
+
+    pending_only_response = client.get(
+        f"/api/v1/runs/{run_id}/review-cases/page",
+        headers=reader_headers,
+        params={"page_size": 10, "status": "pending"},
+    )
+    assert pending_only_response.status_code == 200
+    assert pending_only_response.json()["page"]["total_count"] == len(bundle.review_rows)
+
+    missing_run_response = client.get(
+        "/api/v1/runs/RUN-DOES-NOT-EXIST/golden-records",
+        headers=reader_headers,
+        params={"page_size": 10},
+    )
+    assert missing_run_response.status_code == 404
+
 def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
-    manifest_path = tmp_path / "manifest.yml"
+    manifest_path = tmp_path / "manifest-run" / "manifest.yml"
     review_row = store.list_review_cases(run_id=run_id)[0]
     client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
     reader_headers = _auth_headers("reader-secret")
@@ -398,7 +634,7 @@ def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp
 def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
     review_row = store.list_review_cases(run_id=run_id)[0]
-    manifest_path = tmp_path / "manifest.yml"
+    manifest_path = tmp_path / "manifest-run" / "manifest.yml"
     client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
     reader_headers = _jwt_headers(
         "etl-reader",

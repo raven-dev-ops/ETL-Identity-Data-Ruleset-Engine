@@ -44,13 +44,16 @@ of truth for tracked work; this file is the short maintainer view.
 - GitHub issue `#90` is complete: the authenticated service API now
   exposes operator-only publish and named export-job triggers with
   scoped authorization, idempotent reuse, and persisted audit coverage.
+- GitHub issue `#91` is complete: the service now exposes paginated run,
+  golden-record, and review-case collection endpoints with documented
+  filter, sort, and page-token semantics.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
   - Open GitHub issues: none
 - [ ] `v0.8.0` Enterprise access and service control plane
-  - Open GitHub issues: `#91`
+  - Open GitHub issues: none
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
   - Open GitHub issues: `#92`, `#93`, `#94`, `#95`
 
@@ -63,7 +66,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] OIDC or JWT service authentication
 - [x] Fine-grained RBAC and actor identity propagation
 - [x] HTTP publish and export triggers
-- [ ] Paginated service list and search endpoints
+- [x] Paginated service list and search endpoints
 - [ ] Clustered deployment manifests
 - [ ] Container signing and image-level supply-chain gates
 - [ ] Event-driven ingestion and streaming entity refresh
@@ -71,5 +74,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#91`: Add paginated list and search endpoints for runs,
-  goldens, and review cases.
+- Start issue `#92`: Add Kubernetes or Helm deployment manifests for
+  PostgreSQL-backed service topology.

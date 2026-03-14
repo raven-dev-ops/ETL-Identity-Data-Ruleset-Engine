@@ -222,6 +222,13 @@ class PersistedReviewCase:
     resolved_at_utc: str
 
 
+@dataclass(frozen=True)
+class PaginatedResult:
+    items: list[object]
+    total_count: int
+    next_page_token: str | None
+
+
 ARTIFACT_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
     "normalized_source_records": tuple((column, "TEXT") for column in NORMALIZED_HEADERS),
     "candidate_pairs": (
@@ -280,6 +287,27 @@ ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
 }
 
 PIPELINE_STATE_TABLES = ("pipeline_runs", "run_checkpoints", "export_job_runs", "audit_events", *ARTIFACT_TABLE_NAMES)
+
+RUN_LIST_SORTS = {
+    "finished_at_desc": "finished_at_utc DESC, started_at_utc DESC, run_id DESC",
+    "finished_at_asc": "finished_at_utc ASC, started_at_utc ASC, run_id ASC",
+    "started_at_desc": "started_at_utc DESC, run_id DESC",
+    "started_at_asc": "started_at_utc ASC, run_id ASC",
+}
+GOLDEN_LIST_SORTS = {
+    "golden_id_asc": "golden_id ASC",
+    "golden_id_desc": "golden_id DESC",
+    "last_name_asc": "last_name ASC, first_name ASC, golden_id ASC",
+    "last_name_desc": "last_name DESC, first_name DESC, golden_id DESC",
+}
+REVIEW_CASE_LIST_SORTS = {
+    "queue_order_asc": "row_index ASC, review_id ASC",
+    "queue_order_desc": "row_index DESC, review_id DESC",
+    "score_desc": "score DESC, review_id ASC",
+    "score_asc": "score ASC, review_id ASC",
+    "updated_at_desc": "updated_at_utc DESC, review_id DESC",
+    "updated_at_asc": "updated_at_utc ASC, review_id ASC",
+}
 
 
 def build_run_id(now: datetime | None = None) -> str:
@@ -433,6 +461,56 @@ def _row_to_run_checkpoint(row: Mapping[str, object]) -> RunCheckpointRecord:
         active_review_rows=payload.get("active_review_rows", []),
         summary=payload.get("summary", {}),
     )
+
+
+def _row_to_run_record(row: Mapping[str, object]) -> PipelineRunRecord:
+    return PipelineRunRecord(
+        run_id=str(row["run_id"]),
+        run_key="" if row["run_key"] is None else str(row["run_key"]),
+        attempt_number=int(row["attempt_number"] or 0),
+        batch_id=None if row["batch_id"] is None else str(row["batch_id"]),
+        input_mode=str(row["input_mode"]),
+        manifest_path=None if row["manifest_path"] is None else str(row["manifest_path"]),
+        base_dir=str(row["base_dir"]),
+        config_dir=None if row["config_dir"] is None else str(row["config_dir"]),
+        profile=None if row["profile"] is None else str(row["profile"]),
+        seed=None if row["seed"] is None else int(row["seed"]),
+        formats=None if row["formats"] is None else str(row["formats"]),
+        status=str(row["status"]),
+        started_at_utc=str(row["started_at_utc"]),
+        finished_at_utc=str(row["finished_at_utc"]),
+        total_records=int(row["total_records"]),
+        candidate_pair_count=int(row["candidate_pair_count"]),
+        cluster_count=int(row["cluster_count"]),
+        golden_record_count=int(row["golden_record_count"]),
+        review_queue_count=int(row["review_queue_count"]),
+        failure_detail=None if row["failure_detail"] in (None, "") else str(row["failure_detail"]),
+        resumed_from_run_id=None
+        if row["resumed_from_run_id"] in (None, "")
+        else str(row["resumed_from_run_id"]),
+        summary=json.loads(str(row["summary_json"] or "{}")),
+    )
+
+
+def _build_next_page_token(*, offset: int, returned_count: int, total_count: int) -> str | None:
+    next_offset = offset + returned_count
+    if next_offset >= total_count:
+        return None
+    return str(next_offset)
+
+
+def _validate_pagination(*, limit: int, offset: int) -> None:
+    if limit <= 0:
+        raise ValueError("Pagination limit must be greater than 0")
+    if offset < 0:
+        raise ValueError("Pagination offset must be greater than or equal to 0")
+
+
+def _normalize_search_query(query: str | None) -> str | None:
+    if query is None:
+        return None
+    normalized = query.strip().lower()
+    return normalized or None
 
 
 class SQLitePipelineStore:
@@ -1318,32 +1396,90 @@ class SQLitePipelineStore:
             )
         if row is None:
             raise FileNotFoundError(f"Persisted run not found: {run_id}")
+        return _row_to_run_record(row)
 
-        return PipelineRunRecord(
-            run_id=str(row["run_id"]),
-            run_key="" if row["run_key"] is None else str(row["run_key"]),
-            attempt_number=int(row["attempt_number"] or 0),
-            batch_id=None if row["batch_id"] is None else str(row["batch_id"]),
-            input_mode=str(row["input_mode"]),
-            manifest_path=None if row["manifest_path"] is None else str(row["manifest_path"]),
-            base_dir=str(row["base_dir"]),
-            config_dir=None if row["config_dir"] is None else str(row["config_dir"]),
-            profile=None if row["profile"] is None else str(row["profile"]),
-            seed=None if row["seed"] is None else int(row["seed"]),
-            formats=None if row["formats"] is None else str(row["formats"]),
-            status=str(row["status"]),
-            started_at_utc=str(row["started_at_utc"]),
-            finished_at_utc=str(row["finished_at_utc"]),
-            total_records=int(row["total_records"]),
-            candidate_pair_count=int(row["candidate_pair_count"]),
-            cluster_count=int(row["cluster_count"]),
-            golden_record_count=int(row["golden_record_count"]),
-            review_queue_count=int(row["review_queue_count"]),
-            failure_detail=None if row["failure_detail"] in (None, "") else str(row["failure_detail"]),
-            resumed_from_run_id=None
-            if row["resumed_from_run_id"] in (None, "")
-            else str(row["resumed_from_run_id"]),
-            summary=json.loads(str(row["summary_json"] or "{}")),
+    def list_run_records(
+        self,
+        *,
+        status: str | None = None,
+        input_mode: str | None = None,
+        batch_id: str | None = None,
+        search_query: str | None = None,
+        sort: str = "finished_at_desc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PaginatedResult:
+        _validate_pagination(limit=limit, offset=offset)
+        order_by = RUN_LIST_SORTS.get(sort)
+        if order_by is None:
+            raise ValueError(
+                f"Unsupported run sort {sort!r}; expected one of {sorted(RUN_LIST_SORTS)}"
+            )
+
+        filters: list[str] = ["1 = 1"]
+        parameters: dict[str, object] = {"limit": limit, "offset": offset}
+        if status is not None:
+            normalized_status = status.strip().lower()
+            if normalized_status not in RUN_STATUSES:
+                raise ValueError(
+                    f"Unsupported run status {status!r}; expected one of {sorted(RUN_STATUSES)}"
+                )
+            filters.append("status = :status")
+            parameters["status"] = normalized_status
+        if input_mode is not None:
+            normalized_input_mode = input_mode.strip()
+            if not normalized_input_mode:
+                raise ValueError("run input_mode filter must be non-empty when provided")
+            filters.append("input_mode = :input_mode")
+            parameters["input_mode"] = normalized_input_mode
+        if batch_id is not None:
+            normalized_batch_id = batch_id.strip()
+            if not normalized_batch_id:
+                raise ValueError("run batch_id filter must be non-empty when provided")
+            filters.append("batch_id = :batch_id")
+            parameters["batch_id"] = normalized_batch_id
+
+        normalized_query = _normalize_search_query(search_query)
+        if normalized_query is not None:
+            filters.append(
+                "("
+                "LOWER(COALESCE(run_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(run_key, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(batch_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(manifest_path, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(base_dir, '')) LIKE :search_query"
+                ")"
+            )
+            parameters["search_query"] = f"%{normalized_query}%"
+
+        where_clause = " AND ".join(filters)
+        with self.engine.connect() as connection:
+            total_row = self._fetchone(
+                connection,
+                f"SELECT COUNT(*) AS total FROM pipeline_runs WHERE {where_clause}",
+                parameters,
+            )
+            rows = self._fetchall(
+                connection,
+                f"""
+                SELECT *
+                FROM pipeline_runs
+                WHERE {where_clause}
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+                """,
+                parameters,
+            )
+        total_count = int(total_row["total"] or 0) if total_row is not None else 0
+        items = [_row_to_run_record(row) for row in rows]
+        return PaginatedResult(
+            items=items,
+            total_count=total_count,
+            next_page_token=_build_next_page_token(
+                offset=offset,
+                returned_count=len(items),
+                total_count=total_count,
+            ),
         )
 
     def _row_to_export_job_run_record(self, row: Mapping[str, object]) -> ExportJobRunRecord:
@@ -1684,6 +1820,84 @@ class SQLitePipelineStore:
             filters={"golden_id": golden_id},
         )
 
+    def list_golden_records(
+        self,
+        *,
+        run_id: str,
+        cluster_id: str | None = None,
+        person_entity_id: str | None = None,
+        search_query: str | None = None,
+        sort: str = "golden_id_asc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PaginatedResult:
+        _validate_pagination(limit=limit, offset=offset)
+        order_by = GOLDEN_LIST_SORTS.get(sort)
+        if order_by is None:
+            raise ValueError(
+                f"Unsupported golden-record sort {sort!r}; expected one of {sorted(GOLDEN_LIST_SORTS)}"
+            )
+
+        headers = ARTIFACT_HEADERS["golden_records"]
+        select_columns = ", ".join(f'"{header}"' for header in headers)
+        filters: list[str] = ["run_id = :run_id"]
+        parameters: dict[str, object] = {"run_id": run_id, "limit": limit, "offset": offset}
+        if cluster_id is not None:
+            normalized_cluster_id = cluster_id.strip()
+            if not normalized_cluster_id:
+                raise ValueError("golden-record cluster_id filter must be non-empty when provided")
+            filters.append("cluster_id = :cluster_id")
+            parameters["cluster_id"] = normalized_cluster_id
+        if person_entity_id is not None:
+            normalized_person_entity_id = person_entity_id.strip()
+            if not normalized_person_entity_id:
+                raise ValueError("golden-record person_entity_id filter must be non-empty when provided")
+            filters.append("person_entity_id = :person_entity_id")
+            parameters["person_entity_id"] = normalized_person_entity_id
+
+        normalized_query = _normalize_search_query(search_query)
+        if normalized_query is not None:
+            filters.append(
+                "("
+                "LOWER(COALESCE(golden_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(cluster_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(person_entity_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(first_name, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(last_name, '')) LIKE :search_query"
+                ")"
+            )
+            parameters["search_query"] = f"%{normalized_query}%"
+
+        where_clause = " AND ".join(filters)
+        with self.engine.connect() as connection:
+            total_row = self._fetchone(
+                connection,
+                f"SELECT COUNT(*) AS total FROM golden_records WHERE {where_clause}",
+                parameters,
+            )
+            rows = self._fetchall(
+                connection,
+                f"""
+                SELECT {select_columns}
+                FROM golden_records
+                WHERE {where_clause}
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+                """,
+                parameters,
+            )
+        total_count = int(total_row["total"] or 0) if total_row is not None else 0
+        items = [_row_to_strings(row, headers) for row in rows]
+        return PaginatedResult(
+            items=items,
+            total_count=total_count,
+            next_page_token=_build_next_page_token(
+                offset=offset,
+                returned_count=len(items),
+                total_count=total_count,
+            ),
+        )
+
     def load_crosswalk_record_for_source(
         self,
         *,
@@ -1702,17 +1916,55 @@ class SQLitePipelineStore:
         run_id: str,
         queue_status: str | None = None,
         assigned_to: str | None = None,
-    ) -> list[PersistedReviewCase]:
+        search_query: str | None = None,
+        sort: str = "queue_order_asc",
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[PersistedReviewCase] | PaginatedResult:
+        if limit is not None:
+            _validate_pagination(limit=limit, offset=offset)
+            order_by = REVIEW_CASE_LIST_SORTS.get(sort)
+            if order_by is None:
+                raise ValueError(
+                    f"Unsupported review-case sort {sort!r}; expected one of {sorted(REVIEW_CASE_LIST_SORTS)}"
+                )
+        else:
+            if offset != 0:
+                raise ValueError("Review-case offset requires limit to be provided")
+            order_by = "row_index ASC"
+
         filters: list[str] = ["run_id = :run_id"]
         parameters: dict[str, object] = {"run_id": run_id}
         if queue_status is not None:
             filters.append("queue_status = :queue_status")
             parameters["queue_status"] = validate_review_case_status(queue_status)
         if assigned_to is not None:
+            normalized_assigned_to = assigned_to.strip()
+            if not normalized_assigned_to:
+                raise ValueError("review-case assigned_to filter must be non-empty when provided")
             filters.append("assigned_to = :assigned_to")
-            parameters["assigned_to"] = assigned_to.strip()
+            parameters["assigned_to"] = normalized_assigned_to
+        normalized_query = _normalize_search_query(search_query)
+        if normalized_query is not None:
+            filters.append(
+                "("
+                "LOWER(COALESCE(review_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(left_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(right_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(assigned_to, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(operator_notes, '')) LIKE :search_query"
+                ")"
+            )
+            parameters["search_query"] = f"%{normalized_query}%"
         where_clause = " AND ".join(filters)
         with self.engine.connect() as connection:
+            total_row = None
+            if limit is not None:
+                total_row = self._fetchone(
+                    connection,
+                    f"SELECT COUNT(*) AS total FROM review_cases WHERE {where_clause}",
+                    parameters,
+                )
             rows = self._fetchall(
                 connection,
                 f"""
@@ -1721,11 +1973,33 @@ class SQLitePipelineStore:
                        operator_notes, created_at_utc, updated_at_utc, resolved_at_utc
                 FROM review_cases
                 WHERE {where_clause}
-                ORDER BY row_index ASC
+                ORDER BY {order_by}
+                {"LIMIT :limit OFFSET :offset" if limit is not None else ""}
                 """,
-                parameters,
+                (
+                    parameters
+                    if limit is None
+                    else {
+                        **parameters,
+                        "limit": limit,
+                        "offset": offset,
+                    }
+                ),
             )
-        return [_row_to_review_case(row) for row in rows]
+        items = [_row_to_review_case(row) for row in rows]
+        if limit is None:
+            return items
+
+        total_count = int(total_row["total"] or 0) if total_row is not None else 0
+        return PaginatedResult(
+            items=items,
+            total_count=total_count,
+            next_page_token=_build_next_page_token(
+                offset=offset,
+                returned_count=len(items),
+                total_count=total_count,
+            ),
+        )
 
     def load_review_case(self, *, run_id: str, review_id: str) -> PersistedReviewCase:
         with self.engine.connect() as connection:

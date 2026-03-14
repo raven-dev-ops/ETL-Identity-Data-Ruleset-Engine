@@ -115,6 +115,15 @@ class ServiceMetricsResponse(BaseModel):
     latest_failed_run_finished_at_utc: str | None
 
 
+class PageMetadataResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_size: int
+    total_count: int
+    next_page_token: str | None
+    sort: str
+
+
 class RunStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -181,6 +190,20 @@ class CrosswalkLookupResponse(BaseModel):
     golden_id: str
 
 
+class RunListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[RunStatusResponse]
+    page: PageMetadataResponse
+
+
+class GoldenRecordListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[GoldenRecordResponse]
+    page: PageMetadataResponse
+
+
 class ReviewCaseResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -197,6 +220,13 @@ class ReviewCaseResponse(BaseModel):
     created_at_utc: str
     updated_at_utc: str
     resolved_at_utc: str
+
+
+class ReviewCaseListPageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ReviewCaseResponse]
+    page: PageMetadataResponse
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -334,12 +364,33 @@ def _serialize_export_run(record: ExportJobRunRecord) -> ExportJobRunResponse:
     )
 
 
+def _serialize_page(
+    *,
+    page_size: int,
+    total_count: int,
+    next_page_token: str | None,
+    sort: str,
+) -> PageMetadataResponse:
+    return PageMetadataResponse(
+        page_size=page_size,
+        total_count=total_count,
+        next_page_token=next_page_token,
+        sort=sort,
+    )
+
+
 def _resolve_not_found(error: FileNotFoundError) -> None:
     raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 def _resolve_operation_conflict(error: ValueError) -> None:
     raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+def _parse_page_token(page_token: str | None) -> int:
+    if page_token is None:
+        return 0
+    return int(page_token)
 
 
 def _serialize_metrics(
@@ -636,6 +687,40 @@ def create_service_app(
             service_started_monotonic=service_started_monotonic,
         )
 
+    @app.get("/api/v1/runs", response_model=RunListResponse, tags=["runs"])
+    def list_runs(
+        status: Annotated[RunStatus | None, Query()] = None,
+        input_mode: Annotated[str | None, Query(min_length=1)] = None,
+        batch_id: Annotated[str | None, Query(min_length=1)] = None,
+        query: Annotated[str | None, Query(min_length=1)] = None,
+        sort: Annotated[
+            Literal["finished_at_desc", "finished_at_asc", "started_at_desc", "started_at_asc"],
+            Query(),
+        ] = "finished_at_desc",
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
+        _principal: AuthenticatedPrincipal = Depends(run_read_access),
+    ) -> RunListResponse:
+        offset = _parse_page_token(page_token)
+        result = store.list_run_records(
+            status=status,
+            input_mode=input_mode,
+            batch_id=batch_id,
+            search_query=query,
+            sort=sort,
+            limit=page_size,
+            offset=offset,
+        )
+        return RunListResponse(
+            items=[_serialize_run(record) for record in result.items],
+            page=_serialize_page(
+                page_size=page_size,
+                total_count=result.total_count,
+                next_page_token=result.next_page_token,
+                sort=sort,
+            ),
+        )
+
     @app.get("/api/v1/runs/latest", response_model=RunStatusResponse, tags=["runs"])
     def get_latest_completed_run(
         _principal: AuthenticatedPrincipal = Depends(run_read_access),
@@ -654,6 +739,48 @@ def create_service_app(
             return _serialize_run(store.load_run_record(run_id))
         except FileNotFoundError as error:
             _resolve_not_found(error)
+
+    @app.get(
+        "/api/v1/runs/{run_id}/golden-records",
+        response_model=GoldenRecordListResponse,
+        tags=["golden"],
+    )
+    def list_golden_records(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        cluster_id: Annotated[str | None, Query(min_length=1)] = None,
+        person_entity_id: Annotated[str | None, Query(min_length=1)] = None,
+        query: Annotated[str | None, Query(min_length=1)] = None,
+        sort: Annotated[
+            Literal["golden_id_asc", "golden_id_desc", "last_name_asc", "last_name_desc"],
+            Query(),
+        ] = "golden_id_asc",
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
+        _principal: AuthenticatedPrincipal = Depends(golden_read_access),
+    ) -> GoldenRecordListResponse:
+        try:
+            store.load_run_record(run_id)
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        offset = _parse_page_token(page_token)
+        result = store.list_golden_records(
+            run_id=run_id,
+            cluster_id=cluster_id,
+            person_entity_id=person_entity_id,
+            search_query=query,
+            sort=sort,
+            limit=page_size,
+            offset=offset,
+        )
+        return GoldenRecordListResponse(
+            items=[GoldenRecordResponse.model_validate(item) for item in result.items],
+            page=_serialize_page(
+                page_size=page_size,
+                total_count=result.total_count,
+                next_page_token=result.next_page_token,
+                sort=sort,
+            ),
+        )
 
     @app.get(
         "/api/v1/runs/{run_id}/golden-records/{golden_id}",
@@ -691,6 +818,55 @@ def create_service_app(
             )
         except FileNotFoundError as error:
             _resolve_not_found(error)
+
+    @app.get(
+        "/api/v1/runs/{run_id}/review-cases/page",
+        response_model=ReviewCaseListPageResponse,
+        tags=["review-cases"],
+    )
+    def list_review_cases_page(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        status: Annotated[ReviewCaseStatus | None, Query()] = None,
+        assigned_to: Annotated[str | None, Query(min_length=1)] = None,
+        query: Annotated[str | None, Query(min_length=1)] = None,
+        sort: Annotated[
+            Literal[
+                "queue_order_asc",
+                "queue_order_desc",
+                "score_desc",
+                "score_asc",
+                "updated_at_desc",
+                "updated_at_asc",
+            ],
+            Query(),
+        ] = "queue_order_asc",
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
+        _principal: AuthenticatedPrincipal = Depends(review_read_access),
+    ) -> ReviewCaseListPageResponse:
+        try:
+            store.load_run_record(run_id)
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        offset = _parse_page_token(page_token)
+        result = store.list_review_cases(
+            run_id=run_id,
+            queue_status=status,
+            assigned_to=assigned_to,
+            search_query=query,
+            sort=sort,
+            limit=page_size,
+            offset=offset,
+        )
+        return ReviewCaseListPageResponse(
+            items=[_serialize_review_case(case) for case in result.items],
+            page=_serialize_page(
+                page_size=page_size,
+                total_count=result.total_count,
+                next_page_token=result.next_page_token,
+                sort=sort,
+            ),
+        )
 
     @app.get(
         "/api/v1/runs/{run_id}/review-cases",

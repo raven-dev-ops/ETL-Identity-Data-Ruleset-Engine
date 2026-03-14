@@ -174,7 +174,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 100) Add paginated list and search endpoints for runs, goldens, and review cases
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.8.0`
 - Labels: `type:feature`, `area:service`, `priority:p1`
 - Depends on: #97
@@ -279,7 +279,7 @@ Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog: `#81`, `#82`, `#83`
 - Open child issues represented in this local active catalog:
-  `#91`, `#92`, `#93`, `#94`, `#95`
+  `#92`, `#93`, `#94`, `#95`
 - Open milestones in GitHub for this backlog:
   - `v0.7.0` with epic `#81`
   - `v0.8.0` with epic `#82`

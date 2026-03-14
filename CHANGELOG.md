@@ -26,6 +26,9 @@ All notable changes to this project will be documented in this file.
 - Added authenticated service control-plane endpoints for persisted
   run publication and named export-job triggers, with idempotent reuse
   and persisted audit coverage.
+- Added paginated run, golden-record, and review-case collection
+  endpoints to the authenticated service API, with documented filter,
+  sort, and page-token semantics.
 
 ## [0.6.0] - 2026-03-14
 

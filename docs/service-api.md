@@ -69,14 +69,17 @@ scope surface is:
 - `service:metrics`
   - `GET /api/v1/metrics`
 - `runs:read`
+  - `GET /api/v1/runs`
   - `GET /api/v1/runs/latest`
   - `GET /api/v1/runs/{run_id}`
+- `GET /api/v1/runs/{run_id}/golden-records`
 - `golden:read`
   - `GET /api/v1/runs/{run_id}/golden-records/{golden_id}`
 - `crosswalk:read`
   - `GET /api/v1/runs/{run_id}/crosswalk/source-records/{source_record_id}`
 - `review_cases:read`
   - `GET /api/v1/runs/{run_id}/review-cases`
+  - `GET /api/v1/runs/{run_id}/review-cases/page`
   - `GET /api/v1/runs/{run_id}/review-cases/{review_id}`
 - `review_cases:write`
   - `POST /api/v1/runs/{run_id}/review-cases/{review_id}/decision`
@@ -124,8 +127,16 @@ committed into repo config.
     persisted batch, review, export, and audit counts.
 - `GET /api/v1/runs/latest`
   - Returns the latest completed persisted run.
+- `GET /api/v1/runs`
+  - Returns a paginated list of persisted runs.
+  - Supports `status`, `input_mode`, `batch_id`, `query`, `sort`,
+    `page_size`, and `page_token`.
 - `GET /api/v1/runs/{run_id}`
   - Returns one persisted run record with summary metadata.
+- `GET /api/v1/runs/{run_id}/golden-records`
+  - Returns a paginated list of persisted golden records for one run.
+  - Supports `cluster_id`, `person_entity_id`, `query`, `sort`,
+    `page_size`, and `page_token`.
 - `GET /api/v1/runs/{run_id}/golden-records/{golden_id}`
   - Returns one persisted golden record.
 - `GET /api/v1/runs/{run_id}/crosswalk/source-records/{source_record_id}`
@@ -133,6 +144,10 @@ committed into repo config.
 - `GET /api/v1/runs/{run_id}/review-cases`
   - Returns persisted review cases for a run.
   - Supports `status` and `assigned_to` query filters.
+- `GET /api/v1/runs/{run_id}/review-cases/page`
+  - Returns a paginated review-case list for one run.
+  - Supports `status`, `assigned_to`, `query`, `sort`, `page_size`,
+    and `page_token`.
 - `GET /api/v1/runs/{run_id}/review-cases/{review_id}`
   - Returns one persisted review case.
 - `POST /api/v1/runs/{run_id}/review-cases/{review_id}/decision`
@@ -162,6 +177,31 @@ The service uses explicit request and response validation:
 - privileged action bodies are validated before review updates or replay
   execution begins
 
+The paginated collection endpoints use a shared pagination contract:
+
+- `page_size`
+  - integer from `1` to `100`
+- `page_token`
+  - opaque string returned by the prior page
+  - tokens are only valid when reused with the same endpoint, filters,
+    and sort order
+- `sort`
+  - `GET /api/v1/runs`: `finished_at_desc`, `finished_at_asc`,
+    `started_at_desc`, `started_at_asc`
+  - `GET /api/v1/runs/{run_id}/golden-records`: `golden_id_asc`,
+    `golden_id_desc`, `last_name_asc`, `last_name_desc`
+  - `GET /api/v1/runs/{run_id}/review-cases/page`:
+    `queue_order_asc`, `queue_order_desc`, `score_desc`, `score_asc`,
+    `updated_at_desc`, `updated_at_asc`
+
+Paginated responses return:
+
+- `items`
+- `page.page_size`
+- `page.total_count`
+- `page.next_page_token`
+- `page.sort`
+
 Missing rows return `404`. Invalid request parameters return `422`.
 Missing or invalid bearer tokens or API keys return `401`.
 Authenticated callers without the required mapped role return `403`.
@@ -179,7 +219,9 @@ collection.
 
 The documented `/api/v1/...` endpoints, the stable `reader` /
 `operator` role split, and the documented scope names above are the
-stable external consumer surface for the current line.
+stable external consumer surface for the current line. That now includes
+the documented pagination, filter, and sort semantics for the collection
+endpoints above.
 
 Compatibility expectations for path versioning, additive changes, and
 deprecation are defined in
