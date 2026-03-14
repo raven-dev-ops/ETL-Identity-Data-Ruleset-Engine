@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 - Package metadata now uses the non-deprecated SPDX-style `MIT` license
   declaration in `pyproject.toml`, so source and wheel builds no longer
   emit the setuptools `project.license` deprecation warning.
+- The repo now ignores `build/`, so manual source and wheel builds do
+  not leave accidental untracked packaging workspaces behind.
 
 ## [0.1.3] - 2026-03-13
 

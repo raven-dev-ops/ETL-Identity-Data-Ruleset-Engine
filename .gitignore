@@ -5,5 +5,6 @@ __pycache__/
 .venv/
 .tools/
 *.egg-info/
+build/
 dist/
 *.zip
