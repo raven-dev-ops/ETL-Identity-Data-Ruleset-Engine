@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
   revision inspection commands.
 - Runtime environment configuration with per-environment overlays and
   `${ENV_VAR}` resolution for secret-backed settings.
+- Manifest-driven incremental refresh over persisted state, including
+  predecessor reuse for unaffected entities and fallback-to-full
+  behavior when no compatible predecessor is available.
 
 ### Changed
 
@@ -33,6 +36,8 @@ All notable changes to this project will be documented in this file.
 - Commands that consume matching or normalization rules can now resolve
   `config_dir` defaults from a named runtime environment without editing
   committed YAML files in place.
+- Persisted run summaries and markdown reports now record batch context,
+  refresh mode, predecessor reuse, and incremental fallback decisions.
 
 ## [0.1.4] - 2026-03-13
 

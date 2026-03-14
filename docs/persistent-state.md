@@ -111,6 +111,32 @@ If the latest attempt for a given `run_key` failed:
 - the next successful attempt completes under the same `run_key` with a
   higher `attempt_number`
 
+## Incremental Refresh Model
+
+Manifest-driven persisted runs now support:
+
+```bash
+python -m etl_identity_engine.cli run-all \
+  --base-dir . \
+  --manifest manifest.yml \
+  --state-db data/state/pipeline_state.sqlite \
+  --refresh-mode incremental
+```
+
+The current incremental prototype uses this operator model:
+
+- lineage is determined by the manifest path plus the runtime config path
+- batch identity comes from the manifest `batch_id`
+- the latest completed predecessor in that lineage is reused when the
+  current config fingerprint matches the predecessor
+- only affected candidate pairs, clusters, and golden records are
+  recalculated
+- unaffected persisted entities are carried forward from the prior
+  completed run
+
+If no compatible predecessor exists, the runtime falls back to a full
+rebuild and records that fallback in `run_summary.json`.
+
 ## Artifact Storage
 
 Each artifact table stores:
@@ -125,7 +151,8 @@ reloaded in the same sequence as the file artifacts.
 ## Current Boundary
 
 This issue adds durable relational persistence, a basic run registry,
-and first-class schema migrations, not full orchestration.
+and first-class schema migrations plus a first incremental refresh path,
+not full orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints

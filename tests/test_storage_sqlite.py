@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from etl_identity_engine.cli import main
+from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
 from etl_identity_engine.storage.sqlite_store import (
     PIPELINE_STATE_TABLES,
     SQLitePipelineStore,
@@ -18,6 +19,14 @@ from etl_identity_engine.storage.sqlite_store import (
 def _read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))
+
+
+def _write_csv_rows(path: Path, rows: list[dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _read_pipeline_runs(db_path: Path) -> list[sqlite3.Row]:
@@ -37,6 +46,74 @@ def _write_config_copy(target_dir: Path) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     for source_path in source_dir.glob("*.yml"):
         (target_dir / source_path.name).write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _write_parquet_rows(path: Path, rows: list[dict[str, str]]) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.Table.from_pylist(rows), path)
+
+
+def _person_row(
+    *,
+    source_record_id: str,
+    person_entity_id: str,
+    source_system: str,
+    first_name: str,
+    last_name: str,
+    dob: str,
+    address: str,
+    phone: str,
+) -> dict[str, str]:
+    return {
+        "source_record_id": source_record_id,
+        "person_entity_id": person_entity_id,
+        "source_system": source_system,
+        "first_name": first_name,
+        "last_name": last_name,
+        "dob": dob,
+        "address": address,
+        "city": "Columbus",
+        "state": "OH",
+        "postal_code": "43004",
+        "phone": phone,
+        "updated_at": "2025-01-01T00:00:00Z",
+        "is_conflict_variant": "false",
+        "conflict_types": "",
+    }
+
+
+def _write_manifest(path: Path, *, batch_id: str, source_a_path: str, source_b_path: str) -> Path:
+    required_columns = "\n".join(f"        - {column}" for column in PERSON_HEADERS)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""
+manifest_version: "1.0"
+entity_type: person
+batch_id: {batch_id}
+landing_zone:
+  kind: local_filesystem
+  base_path: ./landing
+sources:
+  - source_id: source_a
+    path: {source_a_path}
+    format: csv
+    schema_version: person-v1
+    required_columns:
+{required_columns}
+  - source_id: source_b
+    path: {source_b_path}
+    format: parquet
+    schema_version: person-v1
+    required_columns:
+{required_columns}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def test_bootstrap_sqlite_store_creates_expected_tables(tmp_path: Path) -> None:
@@ -267,3 +344,163 @@ not_thresholds:
     assert run_rows[0]["run_key"] == run_rows[1]["run_key"]
     assert run_rows[1]["attempt_number"] == 2
     assert run_rows[1]["failure_detail"] in (None, "")
+
+
+def test_incremental_manifest_refresh_reuses_unaffected_entities(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+    landing_dir = tmp_path / "landing"
+    manifest_path = _write_manifest(
+        tmp_path / "manifest.yml",
+        batch_id="inbound-2026-03-13",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+
+    batch_one_source_a = [
+        _person_row(
+            source_record_id="A-1",
+            person_entity_id="P-1",
+            source_system="source_a",
+            first_name="John",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main St",
+            phone="5551111111",
+        ),
+        _person_row(
+            source_record_id="A-2",
+            person_entity_id="P-2",
+            source_system="source_a",
+            first_name="Jane",
+            last_name="Doe",
+            dob="1990-05-20",
+            address="20 Oak St",
+            phone="5552222222",
+        ),
+    ]
+    batch_one_source_b = [
+        _person_row(
+            source_record_id="B-1",
+            person_entity_id="P-1",
+            source_system="source_b",
+            first_name="Jon",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main Street",
+            phone="5551111111",
+        ),
+        _person_row(
+            source_record_id="B-2",
+            person_entity_id="P-2",
+            source_system="source_b",
+            first_name="Jane",
+            last_name="Doe",
+            dob="1990-05-20",
+            address="20 Oak Street Apt 2",
+            phone="5552222222",
+        ),
+    ]
+    _write_csv_rows(landing_dir / "agency_a.csv", batch_one_source_a)
+    _write_parquet_rows(landing_dir / "agency_b.parquet", batch_one_source_b)
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "full",
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    first_run_id = store.latest_run_id()
+    assert first_run_id is not None
+    first_bundle = store.load_run_bundle(first_run_id)
+    first_crosswalk_by_record = {
+        row["source_record_id"]: row["golden_id"] for row in first_bundle.crosswalk_rows
+    }
+    first_cluster_by_record = {
+        row["source_record_id"]: row["cluster_id"] for row in first_bundle.cluster_rows
+    }
+    first_golden_by_id = {
+        row["golden_id"]: row for row in first_bundle.golden_rows
+    }
+
+    _write_manifest(
+        manifest_path,
+        batch_id="inbound-2026-03-14",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+    batch_two_source_a = [dict(row) for row in batch_one_source_a]
+    batch_two_source_a[1]["address"] = "99 Elm Street"
+    batch_two_source_b = [dict(row) for row in batch_one_source_b]
+    _write_csv_rows(landing_dir / "agency_a.csv", batch_two_source_a)
+    _write_parquet_rows(landing_dir / "agency_b.parquet", batch_two_source_b)
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "incremental",
+            ]
+        )
+        == 0
+    )
+
+    second_run_id = store.latest_run_id()
+    assert second_run_id is not None
+    assert second_run_id != first_run_id
+
+    second_bundle = store.load_run_bundle(second_run_id)
+    refresh = second_bundle.run.summary["refresh"]
+    run_context = second_bundle.run.summary["run_context"]
+    second_crosswalk_by_record = {
+        row["source_record_id"]: row["golden_id"] for row in second_bundle.crosswalk_rows
+    }
+    second_cluster_by_record = {
+        row["source_record_id"]: row["cluster_id"] for row in second_bundle.cluster_rows
+    }
+    second_golden_by_id = {
+        row["golden_id"]: row for row in second_bundle.golden_rows
+    }
+
+    assert run_context["refresh_mode"] == "incremental"
+    assert refresh["mode"] == "incremental"
+    assert refresh["fallback_to_full"] is False
+    assert refresh["predecessor_run_id"] == first_run_id
+    assert refresh["changed_record_count"] == 1
+    assert refresh["inserted_record_count"] == 0
+    assert refresh["removed_record_count"] == 0
+    assert refresh["affected_record_count"] == 2
+    assert refresh["reused_record_count"] == 2
+    assert refresh["recalculated_candidate_pair_count"] == 1
+    assert refresh["reused_candidate_pair_count"] == 1
+    assert refresh["recalculated_cluster_count"] == 1
+    assert refresh["reused_cluster_count"] == 2
+
+    assert second_cluster_by_record["A-1"] == first_cluster_by_record["A-1"]
+    assert second_cluster_by_record["B-1"] == first_cluster_by_record["B-1"]
+    assert second_crosswalk_by_record["A-1"] == first_crosswalk_by_record["A-1"]
+    assert second_crosswalk_by_record["B-1"] == first_crosswalk_by_record["B-1"]
+    assert (
+        second_golden_by_id[second_crosswalk_by_record["A-1"]]["address"]
+        == first_golden_by_id[first_crosswalk_by_record["A-1"]]["address"]
+    )
+    assert second_golden_by_id[second_crosswalk_by_record["A-2"]]["address"] == "99 Elm Street"

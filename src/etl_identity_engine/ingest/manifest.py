@@ -99,6 +99,16 @@ def _load_manifest_mapping(path: Path) -> Mapping[str, object]:
     return data
 
 
+def peek_manifest_batch_id(path: Path) -> str:
+    manifest = _load_manifest_mapping(path)
+    return _require_non_empty_string(
+        manifest,
+        "batch_id",
+        path=path,
+        context="top-level manifest",
+    )
+
+
 def _validate_allowed_keys(
     mapping: Mapping[str, object],
     *,

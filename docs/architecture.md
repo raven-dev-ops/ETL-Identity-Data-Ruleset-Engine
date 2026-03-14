@@ -50,6 +50,8 @@ golden records, and reporting artifacts.
    - Either generates synthetic inputs or uses a validated production
      batch manifest
    - Can optionally persist completed run state into SQLite
+   - Supports manifest-driven incremental refresh when paired with
+     `--state-db --refresh-mode incremental`
 
 ## Config Surfaces
 
@@ -96,6 +98,13 @@ reuses completed runs idempotently, and treats failed reruns as clean
 restart attempts under the same `run_key`.
 Schema bootstrap is now managed through Alembic-backed `state-db-upgrade`
 and `state-db-current` commands instead of ad hoc table creation.
+For manifest-driven runs, `run-all --state-db ... --refresh-mode incremental`
+can reuse the latest completed predecessor from the same manifest
+lineage, recalculate only the affected candidate pairs and clusters, and
+carry forward unaffected persisted entities unchanged. If the current
+configuration fingerprint differs from the predecessor, the runtime
+falls back to a full rebuild and records that decision in the run
+summary.
 
 ## Output Layout
 

@@ -117,7 +117,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 66) Support incremental loads and cross-run entity refresh
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.4.0`
 - Labels: `type:feature`, `area:matching`, `priority:p1`
 - Depends on: #63, #64
@@ -350,10 +350,10 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#66`
+- Open child issues represented in this local active catalog: `#67`
   through `#80`
 - Open milestones in GitHub for this backlog:
-  - `v0.4.0` with epic `#58` plus child issues `#66` through `#67`
+  - `v0.4.0` with epic `#58` plus child issues `#67`
   - `v0.5.0` with epic `#59` plus child issues `#68` through `#73`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
@@ -379,3 +379,7 @@ Snapshot date: 2026-03-13
   Alembic-backed migration commands, and named runtime environments can
   supply config overlays plus `${ENV_VAR}`-resolved secrets without
   editing committed YAML files in place.
+- Issue `#66` is complete in-repo: manifest-driven persisted runs now
+  support incremental refresh, reusing unaffected predecessor entities
+  and recalculating only the affected candidate pairs, clusters, and
+  goldens when the config fingerprint remains compatible.

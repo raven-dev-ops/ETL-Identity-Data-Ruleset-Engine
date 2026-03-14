@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import os
 from collections import Counter
 from datetime import datetime, timezone
+import hashlib
 from pathlib import Path
 from typing import Sequence
 
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
-from etl_identity_engine.ingest.manifest import ResolvedBatchManifest, resolve_batch_manifest
+from etl_identity_engine.incremental_refresh import refresh_incremental_run
+from etl_identity_engine.ingest.manifest import (
+    ResolvedBatchManifest,
+    peek_manifest_batch_id,
+    resolve_batch_manifest,
+)
 from etl_identity_engine.io.read import read_dict_rows
 from etl_identity_engine.io.write import write_csv_dicts, write_markdown
 from etl_identity_engine.matching.blocking import BlockingPassMetric, generate_candidates_with_metrics
@@ -102,6 +109,11 @@ def _require_state_db(args: argparse.Namespace) -> Path:
     if not args.state_db:
         raise ValueError("This command requires --state-db or a runtime environment with state_db configured")
     return Path(args.state_db)
+
+
+def _config_fingerprint(config: PipelineConfig) -> str:
+    payload = json.dumps(asdict(config), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16].upper()
 
 
 def _normalize_rows(rows: list[dict[str, str]], config: PipelineConfig) -> list[dict[str, str]]:
@@ -317,7 +329,7 @@ def _resolve_cluster_command_inputs(args: argparse.Namespace) -> tuple[list[dict
 
 def _collect_report_context_from_store(
     args: argparse.Namespace,
-) -> tuple[str, list[dict[str, str]], dict[str, int], int, int, int, int]:
+) -> tuple[str, list[dict[str, str]], dict[str, int], int, int, int, int, dict[str, object]]:
     if not args.state_db or not args.run_id:
         raise ValueError("report requires both --state-db and --run-id for persisted-state reload")
     if args.matches or args.clusters or args.golden_file or args.review_queue:
@@ -341,12 +353,17 @@ def _collect_report_context_from_store(
         cluster_count,
         len(bundle.golden_rows),
         len(bundle.review_rows),
+        {
+            key: bundle.run.summary[key]
+            for key in ("refresh", "run_context")
+            if key in bundle.run.summary
+        },
     )
 
 
 def _collect_report_context(
     args: argparse.Namespace,
-) -> tuple[Path | str, list[dict[str, str]], dict[str, int], int, int, int, int]:
+) -> tuple[Path | str, list[dict[str, str]], dict[str, int], int, int, int, int, dict[str, object]]:
     if args.state_db or args.run_id:
         return _collect_report_context_from_store(args)
 
@@ -386,6 +403,15 @@ def _collect_report_context(
             if str(row.get("cluster_id", "")).strip()
         }
     )
+    summary_updates: dict[str, object] = {}
+    summary_file = _default_data_root(input_file) / "exceptions" / "run_summary.json"
+    if summary_file.exists():
+        existing_summary = json.loads(summary_file.read_text(encoding="utf-8"))
+        summary_updates = {
+            key: existing_summary[key]
+            for key in ("refresh", "run_context")
+            if key in existing_summary
+        }
     return (
         input_file,
         normalized_rows,
@@ -394,6 +420,7 @@ def _collect_report_context(
         cluster_count,
         len(golden_rows),
         len(review_rows),
+        summary_updates,
     )
 
 
@@ -616,6 +643,54 @@ def _write_crosswalk_output(
     return crosswalk_rows
 
 
+def _write_precomputed_match_outputs(
+    output_file: Path,
+    match_rows: list[dict[str, str | float]],
+    blocking_metrics_rows: list[dict[str, str | int]],
+) -> None:
+    blocking_metrics_file = output_file.with_name("blocking_metrics.csv")
+    write_csv_dicts(output_file, match_rows, fieldnames=MATCH_SCORE_HEADERS)
+    write_csv_dicts(
+        blocking_metrics_file,
+        blocking_metrics_rows,
+        fieldnames=BLOCKING_METRICS_HEADERS,
+    )
+    print(f"candidate scores written: {output_file}")
+    print(f"blocking metrics written: {blocking_metrics_file}")
+
+
+def _write_precomputed_cluster_output(
+    output_file: Path,
+    cluster_output_rows: list[dict[str, str]],
+) -> None:
+    write_csv_dicts(output_file, cluster_output_rows, fieldnames=ENTITY_CLUSTER_HEADERS)
+    print(f"cluster assignments written: {output_file}")
+
+
+def _write_precomputed_golden_output(
+    output_file: Path,
+    golden_rows: list[dict[str, str]],
+) -> None:
+    write_csv_dicts(output_file, golden_rows, fieldnames=GOLDEN_HEADERS)
+    print(f"golden output written: {output_file}")
+
+
+def _write_precomputed_crosswalk_output(
+    output_file: Path,
+    crosswalk_rows: list[dict[str, str]],
+) -> None:
+    write_csv_dicts(output_file, crosswalk_rows, fieldnames=CROSSWALK_HEADERS)
+    print(f"crosswalk written: {output_file}")
+
+
+def _write_precomputed_review_queue_output(
+    output_file: Path,
+    review_rows: list[dict[str, str | float]],
+) -> None:
+    write_csv_dicts(output_file, review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
+    print(f"manual review queue written: {output_file}")
+
+
 def _write_quality_outputs(
     output_file: Path,
     input_file: Path | str,
@@ -626,6 +701,7 @@ def _write_quality_outputs(
     cluster_count: int = 0,
     golden_record_count: int = 0,
     review_queue_count: int = 0,
+    summary_updates: dict[str, object] | None = None,
 ) -> dict[str, object]:
     exception_rows = extract_exception_rows(rows)
     for exception_type, records in exception_rows.items():
@@ -644,6 +720,8 @@ def _write_quality_outputs(
         golden_record_count=golden_record_count,
         review_queue_count=review_queue_count,
     )
+    if summary_updates:
+        summary.update(summary_updates)
 
     if isinstance(input_file, Path):
         try:
@@ -663,16 +741,22 @@ def _write_quality_outputs(
     return summary
 
 
-def _resolve_run_key_args(args: argparse.Namespace) -> dict[str, object | None]:
+def _resolve_run_key_args(
+    args: argparse.Namespace,
+    *,
+    batch_id: str | None,
+) -> dict[str, object | None]:
     manifest_path = getattr(args, "manifest", None)
     return {
         "input_mode": "manifest" if manifest_path else "synthetic",
         "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else None,
+        "batch_id": batch_id,
         "config_dir": str(Path(args.config_dir).resolve()) if args.config_dir else None,
         "profile": None if manifest_path else args.profile,
         "seed": None if manifest_path else args.seed,
         "duplicate_rate": None if manifest_path else args.duplicate_rate,
         "formats": None if manifest_path else args.formats,
+        "refresh_mode": getattr(args, "refresh_mode", "full"),
     }
 
 
@@ -800,6 +884,7 @@ def _cmd_report(args: argparse.Namespace) -> None:
         cluster_count,
         golden_record_count,
         review_queue_count,
+        summary_updates,
     ) = _collect_report_context(args)
     output_file = Path(args.output)
     _write_quality_outputs(
@@ -811,14 +896,26 @@ def _cmd_report(args: argparse.Namespace) -> None:
         cluster_count=cluster_count,
         golden_record_count=golden_record_count,
         review_queue_count=review_queue_count,
+        summary_updates=summary_updates,
     )
 
 
 def _cmd_run_all(args: argparse.Namespace) -> None:
     base = Path(args.base_dir)
+    manifest_path = getattr(args, "manifest", None)
+    if args.refresh_mode == "incremental":
+        if not manifest_path:
+            raise ValueError("incremental refresh requires --manifest")
+        if not args.state_db:
+            raise ValueError("incremental refresh requires --state-db")
+
+    manifest_batch_id = None
+    if manifest_path:
+        manifest_batch_id = peek_manifest_batch_id(Path(manifest_path))
+
     state_store = SQLitePipelineStore(Path(args.state_db)) if args.state_db else None
     run_started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    run_key_args = _resolve_run_key_args(args)
+    run_key_args = _resolve_run_key_args(args, batch_id=manifest_batch_id)
     run_key = build_run_key(**run_key_args)
     run_id: str | None = None
     attempt_number = 0
@@ -833,7 +930,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     if state_store is not None:
         start_decision = state_store.begin_run(
             run_key=run_key,
-            batch_id=None,
+            batch_id=manifest_batch_id,
             input_mode=str(run_key_args["input_mode"]),
             manifest_path=run_key_args["manifest_path"],
             base_dir=str(base.resolve()),
@@ -854,11 +951,25 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
 
     try:
         config = _load_config(args.config_dir, args.environment)
-        manifest_path = getattr(args, "manifest", None)
         resolved_manifest: ResolvedBatchManifest | None = None
         input_mode = "manifest" if manifest_path else "synthetic"
         batch_id: str | None = None
         formats_value: str | None = None
+        config_fingerprint = _config_fingerprint(config)
+        refresh_summary: dict[str, object] = {
+            "mode": args.refresh_mode,
+            "fallback_to_full": args.refresh_mode != "incremental",
+            "predecessor_run_id": None,
+            "affected_record_count": 0,
+            "reused_record_count": 0,
+            "inserted_record_count": 0,
+            "changed_record_count": 0,
+            "removed_record_count": 0,
+            "recalculated_candidate_pair_count": 0,
+            "reused_candidate_pair_count": 0,
+            "recalculated_cluster_count": 0,
+            "reused_cluster_count": 0,
+        }
         if manifest_path:
             resolved_manifest = _resolve_manifest_inputs(manifest_path)
             batch_id = resolved_manifest.manifest.batch_id
@@ -890,11 +1001,85 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
                 config,
             )
-        match_rows, blocking_metrics_rows = _write_match_output(matches_file, normalized_rows, config)
-        clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
-        review_rows = _write_manual_review_output(review_queue_file, match_rows)
-        golden_rows = _write_golden_output(golden_file, clustered_rows, config)
-        _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
+
+        previous_bundle = None
+        if (
+            args.refresh_mode == "incremental"
+            and state_store is not None
+            and resolved_manifest is not None
+        ):
+            previous_run = state_store.latest_completed_run_for_manifest(
+                manifest_path=str(resolved_manifest.manifest_path),
+                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+            )
+            if previous_run is not None:
+                previous_bundle = state_store.load_run_bundle(previous_run.run_id)
+                previous_config_fingerprint = str(
+                    previous_bundle.run.summary.get("run_context", {}).get("config_fingerprint", "")
+                )
+                if previous_config_fingerprint and previous_config_fingerprint == config_fingerprint:
+                    incremental_result = refresh_incremental_run(
+                        current_rows=normalized_rows,
+                        previous_bundle=previous_bundle,
+                        config=config,
+                    )
+                    match_rows = incremental_result.match_rows
+                    blocking_metrics_rows = incremental_result.blocking_metrics_rows
+                    clustered_rows = incremental_result.clustered_rows
+                    cluster_output_rows = incremental_result.cluster_output_rows
+                    golden_rows = incremental_result.golden_rows
+                    crosswalk_rows = incremental_result.crosswalk_rows
+                    review_rows = incremental_result.review_rows
+                    refresh_summary = incremental_result.metadata
+                    _write_precomputed_match_outputs(matches_file, match_rows, blocking_metrics_rows)
+                    _write_precomputed_cluster_output(clusters_file, cluster_output_rows)
+                    _write_precomputed_review_queue_output(review_queue_file, review_rows)
+                    _write_precomputed_golden_output(golden_file, golden_rows)
+                    _write_precomputed_crosswalk_output(crosswalk_file, crosswalk_rows)
+                else:
+                    refresh_summary.update(
+                        {
+                            "fallback_to_full": True,
+                            "predecessor_run_id": previous_run.run_id,
+                        }
+                    )
+                    if previous_config_fingerprint and previous_config_fingerprint != config_fingerprint:
+                        print(
+                            "incremental refresh fell back to full rebuild: config fingerprint changed "
+                            f"({previous_config_fingerprint} -> {config_fingerprint})"
+                        )
+                    else:
+                        print(
+                            "incremental refresh fell back to full rebuild: predecessor run is missing "
+                            "a compatible config fingerprint"
+                        )
+            else:
+                refresh_summary["fallback_to_full"] = True
+                print("incremental refresh fell back to full rebuild: no prior completed manifest run found")
+
+        if args.refresh_mode != "incremental" or previous_bundle is None or refresh_summary.get("fallback_to_full", False):
+            match_rows, blocking_metrics_rows = _write_match_output(matches_file, normalized_rows, config)
+            clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
+            review_rows = _write_manual_review_output(review_queue_file, match_rows)
+            golden_rows = _write_golden_output(golden_file, clustered_rows, config)
+            crosswalk_rows = _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
+            if args.refresh_mode == "full":
+                refresh_summary["fallback_to_full"] = False
+                refresh_summary["reused_record_count"] = 0
+                refresh_summary["affected_record_count"] = len(normalized_rows)
+                refresh_summary["recalculated_candidate_pair_count"] = len(match_rows)
+                refresh_summary["recalculated_cluster_count"] = len(
+                    {row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}
+                )
+            else:
+                refresh_summary["affected_record_count"] = len(normalized_rows)
+                refresh_summary["recalculated_candidate_pair_count"] = len(match_rows)
+                refresh_summary["recalculated_cluster_count"] = len(
+                    {row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}
+                )
+                refresh_summary["reused_record_count"] = 0
+        else:
+            crosswalk_rows = incremental_result.crosswalk_rows
 
         decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
         summary = _write_quality_outputs(
@@ -906,8 +1091,17 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             cluster_count=len({row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}),
             golden_record_count=len(golden_rows),
             review_queue_count=len(review_rows),
+            summary_updates={
+                "run_context": {
+                    "input_mode": input_mode,
+                    "batch_id": batch_id or "",
+                    "manifest_path": str(resolved_manifest.manifest_path) if resolved_manifest else "",
+                    "config_fingerprint": config_fingerprint,
+                    "refresh_mode": args.refresh_mode,
+                },
+                "refresh": refresh_summary,
+            },
         )
-        crosswalk_rows = _build_crosswalk_rows(clustered_rows, golden_rows)
         if state_store is not None and run_id is not None:
             state_store.persist_run(
                 metadata=PersistRunMetadata(
@@ -1100,6 +1294,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--seed", default=42, type=int)
     run_all_parser.add_argument("--duplicate-rate", default=None, type=float)
     run_all_parser.add_argument("--formats", default="csv,parquet")
+    run_all_parser.add_argument("--refresh-mode", default="full", choices=["full", "incremental"])
     run_all_parser.add_argument("--environment", default=None)
     run_all_parser.add_argument("--runtime-config", default=None)
     run_all_parser.add_argument(

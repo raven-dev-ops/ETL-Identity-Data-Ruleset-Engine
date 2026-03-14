@@ -133,7 +133,8 @@ is included in the repository.
 - The runtime now supports two input modes: synthetic generation for
   safe experimentation and manifest-driven landed batches for
   production-style evaluation. Local filesystem and object-storage-
-  compatible landing zones are supported; persisted state and service
+  compatible landing zones are supported. Persisted SQLite state and
+  manifest-driven incremental refresh are now available; service
   workflows remain follow-on work rather than implicit capabilities of
   the current line.
 - The supported matching track for the current `0.x` line is
@@ -253,6 +254,12 @@ The current matcher remains rules-based, but it now includes exact,
 partial, and lightweight phonetic-name signals. Candidate outputs expose
 those derived signals explicitly through `matched_fields` and
 `reason_trace`.
+
+When `run-all` is paired with `--state-db` and a manifest input, the
+runtime also supports `--refresh-mode incremental`. That path reuses the
+prior completed manifest run from persisted state, recalculates only the
+affected entities and candidate pairs, and records the refresh outcome
+in `data/exceptions/run_summary.json`.
 
 The current manual-review operating model is a CSV handoff via
 `data/review_queue/manual_review_queue.csv`; the project does not yet

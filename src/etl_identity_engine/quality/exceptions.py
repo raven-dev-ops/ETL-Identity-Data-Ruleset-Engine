@@ -178,11 +178,16 @@ def build_run_report_markdown(input_path: str, summary: dict[str, object]) -> st
     before_after_completeness = summary.get("before_after_completeness", {})
     duplicate_reduction = summary.get("duplicate_reduction", {})
     missing_field_counts = summary.get("missing_field_counts", {})
+    refresh = summary.get("refresh", {})
+    run_context = summary.get("run_context", {})
 
     lines = [
         "# Pipeline Report",
         "",
         f"- Input file: `{input_path}`",
+        f"- Input mode: `{run_context.get('input_mode', 'unknown')}`",
+        f"- Batch ID: `{run_context.get('batch_id', '')}`",
+        f"- Refresh mode: `{refresh.get('mode', run_context.get('refresh_mode', 'full'))}`",
         f"- Total records: `{summary.get('total_records', 0)}`",
         f"- Candidate pairs: `{summary.get('candidate_pair_count', 0)}`",
         f"- Auto-merge pairs: `{decision_counts.get('auto_merge', 0)}`",
@@ -192,16 +197,38 @@ def build_run_report_markdown(input_path: str, summary: dict[str, object]) -> st
         f"- Golden record count: `{summary.get('golden_record_count', 0)}`",
         f"- Review queue count: `{summary.get('review_queue_count', 0)}`",
         "",
-        "## Completeness",
-        f"- `raw_name_present`: `{completeness.get('raw_name_present', 0)}`",
-        f"- `canonical_name_present`: `{completeness.get('canonical_name_present', 0)}`",
-        f"- `raw_dob_present`: `{completeness.get('raw_dob_present', 0)}`",
-        f"- `canonical_dob_present`: `{completeness.get('canonical_dob_present', 0)}`",
-        f"- `raw_phone_present`: `{completeness.get('raw_phone_present', 0)}`",
-        f"- `canonical_phone_present`: `{completeness.get('canonical_phone_present', 0)}`",
-        "",
-        "## Before/After Completeness",
     ]
+
+    if refresh:
+        lines.extend(
+            [
+                "## Refresh",
+                f"- `predecessor_run_id`: `{refresh.get('predecessor_run_id', '')}`",
+                f"- `fallback_to_full`: `{refresh.get('fallback_to_full', False)}`",
+                f"- `affected_record_count`: `{refresh.get('affected_record_count', 0)}`",
+                f"- `reused_record_count`: `{refresh.get('reused_record_count', 0)}`",
+                f"- `inserted_record_count`: `{refresh.get('inserted_record_count', 0)}`",
+                f"- `changed_record_count`: `{refresh.get('changed_record_count', 0)}`",
+                f"- `removed_record_count`: `{refresh.get('removed_record_count', 0)}`",
+                f"- `recalculated_cluster_count`: `{refresh.get('recalculated_cluster_count', 0)}`",
+                f"- `reused_cluster_count`: `{refresh.get('reused_cluster_count', 0)}`",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Completeness",
+            f"- `raw_name_present`: `{completeness.get('raw_name_present', 0)}`",
+            f"- `canonical_name_present`: `{completeness.get('canonical_name_present', 0)}`",
+            f"- `raw_dob_present`: `{completeness.get('raw_dob_present', 0)}`",
+            f"- `canonical_dob_present`: `{completeness.get('canonical_dob_present', 0)}`",
+            f"- `raw_phone_present`: `{completeness.get('raw_phone_present', 0)}`",
+            f"- `canonical_phone_present`: `{completeness.get('canonical_phone_present', 0)}`",
+            "",
+            "## Before/After Completeness",
+        ]
+    )
 
     for field_name in ("name", "dob", "phone"):
         field_metrics = before_after_completeness.get(field_name, {})

@@ -163,21 +163,25 @@ def build_run_key(
     *,
     input_mode: str,
     manifest_path: str | None,
+    batch_id: str | None,
     config_dir: str | None,
     profile: str | None,
     seed: int | None,
     duplicate_rate: float | None,
     formats: str | None,
+    refresh_mode: str | None,
 ) -> str:
     payload = json.dumps(
         {
             "input_mode": input_mode,
             "manifest_path": manifest_path,
+            "batch_id": batch_id,
             "config_dir": config_dir,
             "profile": profile,
             "seed": seed,
             "duplicate_rate": duplicate_rate,
             "formats": formats,
+            "refresh_mode": refresh_mode,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -436,6 +440,30 @@ class SQLitePipelineStore:
                 """
             ).fetchone()
         return None if row is None else str(row["run_id"])
+
+    def latest_completed_run_for_manifest(
+        self,
+        *,
+        manifest_path: str,
+        config_dir: str | None,
+    ) -> PipelineRunRecord | None:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT run_id
+                FROM pipeline_runs
+                WHERE status = 'completed'
+                  AND input_mode = 'manifest'
+                  AND manifest_path = ?
+                  AND COALESCE(config_dir, '') = COALESCE(?, '')
+                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """,
+                (manifest_path, config_dir),
+            ).fetchone()
+        if row is None:
+            return None
+        return self.load_run_record(str(row["run_id"]))
 
     def load_run_record(self, run_id: str) -> PipelineRunRecord:
         with _connect(self.db_path) as connection:
