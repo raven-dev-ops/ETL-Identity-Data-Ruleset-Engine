@@ -24,6 +24,9 @@ All notable changes to this project will be documented in this file.
   emit the setuptools `project.license` deprecation warning.
 - The repo now ignores `build/`, so manual source and wheel builds do
   not leave accidental untracked packaging workspaces behind.
+- The repo now also ignores local coverage artifacts such as
+  `.coverage`, `coverage.xml`, and `htmlcov/`, so coverage runs do not
+  dirty the worktree.
 
 ## [0.1.3] - 2026-03-13
 

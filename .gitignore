@@ -2,8 +2,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
 .venv/
 .tools/
+coverage.xml
+htmlcov/
 *.egg-info/
 build/
 dist/
