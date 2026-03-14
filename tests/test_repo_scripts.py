@@ -15,6 +15,8 @@ def test_run_checks_python_entrypoint_covers_active_backlog_and_release_sample()
         "--repo",
         "--dry-run",
         "package_release_sample.py",
+        "etl-identity-engine",
+        "--help",
         "TemporaryDirectory",
     )
 

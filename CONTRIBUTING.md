@@ -72,7 +72,7 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 - Keep issue reports limited to synthetic data, local repro steps, and project artifacts.
 - Report security issues privately through the repository security advisory flow, not in public issues.
 - `./scripts/run_checks.ps1` or `./scripts/run_checks.sh` is the authoritative pre-push local check path and uses the venv's Python tooling plus the host shell runtime for the platform-specific wrapper.
-- Those wrappers now cover package-build verification, `ruff`, `pytest`, the active-backlog dry-run, and release-sample packaging so local validation stays aligned with the documented CI baseline.
+- Those wrappers now cover package-build verification, an installed `etl-identity-engine --help` smoke check, `ruff`, `pytest`, the active-backlog dry-run, and release-sample packaging so local validation stays aligned with the documented CI baseline.
 - The wrapper build and packaging checks use temporary output directories, so routine local validation does not leave release artifacts behind under `dist/`.
 - `python scripts/run_checks.py` is the shell-free equivalent local validation path when contributors do not want to depend on PowerShell or bash.
 - `run_checks` also verifies that the installed editable distribution metadata matches `pyproject.toml`; after pulling a version bump, rerun the bootstrap script or `python -m pip install -e .[dev]` before using the local checks.

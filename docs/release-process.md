@@ -40,6 +40,8 @@ check baseline.
 - The backlog dry-run still parses the active planning backlog.
 - A source distribution and wheel are both produced successfully from
   the release commit.
+- The installed `etl-identity-engine` console script resolves and shows
+  the expected CLI help output from the release environment.
 - A fresh packaged small-profile release sample bundle is produced
   successfully.
 
@@ -121,8 +123,9 @@ shapes.
   - `./scripts/run_checks.sh` on systems that already provide `bash`
   - `python scripts/run_checks.py` on any platform when you want the
     shell-free equivalent path
-- Those wrappers cover `ruff`, `pytest`, the active-backlog dry-run, and
-  release-sample packaging.
+- Those wrappers cover package-build verification, an installed
+  `etl-identity-engine --help` smoke check, `ruff`, `pytest`, the
+  active-backlog dry-run, and release-sample packaging.
 - The wrapper build and packaging checks use temporary output
   directories; the
   explicit `package_release_sample.py --output-dir dist/release-samples`

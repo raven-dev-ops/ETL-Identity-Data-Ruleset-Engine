@@ -12,7 +12,11 @@ All notable changes to this project will be documented in this file.
   validation reports a false-green result.
 - `scripts/run_checks.py` now also verifies that the current tree
   produces exactly one wheel and one source distribution, so packaging
-  failures are caught by the normal local and CI validation path.
+  failures are caught by the normal local and CI validation path, and it
+  cleans up a repo-local `build/` directory when that check created one.
+- `scripts/run_checks.py` now also smoke-tests the installed
+  `etl-identity-engine` console entrypoint, so local validation catches
+  broken or missing script installation alongside packaging failures.
 - Package metadata now uses the non-deprecated SPDX-style `MIT` license
   declaration in `pyproject.toml`, so source and wheel builds no longer
   emit the setuptools `project.license` deprecation warning.

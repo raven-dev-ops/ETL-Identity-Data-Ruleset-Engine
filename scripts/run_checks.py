@@ -119,22 +119,30 @@ def verify_distribution_build(
     *,
     temp_root: str | None = None,
 ) -> tuple[str, str]:
+    repo_build_dir = REPO_ROOT / "build"
+    build_dir_existed = repo_build_dir.exists()
+
     with tempfile.TemporaryDirectory(
         prefix="etl-identity-engine-build-",
         dir=temp_root,
     ) as temp_dir:
         output_dir = Path(temp_dir)
-        _run_command(
-            (
-                python_executable,
-                "-m",
-                "build",
-                "--sdist",
-                "--wheel",
-                "--outdir",
-                str(output_dir),
+
+        try:
+            _run_command(
+                (
+                    python_executable,
+                    "-m",
+                    "build",
+                    "--sdist",
+                    "--wheel",
+                    "--outdir",
+                    str(output_dir),
+                )
             )
-        )
+        finally:
+            if not build_dir_existed and repo_build_dir.exists():
+                shutil.rmtree(repo_build_dir)
 
         wheel_names = sorted(path.name for path in output_dir.glob("*.whl"))
         sdist_names = sorted(path.name for path in output_dir.glob("*.tar.gz"))
@@ -147,12 +155,39 @@ def verify_distribution_build(
         return sdist_names[0], wheel_names[0]
 
 
+def verify_console_entrypoint(python_executable: str) -> Path:
+    scripts_dir = Path(python_executable).resolve().parent
+    candidate_names = (
+        PROJECT_DISTRIBUTION,
+        f"{PROJECT_DISTRIBUTION}.exe",
+        f"{PROJECT_DISTRIBUTION}.cmd",
+    )
+
+    for candidate_name in candidate_names:
+        candidate_path = scripts_dir / candidate_name
+        if not candidate_path.exists():
+            continue
+
+        help_text = _capture_output((str(candidate_path), "--help"))
+        if "run-all" not in help_text or "generate" not in help_text:
+            raise SystemExit(
+                f"Console entrypoint {candidate_path} did not expose the expected CLI help output."
+            )
+        return candidate_path
+
+    raise SystemExit(
+        f"Console entrypoint {PROJECT_DISTRIBUTION!r} was not found next to {python_executable}. "
+        "Re-run the bootstrap script or `python -m pip install -e .[dev]`."
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     python_executable = sys.executable
 
     verify_installed_distribution_version()
     verify_distribution_build(python_executable)
+    verify_console_entrypoint(python_executable)
     _run_command((python_executable, "-m", "ruff", "check", "."))
     _run_command((python_executable, "-m", "pytest"))
     _run_command(

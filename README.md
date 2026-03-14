@@ -290,7 +290,8 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 
 `run_checks.ps1` now covers the same local validation surface as the
 documented CI baseline: package-build verification, `ruff`, `pytest`,
-the active-backlog dry-run, and release-sample packaging. The build and
+the installed `etl-identity-engine` console entrypoint smoke check, the
+active-backlog dry-run, and release-sample packaging. The build and
 packaging checks use temporary output directories, so the wrapper does
 not leave artifacts under `dist/`.
 It also verifies that the installed editable package metadata matches
@@ -316,7 +317,8 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 
 `run_checks.sh` covers the same local validation surface as the
 documented CI baseline: package-build verification, `ruff`, `pytest`,
-the active-backlog dry-run, and release-sample packaging. The build and
+the installed `etl-identity-engine` console entrypoint smoke check, the
+active-backlog dry-run, and release-sample packaging. The build and
 packaging checks use temporary output directories, so the wrapper does
 not leave artifacts under `dist/`.
 It also verifies that the installed editable package metadata matches
