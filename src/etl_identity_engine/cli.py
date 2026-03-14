@@ -56,7 +56,9 @@ from etl_identity_engine.quality.exceptions import (
     extract_exception_rows,
 )
 from etl_identity_engine.runtime_config import (
+    ExportJobConfig,
     PipelineConfig,
+    load_export_job_configs,
     load_pipeline_config,
     load_runtime_environment,
 )
@@ -67,10 +69,13 @@ from etl_identity_engine.storage.migration_runner import (
     upgrade_sqlite_store,
 )
 from etl_identity_engine.storage.sqlite_store import (
+    EXPORT_RUN_STATUSES,
+    ExportJobRunRecord,
     PersistedReviewCase,
     PersistRunMetadata,
     PipelineRunRecord,
     SQLitePipelineStore,
+    build_export_key,
     build_run_key,
 )
 from etl_identity_engine.survivorship.rules_engine import build_golden_records
@@ -112,6 +117,8 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
         "apply-review-decision",
         "publish-delivery",
         "publish-run",
+        "export-job-run",
+        "export-job-history",
         "replay-run",
         "serve-api",
         "run-all",
@@ -970,11 +977,61 @@ def _serialize_run_record(record: PipelineRunRecord) -> dict[str, object]:
     }
 
 
+def _serialize_export_job(job: ExportJobConfig) -> dict[str, object]:
+    return {
+        "name": job.name,
+        "consumer": job.consumer,
+        "description": job.description,
+        "output_root": str(job.output_root),
+        "contract_name": job.contract_name,
+        "contract_version": job.contract_version,
+        "format": job.export_format,
+    }
+
+
+def _serialize_export_run_record(record: ExportJobRunRecord) -> dict[str, object]:
+    return {
+        "export_run_id": record.export_run_id,
+        "export_key": record.export_key,
+        "attempt_number": record.attempt_number,
+        "job_name": record.job_name,
+        "source_run_id": record.source_run_id,
+        "contract_name": record.contract_name,
+        "contract_version": record.contract_version,
+        "output_root": record.output_root,
+        "status": record.status,
+        "started_at_utc": record.started_at_utc,
+        "finished_at_utc": record.finished_at_utc,
+        "snapshot_dir": record.snapshot_dir,
+        "current_pointer_path": record.current_pointer_path,
+        "row_counts": record.row_counts,
+        "metadata": record.metadata,
+        "failure_detail": record.failure_detail,
+    }
+
+
 def _resolve_completed_run_id(args: argparse.Namespace, store: SQLitePipelineStore) -> str:
     run_id = args.run_id or store.latest_completed_run_id()
     if run_id is None:
         raise FileNotFoundError(f"No completed persisted runs found in {_require_state_db(args)}")
     return run_id
+
+
+def _load_export_jobs(args: argparse.Namespace) -> dict[str, ExportJobConfig]:
+    return load_export_job_configs(
+        Path(args.config_dir) if getattr(args, "config_dir", None) else None,
+        environment=getattr(args, "environment", None),
+    )
+
+
+def _resolve_export_job(args: argparse.Namespace) -> ExportJobConfig:
+    jobs = _load_export_jobs(args)
+    job = jobs.get(args.job_name)
+    if job is None:
+        raise FileNotFoundError(
+            f"Configured export job not found: {args.job_name}. Available jobs: {sorted(jobs)}"
+        )
+    return job
 
 
 def _cmd_review_case_list(args: argparse.Namespace) -> None:
@@ -1083,6 +1140,115 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
                 "snapshot_dir": str(published.snapshot_dir),
                 "current_pointer_path": str(published.current_pointer_path),
             },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _cmd_export_job_list(args: argparse.Namespace) -> None:
+    jobs = _load_export_jobs(args)
+    print(
+        json.dumps(
+            [_serialize_export_job(job) for job in jobs.values()],
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _cmd_export_job_run(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    source_run_id = _resolve_completed_run_id(args, store)
+    source_run = store.load_run_record(source_run_id)
+    if source_run.status != "completed":
+        raise ValueError(f"Only completed persisted runs can be exported, received status={source_run.status!r}")
+
+    job = _resolve_export_job(args)
+    export_key = build_export_key(
+        job_name=job.name,
+        source_run_id=source_run_id,
+        contract_name=job.contract_name,
+        contract_version=job.contract_version,
+        output_root=str(job.output_root),
+    )
+    started_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    start_decision = store.begin_export_run(
+        export_key=export_key,
+        job_name=job.name,
+        source_run_id=source_run_id,
+        contract_name=job.contract_name,
+        contract_version=job.contract_version,
+        output_root=str(job.output_root),
+        started_at_utc=started_at_utc,
+    )
+
+    export_run_id = start_decision.export_run_id
+    try:
+        bundle = store.load_run_bundle(source_run_id)
+        published = publish_delivery_snapshot(
+            bundle=bundle,
+            state_db_path=state_db,
+            output_root=job.output_root,
+            contract_version=job.contract_version,
+        )
+        if start_decision.action == "reuse_completed":
+            export_record = store.load_export_run_record(export_run_id)
+            action = "reused_completed_export"
+        else:
+            finished_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            row_counts = {
+                "golden_records": len(bundle.golden_rows),
+                "source_to_golden_crosswalk": len(bundle.crosswalk_rows),
+            }
+            metadata = {
+                "job": _serialize_export_job(job),
+                "source_run": _serialize_run_record(source_run),
+            }
+            store.complete_export_run(
+                export_run_id=export_run_id,
+                finished_at_utc=finished_at_utc,
+                snapshot_dir=str(published.snapshot_dir),
+                current_pointer_path=str(published.current_pointer_path),
+                row_counts=row_counts,
+                metadata=metadata,
+            )
+            export_record = store.load_export_run_record(export_run_id)
+            action = "exported"
+    except Exception as exc:
+        if start_decision.action == "start_new":
+            store.mark_export_run_failed(
+                export_run_id=export_run_id,
+                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                failure_detail=str(exc),
+            )
+        raise
+
+    print(
+        json.dumps(
+            {
+                "action": action,
+                "job": _serialize_export_job(job),
+                "export_run": _serialize_export_run_record(export_record),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _cmd_export_job_history(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    records = store.list_export_runs(
+        job_name=args.job_name,
+        source_run_id=args.source_run_id,
+        status=args.status,
+    )
+    print(
+        json.dumps(
+            [_serialize_export_run_record(record) for record in records],
             indent=2,
             sort_keys=True,
         )
@@ -1766,6 +1932,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="Versioned consumer contract to publish. Defaults to the current stable delivery contract.",
     )
     publish_run_parser.set_defaults(func=_cmd_publish_run)
+
+    export_job_list_parser = subparsers.add_parser(
+        "export-job-list",
+        help="List configured downstream export jobs.",
+    )
+    export_job_list_parser.add_argument("--environment", default=None)
+    export_job_list_parser.add_argument("--runtime-config", default=None)
+    export_job_list_parser.add_argument("--config-dir", default=None)
+    export_job_list_parser.set_defaults(func=_cmd_export_job_list)
+
+    export_job_run_parser = subparsers.add_parser(
+        "export-job-run",
+        help="Run a configured downstream export job and persist an audit record.",
+    )
+    export_job_run_parser.add_argument("--environment", default=None)
+    export_job_run_parser.add_argument("--runtime-config", default=None)
+    export_job_run_parser.add_argument("--config-dir", default=None)
+    export_job_run_parser.add_argument("--state-db", default=None)
+    export_job_run_parser.add_argument("--job-name", required=True)
+    export_job_run_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to export. Defaults to the latest completed run in --state-db.",
+    )
+    export_job_run_parser.set_defaults(func=_cmd_export_job_run)
+
+    export_job_history_parser = subparsers.add_parser(
+        "export-job-history",
+        help="List tracked downstream export-job runs from persisted state.",
+    )
+    export_job_history_parser.add_argument("--environment", default=None)
+    export_job_history_parser.add_argument("--runtime-config", default=None)
+    export_job_history_parser.add_argument("--state-db", default=None)
+    export_job_history_parser.add_argument("--job-name", default=None)
+    export_job_history_parser.add_argument("--source-run-id", default=None)
+    export_job_history_parser.add_argument(
+        "--status",
+        default=None,
+        choices=sorted(EXPORT_RUN_STATUSES),
+        help="Optional export-run status filter.",
+    )
+    export_job_history_parser.set_defaults(func=_cmd_export_job_history)
 
     replay_run_parser = subparsers.add_parser(
         "replay-run",

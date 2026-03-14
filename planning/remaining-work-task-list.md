@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#72` through `#80`.
+  open child issues `#73` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -48,6 +48,10 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#71` is complete: operator-facing CLI wrappers now support
   idempotent review decisions, manifest-backed replay, and downstream
   publication triggers with JSON output.
+- Issue `#72` is complete: named warehouse and data-product export jobs
+  now materialize persisted golden and crosswalk snapshots through
+  audited SQLite export-run records and JSON operator commands for
+  export execution history.
 
 ## Open Task Groups
 
@@ -55,7 +59,7 @@ truth for tracked work; this file is the short maintainer view.
   - Open issues: none. `v0.4.0` implementation work is complete in the
     active backlog catalog.
 - [ ] `v0.5.0` Review workflow and service surface
-  - Open issues: `#72` through `#73` in the active backlog catalog.
+  - Open issues: `#73` in the active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
   - Open issues: `#74` through `#80` in the active backlog catalog.
 
@@ -80,4 +84,4 @@ truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#72`.
+  then `v0.6.0`, starting with issue `#73`.

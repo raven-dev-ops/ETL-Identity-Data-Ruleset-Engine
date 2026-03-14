@@ -65,6 +65,11 @@ golden records, and reporting artifacts.
    - Reads persisted SQLite state through a local HTTP service
    - Exposes run status, golden-record lookup, source-to-golden
      crosswalk lookup, and review-case retrieval
+11. `export-job-run`
+   - Reads a completed persisted run from SQLite
+   - Materializes a named warehouse or data-product export under the
+     configured output root
+   - Records auditable export execution and reuse in SQLite
 
 ## Config Surfaces
 
@@ -76,6 +81,7 @@ The current runtime reads these repo config files at startup:
 - `config/thresholds.yml`
 - `config/survivorship_rules.yml`
 - `config/runtime_environments.yml`
+- `config/export_jobs.yml`
 
 Named runtime environments can now layer per-environment overrides from
 `config/environments/<environment>/` and resolve secret-backed values
@@ -121,6 +127,9 @@ summary.
 `publish-delivery --state-db ...` can then materialize a versioned
 golden/crosswalk snapshot from any completed persisted run without
 needing the original working-directory files.
+`export-job-run --state-db ... --job-name ...` can then materialize the
+same delivery contract through named warehouse or data-product export
+jobs while recording auditable export-run metadata in SQLite.
 `serve-api --state-db ...` can expose the same persisted state through a
 read-only operator API for local and CI integration testing.
 
@@ -156,6 +165,9 @@ The current manual-review model now has two surfaces:
 - operators can apply those decisions through `apply-review-decision`,
   replay manifest-backed runs through `replay-run`, and trigger
   downstream publication through `publish-run`
+- operators can list configured downstream export jobs, execute a named
+  export, and inspect export history through `export-job-list`,
+  `export-job-run`, and `export-job-history`
 
 ## Support Matrix
 

@@ -36,6 +36,7 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
         "updated_at_utc",
         "resolved_at_utc",
     } <= review_case_columns
+    assert "export_job_runs" in table_names
 
 
 def test_state_db_upgrade_command_can_use_runtime_environment_defaults(

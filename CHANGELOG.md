@@ -38,6 +38,9 @@ All notable changes to this project will be documented in this file.
   record lookup, crosswalk lookup, and review-case retrieval.
 - Operator CLI wrappers for idempotent review decisions, persisted
   manifest replay, and downstream publication triggers.
+- Named downstream export jobs for warehouse and data-product consumers,
+  including audited SQLite export-run tracking and JSON operator
+  commands for export execution and history.
 
 ### Changed
 
@@ -66,6 +69,9 @@ All notable changes to this project will be documented in this file.
 - The runtime now exposes `apply-review-decision`, `replay-run`, and
   `publish-run` as JSON-producing operator commands over the persisted
   workflow surface.
+- The runtime now exposes `export-job-list`, `export-job-run`, and
+  `export-job-history` so persisted runs can be materialized through
+  configured downstream export locations with auditable reuse semantics.
 
 ## [0.1.4] - 2026-03-13
 

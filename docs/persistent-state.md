@@ -45,6 +45,15 @@ python -m etl_identity_engine.cli publish-delivery \
   --output-dir published/delivery
 ```
 
+Or execute a named downstream export job against that persisted run:
+
+```bash
+python -m etl_identity_engine.cli export-job-run \
+  --state-db data/state/pipeline_state.sqlite \
+  --job-name warehouse_identity_snapshot \
+  --run-id RUN-20260314T000000Z-ABC12345
+```
+
 You can also serve persisted state through the read-only operator API:
 
 ```bash
@@ -87,6 +96,7 @@ The current schema includes:
 - `golden_records`
 - `source_to_golden_crosswalk`
 - `review_cases`
+- `export_job_runs`
 
 ## Run Registry
 
@@ -244,6 +254,56 @@ The publish path:
 The consumer-facing contract is documented in
 [delivery-contracts.md](delivery-contracts.md).
 
+## Export Job Audit
+
+Named downstream export jobs now record auditable execution state in the
+`export_job_runs` table.
+
+The export registry uses these statuses:
+
+- `running`
+- `completed`
+- `failed`
+
+Each export run stores:
+
+- `export_run_id`
+- `export_key`
+- `attempt_number`
+- `job_name`
+- `source_run_id`
+- `contract_name`
+- `contract_version`
+- `output_root`
+- `status`
+- `started_at_utc`
+- `finished_at_utc`
+- `snapshot_dir`
+- `current_pointer_path`
+- `row_counts_json`
+- `metadata_json`
+- `failure_detail`
+
+Completed exports are deduplicated by a stable `export_key`, so
+re-running the same named export against the same completed run reuses
+the prior completed export record instead of writing duplicate audit
+rows. The operator surface for this workflow is:
+
+```bash
+python -m etl_identity_engine.cli export-job-list
+
+python -m etl_identity_engine.cli export-job-run \
+  --state-db data/state/pipeline_state.sqlite \
+  --job-name warehouse_identity_snapshot
+
+python -m etl_identity_engine.cli export-job-history \
+  --state-db data/state/pipeline_state.sqlite \
+  --job-name warehouse_identity_snapshot
+```
+
+The configured job catalog and downstream locations are documented in
+[export-jobs.md](export-jobs.md).
+
 ## Service Access
 
 The persisted store now also supports a read-only service surface for:
@@ -259,8 +319,9 @@ That API contract is documented in [service-api.md](service-api.md).
 
 This issue adds durable relational persistence, a basic run registry,
 first-class schema migrations, a first incremental refresh path, a
-persisted review-case lifecycle, and a versioned downstream publication
-contract, not full orchestration.
+persisted review-case lifecycle, a versioned downstream publication
+contract, and auditable named export-job execution, not full
+orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints

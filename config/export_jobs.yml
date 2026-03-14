@@ -1,0 +1,15 @@
+export_jobs:
+  - name: warehouse_identity_snapshot
+    consumer: warehouse
+    description: Materialize the versioned golden and crosswalk CSV snapshot into the warehouse landing zone.
+    output_root: ./published/warehouse/person_identity
+    contract_name: golden_crosswalk_snapshot
+    contract_version: v1
+    format: csv_snapshot
+  - name: data_product_identity_snapshot
+    consumer: data_product
+    description: Materialize the versioned golden and crosswalk CSV snapshot for downstream data-product consumers.
+    output_root: ./published/data_products/person_identity
+    contract_name: golden_crosswalk_snapshot
+    contract_version: v1
+    format: csv_snapshot

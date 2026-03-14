@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 
 import yaml
+from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_NAME, DELIVERY_CONTRACT_VERSION
 
 
 SUPPORTED_BLOCKING_FIELDS = frozenset({"last_initial", "last_name", "dob", "birth_year"})
@@ -21,6 +22,8 @@ SUPPORTED_WEIGHT_FIELDS = (
 SUPPORTED_PHONE_OUTPUT_FORMATS = frozenset({"digits_only", "e164"})
 SUPPORTED_SURVIVORSHIP_FIELDS = ("first_name", "last_name", "dob", "address", "phone")
 SUPPORTED_SURVIVORSHIP_STRATEGIES = frozenset({"source_priority_then_non_null"})
+SUPPORTED_EXPORT_JOB_CONSUMERS = frozenset({"warehouse", "data_product"})
+SUPPORTED_EXPORT_JOB_FORMATS = frozenset({"csv_snapshot"})
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
 
 
@@ -94,6 +97,17 @@ class RuntimeEnvironmentConfig:
     config_dir: Path
     state_db: Path | None
     secrets: dict[str, str]
+
+
+@dataclass(frozen=True)
+class ExportJobConfig:
+    name: str
+    consumer: str
+    description: str
+    output_root: Path
+    contract_name: str
+    contract_version: str
+    export_format: str
 
 
 def default_config_dir() -> Path:
@@ -738,3 +752,131 @@ def load_pipeline_config(
             field_rules=field_rules,
         ),
     )
+
+
+def load_export_job_configs(
+    config_dir: Path | None = None,
+    *,
+    environment: str | None = None,
+) -> dict[str, ExportJobConfig]:
+    root = config_dir or default_config_dir()
+    export_jobs_path = root / "export_jobs.yml"
+    export_jobs_rules = _load_pipeline_yaml(root, "export_jobs.yml", environment=environment)
+
+    _validate_allowed_keys(
+        export_jobs_rules,
+        allowed_keys={"export_jobs"},
+        path=export_jobs_path,
+        context="top-level config",
+    )
+    raw_jobs = export_jobs_rules.get("export_jobs")
+    if not isinstance(raw_jobs, list) or not raw_jobs:
+        raise _config_error(export_jobs_path, "export_jobs must be a non-empty list")
+
+    resolved_jobs: dict[str, ExportJobConfig] = {}
+    for index, raw_job in enumerate(raw_jobs):
+        if not isinstance(raw_job, Mapping):
+            raise _config_error(export_jobs_path, f"export_jobs[{index}] must be a mapping")
+        _validate_allowed_keys(
+            raw_job,
+            allowed_keys={
+                "name",
+                "consumer",
+                "description",
+                "output_root",
+                "contract_name",
+                "contract_version",
+                "format",
+            },
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+        )
+
+        name = _require_non_empty_string(
+            raw_job,
+            "name",
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+        )
+        if name in resolved_jobs:
+            raise _config_error(export_jobs_path, f"export job name {name!r} is duplicated")
+
+        consumer = _require_non_empty_string(
+            raw_job,
+            "consumer",
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+        )
+        if consumer not in SUPPORTED_EXPORT_JOB_CONSUMERS:
+            raise _config_error(
+                export_jobs_path,
+                f"export_jobs[{index}].consumer must be one of: "
+                f"{', '.join(sorted(SUPPORTED_EXPORT_JOB_CONSUMERS))}",
+            )
+
+        output_root_value = _require_non_empty_string(
+            raw_job,
+            "output_root",
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+        )
+        output_root = Path(output_root_value)
+        if not output_root.is_absolute():
+            output_root = (root.parent / output_root).resolve()
+
+        contract_name = _optional_non_empty_string(
+            raw_job,
+            "contract_name",
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+            default=DELIVERY_CONTRACT_NAME,
+        )
+        if contract_name != DELIVERY_CONTRACT_NAME:
+            raise _config_error(
+                export_jobs_path,
+                f"export_jobs[{index}].contract_name must be {DELIVERY_CONTRACT_NAME!r}",
+            )
+
+        contract_version = _optional_non_empty_string(
+            raw_job,
+            "contract_version",
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+            default=DELIVERY_CONTRACT_VERSION,
+        )
+        if contract_version != DELIVERY_CONTRACT_VERSION:
+            raise _config_error(
+                export_jobs_path,
+                f"export_jobs[{index}].contract_version must be {DELIVERY_CONTRACT_VERSION!r}",
+            )
+
+        export_format = _optional_non_empty_string(
+            raw_job,
+            "format",
+            path=export_jobs_path,
+            context=f"export_jobs[{index}]",
+            default="csv_snapshot",
+        )
+        if export_format not in SUPPORTED_EXPORT_JOB_FORMATS:
+            raise _config_error(
+                export_jobs_path,
+                f"export_jobs[{index}].format must be one of: "
+                f"{', '.join(sorted(SUPPORTED_EXPORT_JOB_FORMATS))}",
+            )
+
+        resolved_jobs[name] = ExportJobConfig(
+            name=name,
+            consumer=consumer,
+            description=_require_non_empty_string(
+                raw_job,
+                "description",
+                path=export_jobs_path,
+                context=f"export_jobs[{index}]",
+            ),
+            output_root=output_root,
+            contract_name=contract_name,
+            contract_version=contract_version,
+            export_format=export_format,
+        )
+
+    return resolved_jobs

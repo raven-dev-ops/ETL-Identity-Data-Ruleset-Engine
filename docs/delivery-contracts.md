@@ -4,6 +4,9 @@ The runtime now supports a versioned downstream publication contract for
 golden records and the source-to-golden crosswalk from persisted SQLite
 state.
 
+The contract can be published directly with `publish-delivery` or
+through configured named export jobs with `export-job-run`.
+
 ## Current Contract
 
 - Contract name: `golden_crosswalk_snapshot`
@@ -19,6 +22,23 @@ python -m etl_identity_engine.cli publish-delivery \
 
 If `--run-id` is omitted, the command publishes the latest completed run
 from `--state-db`.
+
+Configured export jobs layer on top of the same contract:
+
+```bash
+python -m etl_identity_engine.cli export-job-run \
+  --state-db data/state/pipeline_state.sqlite \
+  --job-name warehouse_identity_snapshot
+```
+
+The default catalog ships two named jobs:
+
+- `warehouse_identity_snapshot` under `published/warehouse/person_identity/`
+- `data_product_identity_snapshot` under
+  `published/data_products/person_identity/`
+
+Those paths come from `config/export_jobs.yml` and can be overridden per
+environment.
 
 ## Published Layout
 

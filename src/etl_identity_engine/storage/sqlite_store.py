@@ -28,6 +28,7 @@ from etl_identity_engine.output_contracts import (
 
 
 RUN_STATUSES = frozenset({"running", "completed", "failed"})
+EXPORT_RUN_STATUSES = frozenset({"running", "completed", "failed"})
 ARTIFACT_TABLE_NAMES = (
     "normalized_source_records",
     "candidate_pairs",
@@ -100,6 +101,35 @@ class RunStartDecision:
     action: str
     run_id: str
     run_key: str
+    attempt_number: int
+    started_at_utc: str
+
+
+@dataclass(frozen=True)
+class ExportJobRunRecord:
+    export_run_id: str
+    export_key: str
+    attempt_number: int
+    job_name: str
+    source_run_id: str
+    contract_name: str
+    contract_version: str
+    output_root: str
+    status: str
+    started_at_utc: str
+    finished_at_utc: str
+    snapshot_dir: str
+    current_pointer_path: str
+    row_counts: dict[str, int]
+    metadata: dict[str, object]
+    failure_detail: str | None
+
+
+@dataclass(frozen=True)
+class ExportStartDecision:
+    action: str
+    export_run_id: str
+    export_key: str
     attempt_number: int
     started_at_utc: str
 
@@ -178,12 +208,17 @@ ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
     "review_cases": (("review_id",), ("queue_status",), ("assigned_to",), ("left_id",), ("right_id",)),
 }
 
-PIPELINE_STATE_TABLES = ("pipeline_runs", *ARTIFACT_TABLE_NAMES)
+PIPELINE_STATE_TABLES = ("pipeline_runs", "export_job_runs", *ARTIFACT_TABLE_NAMES)
 
 
 def build_run_id(now: datetime | None = None) -> str:
     timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
     return f"RUN-{timestamp}-{uuid4().hex[:8].upper()}"
+
+
+def build_export_run_id(now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    return f"EXP-{timestamp}-{uuid4().hex[:8].upper()}"
 
 
 def build_run_key(
@@ -215,6 +250,29 @@ def build_run_key(
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16].upper()
     return f"RK-{digest}"
+
+
+def build_export_key(
+    *,
+    job_name: str,
+    source_run_id: str,
+    contract_name: str,
+    contract_version: str,
+    output_root: str,
+) -> str:
+    payload = json.dumps(
+        {
+            "job_name": job_name,
+            "source_run_id": source_run_id,
+            "contract_name": contract_name,
+            "contract_version": contract_version,
+            "output_root": output_root,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16].upper()
+    return f"EK-{digest}"
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -354,6 +412,88 @@ class SQLitePipelineStore:
             action="start_new",
             run_id=run_id,
             run_key=run_key,
+            attempt_number=attempt_number,
+            started_at_utc=started_at_utc,
+        )
+
+    def begin_export_run(
+        self,
+        *,
+        export_key: str,
+        job_name: str,
+        source_run_id: str,
+        contract_name: str,
+        contract_version: str,
+        output_root: str,
+        started_at_utc: str,
+    ) -> ExportStartDecision:
+        with _connect(self.db_path) as connection:
+            completed = connection.execute(
+                """
+                SELECT export_run_id, attempt_number
+                FROM export_job_runs
+                WHERE export_key = ? AND status = 'completed'
+                ORDER BY attempt_number DESC
+                LIMIT 1
+                """,
+                (export_key,),
+            ).fetchone()
+            if completed is not None:
+                return ExportStartDecision(
+                    action="reuse_completed",
+                    export_run_id=str(completed["export_run_id"]),
+                    export_key=export_key,
+                    attempt_number=int(completed["attempt_number"] or 1),
+                    started_at_utc=started_at_utc,
+                )
+
+            attempt_row = connection.execute(
+                "SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt FROM export_job_runs WHERE export_key = ?",
+                (export_key,),
+            ).fetchone()
+            attempt_number = int(attempt_row["max_attempt"] or 0) + 1
+            export_run_id = build_export_run_id(
+                datetime.fromisoformat(started_at_utc.replace("Z", "+00:00"))
+            )
+            connection.execute(
+                """
+                INSERT INTO export_job_runs (
+                    export_run_id,
+                    export_key,
+                    attempt_number,
+                    job_name,
+                    source_run_id,
+                    contract_name,
+                    contract_version,
+                    output_root,
+                    status,
+                    started_at_utc,
+                    finished_at_utc,
+                    snapshot_dir,
+                    current_pointer_path,
+                    row_counts_json,
+                    metadata_json,
+                    failure_detail
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, '', '', '', '{}', '{}', '')
+                """,
+                (
+                    export_run_id,
+                    export_key,
+                    attempt_number,
+                    job_name,
+                    source_run_id,
+                    contract_name,
+                    contract_version,
+                    output_root,
+                    started_at_utc,
+                ),
+            )
+            connection.commit()
+
+        return ExportStartDecision(
+            action="start_new",
+            export_run_id=export_run_id,
+            export_key=export_key,
             attempt_number=attempt_number,
             started_at_utc=started_at_utc,
         )
@@ -530,6 +670,60 @@ class SQLitePipelineStore:
             )
             connection.commit()
 
+    def complete_export_run(
+        self,
+        *,
+        export_run_id: str,
+        finished_at_utc: str,
+        snapshot_dir: str,
+        current_pointer_path: str,
+        row_counts: dict[str, int],
+        metadata: dict[str, object],
+    ) -> None:
+        with _connect(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE export_job_runs
+                SET status = 'completed',
+                    finished_at_utc = ?,
+                    snapshot_dir = ?,
+                    current_pointer_path = ?,
+                    row_counts_json = ?,
+                    metadata_json = ?,
+                    failure_detail = ''
+                WHERE export_run_id = ?
+                """,
+                (
+                    finished_at_utc,
+                    snapshot_dir,
+                    current_pointer_path,
+                    json.dumps(row_counts, sort_keys=True),
+                    json.dumps(metadata, sort_keys=True),
+                    export_run_id,
+                ),
+            )
+            connection.commit()
+
+    def mark_export_run_failed(
+        self,
+        *,
+        export_run_id: str,
+        finished_at_utc: str,
+        failure_detail: str,
+    ) -> None:
+        with _connect(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE export_job_runs
+                SET status = 'failed',
+                    finished_at_utc = ?,
+                    failure_detail = ?
+                WHERE export_run_id = ?
+                """,
+                (finished_at_utc, failure_detail, export_run_id),
+            )
+            connection.commit()
+
     def latest_run_id(self) -> str | None:
         with _connect(self.db_path) as connection:
             row = connection.execute(
@@ -570,6 +764,22 @@ class SQLitePipelineStore:
         if row is None:
             return None
         return self.load_run_record(str(row["run_id"]))
+
+    def latest_completed_export_run_for_key(self, export_key: str) -> ExportJobRunRecord | None:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM export_job_runs
+                WHERE export_key = ? AND status = 'completed'
+                ORDER BY attempt_number DESC, export_run_id DESC
+                LIMIT 1
+                """,
+                (export_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_export_job_run_record(row)
 
     def latest_completed_run_id_with_review_cases(self) -> str | None:
         with _connect(self.db_path) as connection:
@@ -647,6 +857,74 @@ class SQLitePipelineStore:
             failure_detail=None if row["failure_detail"] in (None, "") else str(row["failure_detail"]),
             summary=json.loads(str(row["summary_json"])),
         )
+
+    def _row_to_export_job_run_record(self, row: sqlite3.Row) -> ExportJobRunRecord:
+        return ExportJobRunRecord(
+            export_run_id=str(row["export_run_id"]),
+            export_key=str(row["export_key"]),
+            attempt_number=int(row["attempt_number"] or 0),
+            job_name=str(row["job_name"]),
+            source_run_id=str(row["source_run_id"]),
+            contract_name=str(row["contract_name"]),
+            contract_version=str(row["contract_version"]),
+            output_root=str(row["output_root"]),
+            status=str(row["status"]),
+            started_at_utc=str(row["started_at_utc"]),
+            finished_at_utc=str(row["finished_at_utc"]),
+            snapshot_dir="" if row["snapshot_dir"] is None else str(row["snapshot_dir"]),
+            current_pointer_path=""
+            if row["current_pointer_path"] is None
+            else str(row["current_pointer_path"]),
+            row_counts=json.loads(str(row["row_counts_json"] or "{}")),
+            metadata=json.loads(str(row["metadata_json"] or "{}")),
+            failure_detail=None if row["failure_detail"] in (None, "") else str(row["failure_detail"]),
+        )
+
+    def load_export_run_record(self, export_run_id: str) -> ExportJobRunRecord:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM export_job_runs WHERE export_run_id = ?",
+                (export_run_id,),
+            ).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"Persisted export run not found: {export_run_id}")
+        return self._row_to_export_job_run_record(row)
+
+    def list_export_runs(
+        self,
+        *,
+        job_name: str | None = None,
+        source_run_id: str | None = None,
+        status: str | None = None,
+    ) -> list[ExportJobRunRecord]:
+        filters: list[str] = ["1 = 1"]
+        parameters: list[str] = []
+        if job_name is not None:
+            filters.append("job_name = ?")
+            parameters.append(job_name)
+        if source_run_id is not None:
+            filters.append("source_run_id = ?")
+            parameters.append(source_run_id)
+        if status is not None:
+            normalized_status = status.strip().lower()
+            if normalized_status not in EXPORT_RUN_STATUSES:
+                raise ValueError(
+                    f"Unsupported export run status {status!r}; expected one of {sorted(EXPORT_RUN_STATUSES)}"
+                )
+            filters.append("status = ?")
+            parameters.append(normalized_status)
+        where_clause = " AND ".join(filters)
+        with _connect(self.db_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM export_job_runs
+                WHERE {where_clause}
+                ORDER BY started_at_utc DESC, export_run_id DESC
+                """,
+                parameters,
+            ).fetchall()
+        return [self._row_to_export_job_run_record(row) for row in rows]
 
     def _load_artifact_rows(self, table_name: str, run_id: str) -> list[dict[str, str]]:
         headers = ARTIFACT_HEADERS[table_name]
