@@ -10,7 +10,7 @@ will read any real input files.
 - Manifest formats: `.json`, `.yaml`, `.yml`
 - Supported `manifest_version`: `1.0`
 - Supported `entity_type`: `person`
-- Supported `landing_zone.kind`: `local_filesystem`
+- Supported `landing_zone.kind`: `local_filesystem`, `object_storage`
 - Supported source formats: `csv`, `parquet`
 - Supported schema version: `person-v1`
 
@@ -24,14 +24,20 @@ will read any real input files.
 
 ## Landing-Zone Contract
 
-`landing_zone` must contain:
+Supported landing-zone contracts:
 
-- `kind`
-- `base_path`
+- `local_filesystem`
+  - required keys: `kind`, `base_path`
+  - `base_path` may be absolute or relative to the manifest file
+- `object_storage`
+  - required keys: `kind`, `base_uri`
+  - optional key: `storage_options`
+  - `base_uri` must be an `fsspec`-compatible URI such as
+    `memory://landing` or `s3://bucket/prefix`
 
-`base_path` may be absolute or relative to the manifest file. Each
-source entry resolves its `path` relative to that landing-zone base
-unless the source path is already absolute.
+For both kinds, each source entry resolves its `path` relative to the
+landing-zone base unless the source path is already absolute for that
+kind.
 
 ## Source Entry Contract
 
@@ -119,6 +125,39 @@ sources:
       - conflict_types
 ```
 
+Object-storage example:
+
+```yaml
+manifest_version: "1.0"
+entity_type: person
+batch_id: inbound-2026-03-13
+landing_zone:
+  kind: object_storage
+  base_uri: s3://example-identity-landing/inbound/2026-03-13
+  storage_options:
+    anon: false
+sources:
+  - source_id: source_a
+    path: agency_a.csv
+    format: csv
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+```
+
 ## Validation Behavior
 
 Before normalization starts, the runtime validates:
@@ -132,3 +171,10 @@ Before normalization starts, the runtime validates:
 - `source_system` values against `source_id`
 
 Any failure aborts the run before partial normalized output is written.
+
+## Object-Storage Notes
+
+The object-storage adapter uses `fsspec`-compatible URIs. Protocols that
+need an additional backend, such as `s3://`, also require the matching
+plugin package. For S3-compatible URIs, install `s3fs` in addition to
+the base project dependencies.

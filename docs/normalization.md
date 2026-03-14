@@ -56,13 +56,18 @@ The manifest contract requires:
 
 - `manifest_version: "1.0"`
 - `entity_type: person`
-- a local-filesystem `landing_zone`
+- a supported `landing_zone`
 - one or more source entries with `source_id`, `path`, `format`,
   `schema_version`, and `required_columns`
 
 The runtime validates the manifest, file presence, required columns, and
 `source_system` identifiers before normalization starts. Invalid
 manifests fail fast and do not write partial normalized output.
+
+Supported landing-zone kinds are:
+
+- `local_filesystem`
+- `object_storage`
 
 ## Output Contract
 

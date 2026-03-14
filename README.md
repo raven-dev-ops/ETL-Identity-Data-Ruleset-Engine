@@ -14,11 +14,11 @@ reporting systems, analytics environments, and search interfaces,
 reducing trust in the data.
 
 This repository models those challenges using synthetic datasets and now
-also supports manifest-driven local batch inputs for production-style
-evaluation. Teams can still explore identity-resolution techniques
-safely with synthetic data, then validate the same staged runtime
-against landed CSV or Parquet batches under an explicit manifest
-contract.
+also supports manifest-driven local and object-storage-compatible batch
+inputs for production-style evaluation. Teams can still explore
+identity-resolution techniques safely with synthetic data, then validate
+the same staged runtime against landed CSV or Parquet batches under an
+explicit manifest contract.
 
 ## Core Concepts
 
@@ -131,10 +131,11 @@ is included in the repository.
 ## Scope Boundaries
 
 - The runtime now supports two input modes: synthetic generation for
-  safe experimentation and manifest-driven local landed batches for
-  production-style evaluation. Object-storage ingestion, persisted state,
-  and service workflows remain follow-on work rather than implicit
-  capabilities of the current line.
+  safe experimentation and manifest-driven landed batches for
+  production-style evaluation. Local filesystem and object-storage-
+  compatible landing zones are supported; persisted state and service
+  workflows remain follow-on work rather than implicit capabilities of
+  the current line.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of

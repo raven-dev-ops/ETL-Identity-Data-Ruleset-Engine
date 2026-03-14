@@ -9,12 +9,17 @@ All notable changes to this project will be documented in this file.
 - Production batch-manifest support for `normalize` and `run-all`,
   including a documented local landing-zone contract for manifest-driven
   CSV and Parquet inputs.
+- Landing-zone adapter support for object-storage-compatible manifest
+  inputs through `fsspec` URIs, with end-to-end coverage using
+  `memory://` batches.
 
 ### Changed
 
 - The runtime now validates batch manifests, source IDs, and required
   input columns before normalization starts, so invalid landed batches
   fail fast without writing partial normalized outputs.
+- Manifest-driven runtime inputs now support both local filesystem and
+  object-storage-compatible landing-zone resolution.
 
 ## [0.1.4] - 2026-03-13
 

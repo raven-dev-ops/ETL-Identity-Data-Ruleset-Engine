@@ -8,8 +8,8 @@ golden records, and reporting artifacts.
 ## Public Scope Boundaries
 
 - The current runtime supports synthetic generation plus manifest-driven
-  local landed batches. Object-storage ingestion, persisted state, and
-  service workflows are still tracked follow-on work rather than
+  local and object-storage-compatible landed batches. Persisted state
+  and service workflows are still tracked follow-on work rather than
   implicit capabilities of the current line.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The

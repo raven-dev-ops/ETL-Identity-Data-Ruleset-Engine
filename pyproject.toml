@@ -14,11 +14,15 @@ authors = [
   { name = "ETL Identity Data Ruleset Engine Contributors" }
 ]
 dependencies = [
+  "fsspec>=2024.6.0",
   "pyarrow>=16.0.0",
   "PyYAML>=6.0.2"
 ]
 
 [project.optional-dependencies]
+object-storage = [
+  "s3fs>=2024.6.0"
+]
 dev = [
   "build>=1.2.2",
   "pytest>=8.0.0",

@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#62` through `#80`.
+  open child issues `#63` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -20,11 +20,13 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#61` is complete: the runtime now validates a stable landed
   batch manifest contract before `normalize` or manifest-driven
   `run-all` reads real input files.
+- Issue `#62` is complete: landed batches now resolve through local and
+  object-storage-compatible adapters under the manifest contract.
 
 ## Open Task Groups
 
 - [ ] `v0.4.0` Production data ingestion and persistence
-  - Open issues: `#62` through `#67` in the active backlog catalog.
+  - Open issues: `#63` through `#67` in the active backlog catalog.
 - [ ] `v0.5.0` Review workflow and service surface
   - Open issues: `#68` through `#73` in the active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
@@ -32,7 +34,7 @@ truth for tracked work; this file is the short maintainer view.
 
 ## Production-Readiness Gaps Now Explicitly Tracked
 
-- [ ] Remaining landed-batch ingestion adapters and object-storage
+- [x] Real landed-batch ingestion adapters and object-storage-compatible
   support
 - [ ] Persistent relational state for runs, entities, goldens, and
   review cases
@@ -49,4 +51,4 @@ truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#62`.
+  then `v0.6.0`, starting with issue `#63`.

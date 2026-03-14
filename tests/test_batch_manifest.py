@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -59,15 +60,44 @@ def _write_manifest(path: Path, body: str) -> Path:
     return path
 
 
-def _manifest_body(*, source_a_path: str, source_b_path: str) -> str:
+def _write_memory_csv(uri: str, rows: list[dict[str, str]]) -> None:
+    import fsspec
+
+    with fsspec.open(uri, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_memory_parquet(uri: str, rows: list[dict[str, str]]) -> None:
+    import fsspec
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    buffer = BytesIO()
+    pq.write_table(pa.Table.from_pylist(rows), buffer)
+    with fsspec.open(uri, "wb") as handle:
+        handle.write(buffer.getvalue())
+
+
+def _manifest_body(
+    *,
+    source_a_path: str,
+    source_b_path: str,
+    landing_zone_kind: str = "local_filesystem",
+    base_location_key: str = "base_path",
+    base_location_value: str = "./landing",
+    storage_options: str = "",
+) -> str:
     required_columns = "\n".join(f"        - {column}" for column in PERSON_HEADERS)
     return f"""
 manifest_version: "1.0"
 entity_type: person
 batch_id: inbound-2026-03-13
 landing_zone:
-  kind: local_filesystem
-  base_path: ./landing
+  kind: {landing_zone_kind}
+  {base_location_key}: {base_location_value}
+{storage_options}
 sources:
   - source_id: source_a
     path: {source_a_path}
@@ -103,8 +133,8 @@ def test_resolve_batch_manifest_validates_and_resolves_local_sources(tmp_path: P
 
     assert resolved.manifest.batch_id == "inbound-2026-03-13"
     assert resolved.input_paths == (
-        landing_dir / "agency_a.csv",
-        landing_dir / "agency_b.parquet",
+        str(landing_dir / "agency_a.csv"),
+        str(landing_dir / "agency_b.parquet"),
     )
     assert len(resolved.all_rows()) == 2
 
@@ -245,3 +275,71 @@ def test_run_all_supports_manifest_inputs_without_synthetic_generation(tmp_path:
     assert (base_dir / "data" / "normalized" / "normalized_person_records.csv").exists()
     assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
     assert not (base_dir / "data" / "synthetic_sources").exists()
+
+
+def test_resolve_batch_manifest_supports_object_storage_memory_uris(tmp_path: Path) -> None:
+    _write_memory_csv(
+        "memory://identity-ingest/agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_memory_parquet(
+        "memory://identity-ingest/agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "memory-manifest.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            landing_zone_kind="object_storage",
+            base_location_key="base_uri",
+            base_location_value="memory://identity-ingest",
+        ),
+    )
+
+    resolved = resolve_batch_manifest(manifest_path)
+
+    assert resolved.input_paths == (
+        "memory://identity-ingest/agency_a.csv",
+        "memory://identity-ingest/agency_b.parquet",
+    )
+    assert len(resolved.all_rows()) == 2
+
+
+def test_run_all_supports_object_storage_manifest_inputs(tmp_path: Path) -> None:
+    _write_memory_csv(
+        "memory://identity-run/agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_memory_parquet(
+        "memory://identity-run/agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "memory-run-manifest.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            landing_zone_kind="object_storage",
+            base_location_key="base_uri",
+            base_location_value="memory://identity-run",
+        ),
+    )
+    base_dir = tmp_path / "object-run"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+            ]
+        )
+        == 0
+    )
+
+    normalized_rows = _read_csv(base_dir / "data" / "normalized" / "normalized_person_records.csv")
+    assert {row["source_record_id"] for row in normalized_rows} == {"A-1", "B-1"}
+    assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
