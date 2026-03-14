@@ -34,6 +34,16 @@ from etl_identity_engine.storage.state_store_target import resolve_state_store_t
 ReviewCaseStatus = Literal["pending", "approved", "rejected", "deferred"]
 RunStatus = Literal["running", "completed", "failed"]
 ServiceRole = Literal["reader", "operator"]
+ServiceScope = Literal[
+    "service:health",
+    "service:metrics",
+    "runs:read",
+    "runs:replay",
+    "golden:read",
+    "crosswalk:read",
+    "review_cases:read",
+    "review_cases:write",
+]
 
 
 @dataclass(frozen=True)
@@ -41,6 +51,7 @@ class AuthenticatedPrincipal:
     role: ServiceRole
     auth_mode: Literal["api_key", "jwt"]
     subject: str | None = None
+    scopes: tuple[str, ...] = ()
 
 
 class HealthResponse(BaseModel):
@@ -310,9 +321,17 @@ def _authenticate_api_key(
 
     normalized_key = header_value.strip()
     if normalized_key == service_auth.reader_api_key:
-        return AuthenticatedPrincipal(role="reader", auth_mode="api_key")
+        return AuthenticatedPrincipal(
+            role="reader",
+            auth_mode="api_key",
+            scopes=service_auth.reader_scopes,
+        )
     if normalized_key == service_auth.operator_api_key:
-        return AuthenticatedPrincipal(role="operator", auth_mode="api_key")
+        return AuthenticatedPrincipal(
+            role="operator",
+            auth_mode="api_key",
+            scopes=service_auth.operator_scopes,
+        )
     raise HTTPException(status_code=401, detail="Invalid API key")
 
 
@@ -350,12 +369,25 @@ def _authenticate_jwt_bearer(
         raise HTTPException(status_code=401, detail=f"Invalid bearer token: {error}") from error
 
     mapped_roles = _normalize_claim_values(_extract_claim_value(claims, service_auth.role_claim))
+    claimed_scopes = _normalize_claim_values(_extract_claim_value(claims, service_auth.scope_claim))
     subject_value = _extract_claim_value(claims, service_auth.subject_claim)
     subject = subject_value.strip() if isinstance(subject_value, str) and subject_value.strip() else None
     if mapped_roles & set(service_auth.operator_roles):
-        return AuthenticatedPrincipal(role="operator", auth_mode="jwt", subject=subject)
+        granted_scopes = tuple(sorted(claimed_scopes or set(service_auth.operator_scopes)))
+        return AuthenticatedPrincipal(
+            role="operator",
+            auth_mode="jwt",
+            subject=subject,
+            scopes=granted_scopes,
+        )
     if mapped_roles & set(service_auth.reader_roles):
-        return AuthenticatedPrincipal(role="reader", auth_mode="jwt", subject=subject)
+        granted_scopes = tuple(sorted(claimed_scopes or set(service_auth.reader_scopes)))
+        return AuthenticatedPrincipal(
+            role="reader",
+            auth_mode="jwt",
+            subject=subject,
+            scopes=granted_scopes,
+        )
     raise HTTPException(
         status_code=403,
         detail=(
@@ -398,6 +430,7 @@ def create_service_app(
                 duration_seconds=seconds_since(started),
                 principal_role=getattr(request.state, "principal_role", "anonymous"),
                 principal_subject=getattr(request.state, "principal_subject", ""),
+                principal_scopes=getattr(request.state, "principal_scopes", []),
                 auth_mode=getattr(request.state, "principal_auth_mode", "none"),
             )
             raise
@@ -411,12 +444,17 @@ def create_service_app(
             duration_seconds=seconds_since(started),
             principal_role=getattr(request.state, "principal_role", "anonymous"),
             principal_subject=getattr(request.state, "principal_subject", ""),
+            principal_scopes=getattr(request.state, "principal_scopes", []),
             auth_mode=getattr(request.state, "principal_auth_mode", "none"),
         )
         return response
 
-    def require_roles(*allowed_roles: ServiceRole):
+    def require_access(
+        *allowed_roles: ServiceRole,
+        required_scopes: tuple[ServiceScope, ...],
+    ):
         allowed = set(allowed_roles)
+        required = set(required_scopes)
 
         def dependency(
             request: Request,
@@ -432,19 +470,36 @@ def create_service_app(
                     status_code=403,
                     detail=f"Role {principal.role!r} is not permitted for this operation",
                 )
+            granted_scopes = set(principal.scopes)
+            missing_scopes = sorted(required - granted_scopes)
+            if missing_scopes:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Authenticated principal is missing required scopes: "
+                        + ", ".join(missing_scopes)
+                    ),
+                )
             request.state.principal_role = principal.role
             request.state.principal_subject = principal.subject or ""
+            request.state.principal_scopes = list(principal.scopes)
             request.state.principal_auth_mode = principal.auth_mode
             return principal
 
         return dependency
 
-    read_access = require_roles("reader", "operator")
-    operator_access = require_roles("operator")
+    health_access = require_access("reader", "operator", required_scopes=("service:health",))
+    metrics_access = require_access("reader", "operator", required_scopes=("service:metrics",))
+    run_read_access = require_access("reader", "operator", required_scopes=("runs:read",))
+    golden_read_access = require_access("reader", "operator", required_scopes=("golden:read",))
+    crosswalk_read_access = require_access("reader", "operator", required_scopes=("crosswalk:read",))
+    review_read_access = require_access("reader", "operator", required_scopes=("review_cases:read",))
+    review_write_access = require_access("operator", required_scopes=("review_cases:write",))
+    replay_access = require_access("operator", required_scopes=("runs:replay",))
 
     @app.get("/healthz", response_model=HealthResponse, tags=["health"])
     def healthz(
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(health_access),
     ) -> HealthResponse:
         return HealthResponse(
             status="ok",
@@ -455,7 +510,7 @@ def create_service_app(
 
     @app.get("/readyz", response_model=ReadinessResponse, tags=["health"])
     def readyz(
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(health_access),
     ) -> ReadinessResponse:
         metrics = store.load_operational_metrics()
         return ReadinessResponse(
@@ -470,7 +525,7 @@ def create_service_app(
 
     @app.get("/api/v1/metrics", response_model=ServiceMetricsResponse, tags=["health"])
     def metrics(
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(metrics_access),
     ) -> ServiceMetricsResponse:
         return _serialize_metrics(
             store.load_operational_metrics(),
@@ -481,7 +536,7 @@ def create_service_app(
 
     @app.get("/api/v1/runs/latest", response_model=RunStatusResponse, tags=["runs"])
     def get_latest_completed_run(
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(run_read_access),
     ) -> RunStatusResponse:
         run_id = store.latest_completed_run_id()
         if run_id is None:
@@ -491,7 +546,7 @@ def create_service_app(
     @app.get("/api/v1/runs/{run_id}", response_model=RunStatusResponse, tags=["runs"])
     def get_run(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(run_read_access),
     ) -> RunStatusResponse:
         try:
             return _serialize_run(store.load_run_record(run_id))
@@ -506,7 +561,7 @@ def create_service_app(
     def get_golden_record(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         golden_id: Annotated[str, ApiPath(min_length=1, pattern=r"^G-.+")],
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(golden_read_access),
     ) -> GoldenRecordResponse:
         try:
             return GoldenRecordResponse.model_validate(
@@ -523,7 +578,7 @@ def create_service_app(
     def get_crosswalk_record_for_source(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         source_record_id: Annotated[str, ApiPath(min_length=1)],
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(crosswalk_read_access),
     ) -> CrosswalkLookupResponse:
         try:
             return CrosswalkLookupResponse.model_validate(
@@ -544,7 +599,7 @@ def create_service_app(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         status: Annotated[ReviewCaseStatus | None, Query()] = None,
         assigned_to: Annotated[str | None, Query(min_length=1)] = None,
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(review_read_access),
     ) -> list[ReviewCaseResponse]:
         return [
             _serialize_review_case(case)
@@ -563,7 +618,7 @@ def create_service_app(
     def get_review_case(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         review_id: Annotated[str, ApiPath(min_length=1, pattern=r"^REV-.+")],
-        _principal: AuthenticatedPrincipal = Depends(read_access),
+        _principal: AuthenticatedPrincipal = Depends(review_read_access),
     ) -> ReviewCaseResponse:
         try:
             return _serialize_review_case(store.load_review_case(run_id=run_id, review_id=review_id))
@@ -579,7 +634,7 @@ def create_service_app(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         review_id: Annotated[str, ApiPath(min_length=1, pattern=r"^REV-.+")],
         request: ReviewDecisionRequest,
-        principal: AuthenticatedPrincipal = Depends(operator_access),
+        principal: AuthenticatedPrincipal = Depends(review_write_access),
     ) -> ReviewDecisionResponse:
         try:
             result = apply_review_decision_operation(
@@ -603,6 +658,11 @@ def create_service_app(
                     "decision": request.decision,
                     "assigned_to": request.assigned_to or "",
                     "notes": request.notes or "",
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["review_cases:write"],
+                    "auth_mode": principal.auth_mode,
                     "error": str(error),
                 },
             )
@@ -620,6 +680,11 @@ def create_service_app(
                     "decision": request.decision,
                     "assigned_to": request.assigned_to or "",
                     "notes": request.notes or "",
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["review_cases:write"],
+                    "auth_mode": principal.auth_mode,
                     "error": str(error),
                 },
             )
@@ -637,6 +702,11 @@ def create_service_app(
                 "assigned_to": result.case.assigned_to,
                 "operator_notes": result.case.operator_notes,
                 "action": result.action,
+                "actor_role": principal.role,
+                "actor_subject": principal.subject or "",
+                "granted_scopes": list(principal.scopes),
+                "required_scopes": ["review_cases:write"],
+                "auth_mode": principal.auth_mode,
             },
         )
         emit_structured_log(
@@ -644,6 +714,7 @@ def create_service_app(
             component="service_api",
             actor_role=principal.role,
             actor_subject=principal.subject or "",
+            actor_scopes=list(principal.scopes),
             run_id=result.case.run_id,
             review_id=result.case.review_id,
             action=result.action,
@@ -659,7 +730,7 @@ def create_service_app(
     def replay_run(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         request: ReplayRunRequest,
-        principal: AuthenticatedPrincipal = Depends(operator_access),
+        principal: AuthenticatedPrincipal = Depends(replay_access),
     ) -> ReplayRunResponse:
         try:
             from etl_identity_engine.cli import main as cli_main
@@ -684,6 +755,11 @@ def create_service_app(
                 details={
                     "base_dir": request.base_dir or "",
                     "refresh_mode": request.refresh_mode or "",
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["runs:replay"],
+                    "auth_mode": principal.auth_mode,
                     "error": str(error),
                 },
             )
@@ -700,6 +776,11 @@ def create_service_app(
                 details={
                     "base_dir": request.base_dir or "",
                     "refresh_mode": request.refresh_mode or "",
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["runs:replay"],
+                    "auth_mode": principal.auth_mode,
                     "error": str(error),
                 },
             )
@@ -719,6 +800,11 @@ def create_service_app(
                 "base_dir": str(result.base_dir),
                 "replay_command": list(result.replay_command),
                 "action": result.action,
+                "actor_role": principal.role,
+                "actor_subject": principal.subject or "",
+                "granted_scopes": list(principal.scopes),
+                "required_scopes": ["runs:replay"],
+                "auth_mode": principal.auth_mode,
             },
         )
         emit_structured_log(
@@ -726,6 +812,7 @@ def create_service_app(
             component="service_api",
             actor_role=principal.role,
             actor_subject=principal.subject or "",
+            actor_scopes=list(principal.scopes),
             requested_run_id=result.requested_run.run_id,
             result_run_id=result.result_run.run_id,
             refresh_mode=result.refresh_mode,

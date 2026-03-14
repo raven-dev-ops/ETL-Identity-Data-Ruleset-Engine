@@ -28,6 +28,31 @@ SUPPORTED_EXPORT_JOB_CONSUMERS = frozenset({"warehouse", "data_product"})
 SUPPORTED_EXPORT_JOB_FORMATS = frozenset({"csv_snapshot"})
 SUPPORTED_SYNTHETIC_PROFILES = frozenset({"small", "medium", "large"})
 SUPPORTED_BENCHMARK_FORMATS = frozenset({"csv", "parquet"})
+SUPPORTED_SERVICE_SCOPES = frozenset(
+    {
+        "service:health",
+        "service:metrics",
+        "runs:read",
+        "runs:replay",
+        "golden:read",
+        "crosswalk:read",
+        "review_cases:read",
+        "review_cases:write",
+    }
+)
+DEFAULT_READER_SERVICE_SCOPES = (
+    "service:health",
+    "service:metrics",
+    "runs:read",
+    "golden:read",
+    "crosswalk:read",
+    "review_cases:read",
+)
+DEFAULT_OPERATOR_SERVICE_SCOPES = (
+    *DEFAULT_READER_SERVICE_SCOPES,
+    "runs:replay",
+    "review_cases:write",
+)
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
 
 
@@ -116,8 +141,11 @@ class ServiceAuthConfig:
     jwt_secret: str | None = None
     jwt_public_key_pem: str | None = None
     role_claim: str = "roles"
+    scope_claim: str = "scope"
     reader_roles: tuple[str, ...] = ()
     operator_roles: tuple[str, ...] = ()
+    reader_scopes: tuple[str, ...] = DEFAULT_READER_SERVICE_SCOPES
+    operator_scopes: tuple[str, ...] = DEFAULT_OPERATOR_SERVICE_SCOPES
     subject_claim: str = "sub"
 
 
@@ -355,6 +383,19 @@ def _optional_non_empty_string(
     return value.strip()
 
 
+def _optional_string_list(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    path: Path,
+    context: str,
+    default: tuple[str, ...],
+) -> tuple[str, ...]:
+    if key not in mapping:
+        return default
+    return _require_string_list(mapping, key, path=path, context=context)
+
+
 def _load_service_auth_config(
     raw_service_auth: object,
     *,
@@ -396,7 +437,14 @@ def _load_service_auth_config(
     if mode == "api_key":
         _validate_allowed_keys(
             raw_service_auth,
-            allowed_keys={"mode", "header_name", "reader_api_key", "operator_api_key"},
+            allowed_keys={
+                "mode",
+                "header_name",
+                "reader_api_key",
+                "operator_api_key",
+                "reader_scopes",
+                "operator_scopes",
+            },
             path=config_path,
             context=context,
         )
@@ -406,6 +454,20 @@ def _load_service_auth_config(
             path=config_path,
             context=context,
             default="X-API-Key",
+        )
+        reader_scopes = _optional_string_list(
+            raw_service_auth,
+            "reader_scopes",
+            path=config_path,
+            context=context,
+            default=DEFAULT_READER_SERVICE_SCOPES,
+        )
+        operator_scopes = _optional_string_list(
+            raw_service_auth,
+            "operator_scopes",
+            path=config_path,
+            context=context,
+            default=DEFAULT_OPERATOR_SERVICE_SCOPES,
         )
         reader_api_key = str(raw_service_auth.get("reader_api_key", "") or "").strip()
         operator_api_key = str(raw_service_auth.get("operator_api_key", "") or "").strip()
@@ -421,11 +483,34 @@ def _load_service_auth_config(
                 config_path,
                 f"{context} must use distinct API keys for reader and operator access",
             )
+        invalid_reader_scopes = sorted(set(reader_scopes) - SUPPORTED_SERVICE_SCOPES)
+        invalid_operator_scopes = sorted(set(operator_scopes) - SUPPORTED_SERVICE_SCOPES)
+        if invalid_reader_scopes:
+            raise _config_error(
+                config_path,
+                f"{context}.reader_scopes contains unsupported values: "
+                f"{', '.join(invalid_reader_scopes)}",
+            )
+        if invalid_operator_scopes:
+            raise _config_error(
+                config_path,
+                f"{context}.operator_scopes contains unsupported values: "
+                f"{', '.join(invalid_operator_scopes)}",
+            )
+        missing_reader_scope_coverage = sorted(set(reader_scopes) - set(operator_scopes))
+        if missing_reader_scope_coverage:
+            raise _config_error(
+                config_path,
+                f"{context}.operator_scopes must include all reader_scopes "
+                f"(missing: {', '.join(missing_reader_scope_coverage)})",
+            )
         return ServiceAuthConfig(
             header_name=header_name,
             reader_api_key=reader_api_key,
             operator_api_key=operator_api_key,
             mode="api_key",
+            reader_scopes=reader_scopes,
+            operator_scopes=operator_scopes,
         )
 
     _validate_allowed_keys(
@@ -439,8 +524,11 @@ def _load_service_auth_config(
             "jwt_secret",
             "jwt_public_key_pem",
             "role_claim",
+            "scope_claim",
             "reader_roles",
             "operator_roles",
+            "reader_scopes",
+            "operator_scopes",
             "subject_claim",
         },
         path=config_path,
@@ -485,6 +573,13 @@ def _load_service_auth_config(
         context=context,
         default="roles",
     )
+    scope_claim = _optional_non_empty_string(
+        raw_service_auth,
+        "scope_claim",
+        path=config_path,
+        context=context,
+        default="scope",
+    )
     subject_claim = _optional_non_empty_string(
         raw_service_auth,
         "subject_claim",
@@ -504,12 +599,47 @@ def _load_service_auth_config(
         path=config_path,
         context=context,
     )
+    reader_scopes = _optional_string_list(
+        raw_service_auth,
+        "reader_scopes",
+        path=config_path,
+        context=context,
+        default=DEFAULT_READER_SERVICE_SCOPES,
+    )
+    operator_scopes = _optional_string_list(
+        raw_service_auth,
+        "operator_scopes",
+        path=config_path,
+        context=context,
+        default=DEFAULT_OPERATOR_SERVICE_SCOPES,
+    )
     overlapping_roles = sorted(set(reader_roles) & set(operator_roles))
     if overlapping_roles:
         raise _config_error(
             config_path,
             f"{context} must use distinct reader_roles and operator_roles "
             f"(overlap: {', '.join(overlapping_roles)})",
+        )
+    invalid_reader_scopes = sorted(set(reader_scopes) - SUPPORTED_SERVICE_SCOPES)
+    invalid_operator_scopes = sorted(set(operator_scopes) - SUPPORTED_SERVICE_SCOPES)
+    if invalid_reader_scopes:
+        raise _config_error(
+            config_path,
+            f"{context}.reader_scopes contains unsupported values: "
+            f"{', '.join(invalid_reader_scopes)}",
+        )
+    if invalid_operator_scopes:
+        raise _config_error(
+            config_path,
+            f"{context}.operator_scopes contains unsupported values: "
+            f"{', '.join(invalid_operator_scopes)}",
+        )
+    missing_reader_scope_coverage = sorted(set(reader_scopes) - set(operator_scopes))
+    if missing_reader_scope_coverage:
+        raise _config_error(
+            config_path,
+            f"{context}.operator_scopes must include all reader_scopes "
+            f"(missing: {', '.join(missing_reader_scope_coverage)})",
         )
 
     return ServiceAuthConfig(
@@ -521,8 +651,11 @@ def _load_service_auth_config(
         jwt_secret=jwt_secret or None,
         jwt_public_key_pem=jwt_public_key_pem or None,
         role_claim=role_claim,
+        scope_claim=scope_claim,
         reader_roles=reader_roles,
         operator_roles=operator_roles,
+        reader_scopes=reader_scopes,
+        operator_scopes=operator_scopes,
         subject_claim=subject_claim,
     )
 

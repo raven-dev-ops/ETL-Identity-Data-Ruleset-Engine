@@ -607,6 +607,24 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     assert environment.service_auth.header_name == "X-API-Key"
     assert environment.service_auth.reader_api_key == "reader-key"
     assert environment.service_auth.operator_api_key == "operator-key"
+    assert environment.service_auth.reader_scopes == (
+        "service:health",
+        "service:metrics",
+        "runs:read",
+        "golden:read",
+        "crosswalk:read",
+        "review_cases:read",
+    )
+    assert environment.service_auth.operator_scopes == (
+        "service:health",
+        "service:metrics",
+        "runs:read",
+        "golden:read",
+        "crosswalk:read",
+        "review_cases:read",
+        "runs:replay",
+        "review_cases:write",
+    )
 
 
 def test_load_runtime_environment_requires_declared_secret_env_vars(
@@ -717,11 +735,20 @@ environments:
         - HS256
       jwt_secret: ${TEST_SERVICE_JWT_SECRET}
       role_claim: realm_access.roles
+      scope_claim: scope
       subject_claim: preferred_username
       reader_roles:
         - etl-reader
       operator_roles:
         - etl-operator
+      reader_scopes:
+        - service:health
+        - runs:read
+      operator_scopes:
+        - service:health
+        - runs:read
+        - review_cases:write
+        - runs:replay
 """,
     )
     monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
@@ -740,9 +767,17 @@ environments:
     assert environment.service_auth.jwt_secret == "shared-signing-secret-material-32b"
     assert environment.service_auth.jwt_public_key_pem is None
     assert environment.service_auth.role_claim == "realm_access.roles"
+    assert environment.service_auth.scope_claim == "scope"
     assert environment.service_auth.subject_claim == "preferred_username"
     assert environment.service_auth.reader_roles == ("etl-reader",)
     assert environment.service_auth.operator_roles == ("etl-operator",)
+    assert environment.service_auth.reader_scopes == ("service:health", "runs:read")
+    assert environment.service_auth.operator_scopes == (
+        "service:health",
+        "runs:read",
+        "review_cases:write",
+        "runs:replay",
+    )
 
 
 def test_load_runtime_environment_rejects_invalid_jwt_service_auth_config(
@@ -777,6 +812,41 @@ environments:
     with pytest.raises(
         ValueError,
         match=r"runtime_environments\.yml: environments\.prod\.service_auth must use distinct reader_roles and operator_roles",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
+def test_load_runtime_environment_rejects_invalid_service_scope_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    service_auth:
+      mode: api_key
+      header_name: X-API-Key
+      reader_api_key: ${TEST_SERVICE_READER_API_KEY}
+      operator_api_key: ${TEST_SERVICE_OPERATOR_API_KEY}
+      reader_scopes:
+        - service:health
+      operator_scopes:
+        - runs:replay
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY", "reader-key")
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY", "operator-key")
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.service_auth\.operator_scopes must include all reader_scopes",
     ):
         load_runtime_environment("prod", runtime_config)
 

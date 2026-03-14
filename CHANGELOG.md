@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
   signing-key, and external-claim role mapping support, while retaining
   API-key auth as a documented compatibility mode for local/container
   deployments.
+- Added endpoint-level service scopes, JWT scope-claim narrowing, and
+  audit-context propagation for authenticated actor subject, role,
+  granted scopes, and required scopes.
 
 ## [0.6.0] - 2026-03-14
 

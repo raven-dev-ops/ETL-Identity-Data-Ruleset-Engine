@@ -21,6 +21,22 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+      reader_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+      operator_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - runs:replay
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+        - review_cases:write
   prod:
     description: Production defaults sourced from deployment environment variables.
     config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}
@@ -37,7 +53,24 @@ environments:
         - RS256
       jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
       role_claim: roles
+      scope_claim: scope
       reader_roles:
         - etl-identity-reader
       operator_roles:
         - etl-identity-operator
+      reader_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+      operator_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - runs:replay
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+        - review_cases:write

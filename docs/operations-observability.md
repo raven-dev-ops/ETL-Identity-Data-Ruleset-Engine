@@ -78,6 +78,15 @@ Each audit event records:
 - `status`
 - `details_json`
 
+For service-authenticated actions, `details_json` now carries the
+authenticated actor context:
+
+- `actor_role`
+- `actor_subject`
+- `granted_scopes`
+- `required_scopes`
+- `auth_mode`
+
 This audit surface is intended for operational traceability of
 privileged workflow and publication actions, not as a replacement for
 the core persisted pipeline artifacts.

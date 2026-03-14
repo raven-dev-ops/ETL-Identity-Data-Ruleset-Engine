@@ -85,6 +85,11 @@ curl \
 The `container` compatibility environment still supports the same
 operation with `X-API-Key`.
 
+In JWT mode, the caller must have:
+
+- internal role: `operator`
+- scope: `review_cases:write`
+
 ## Compatibility
 
 The documented review lifecycle states and persisted operator commands
@@ -113,7 +118,8 @@ manifest reruns:
 
 It does not yet:
 
-- expose finer-grained review roles beyond the current `operator` service role
+- expose field-level or tenant-level review authorization beyond the
+  current `operator` role plus `review_cases:write` scope
 - expose publication or export-job triggers over the service API
 
 Those remain tracked in the active backlog.

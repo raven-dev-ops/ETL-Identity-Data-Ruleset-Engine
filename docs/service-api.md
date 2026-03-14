@@ -59,6 +59,33 @@ maps external identity claims into the stable internal service roles:
   - may call all `reader` endpoints
   - may also execute privileged review-decision and replay actions
 
+The service also enforces endpoint-level scopes. The current stable
+scope surface is:
+
+- `service:health`
+  - `GET /healthz`
+  - `GET /readyz`
+- `service:metrics`
+  - `GET /api/v1/metrics`
+- `runs:read`
+  - `GET /api/v1/runs/latest`
+  - `GET /api/v1/runs/{run_id}`
+- `golden:read`
+  - `GET /api/v1/runs/{run_id}/golden-records/{golden_id}`
+- `crosswalk:read`
+  - `GET /api/v1/runs/{run_id}/crosswalk/source-records/{source_record_id}`
+- `review_cases:read`
+  - `GET /api/v1/runs/{run_id}/review-cases`
+  - `GET /api/v1/runs/{run_id}/review-cases/{review_id}`
+- `review_cases:write`
+  - `POST /api/v1/runs/{run_id}/review-cases/{review_id}/decision`
+- `runs:replay`
+  - `POST /api/v1/runs/{run_id}/replay`
+
+JWT bearer callers can present a narrower `scope_claim` than the full
+default role scope set. API-key compatibility mode keeps the documented
+reader/operator defaults.
+
 ### API-Key Compatibility Mode
 
 API-key auth remains supported for local and compatibility deployments.
@@ -123,6 +150,8 @@ The service uses explicit request and response validation:
 Missing rows return `404`. Invalid request parameters return `422`.
 Missing or invalid bearer tokens or API keys return `401`.
 Authenticated callers without the required mapped role return `403`.
+Authenticated callers that have the right role but lack the required
+endpoint scope also return `403`.
 Unsupported replay operations such as non-manifest source runs return
 `409`.
 
@@ -132,9 +161,9 @@ JSON request logs to `stderr` for operational collection.
 
 ## Compatibility
 
-The documented `/api/v1/...` endpoints and the `reader` / `operator`
-role split are the stable external consumer surface for the current
-line.
+The documented `/api/v1/...` endpoints, the stable `reader` /
+`operator` role split, and the documented scope names above are the
+stable external consumer surface for the current line.
 
 Compatibility expectations for path versioning, additive changes, and
 deprecation are defined in
@@ -145,7 +174,7 @@ deprecation are defined in
 It does not yet:
 
 - expose publish or export-job triggers over HTTP
-- support finer-grained authorization than the current `reader` and
-  `operator` roles
+- support field-level or tenant-level authorization beyond the current
+  service roles and endpoint scopes
 
 Those remain tracked in the active backlog.

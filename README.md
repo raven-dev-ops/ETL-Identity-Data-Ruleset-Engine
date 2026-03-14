@@ -142,7 +142,9 @@ is included in the repository.
   targets, and an authenticated operator service API are now available.
   The current production runtime supports JWT bearer auth backed by
   deployment-supplied issuer, audience, and signing metadata, while the
-  local container baseline retains API-key compatibility mode.
+  local container baseline retains API-key compatibility mode. The
+  service surface now enforces documented endpoint scopes in addition to
+  the stable `reader` and `operator` roles.
   The current service line supports read-only lookups plus operator-only
   review decision and replay actions; publication and export
   orchestration remain CLI-driven.

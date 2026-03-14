@@ -52,7 +52,8 @@ def test_parse_backlog_active_catalog() -> None:
     assert parsed.issues[2].status == "closed"
     assert parsed.issues[3].status == "closed"
     assert parsed.issues[4].status == "closed"
-    assert all(issue.status == "open" for issue in parsed.issues[5:])
+    assert parsed.issues[5].status == "closed"
+    assert all(issue.status == "open" for issue in parsed.issues[6:])
     assert parsed.epics[0].description_items == (
         "Epic created from planning/active-github-issues-backlog.md",
     )
@@ -66,9 +67,9 @@ def test_select_sync_backlog_skips_closed_catalog_entries_by_default() -> None:
 
     sync_backlog = MODULE.select_sync_backlog(parsed, include_closed=False)
 
-    assert len(sync_backlog.issues) == 7
+    assert len(sync_backlog.issues) == 6
     assert {issue.status for issue in sync_backlog.issues} == {"open"}
-    assert sync_backlog.issues[0].catalog_number == 98
+    assert sync_backlog.issues[0].catalog_number == 99
 
 
 def test_select_sync_backlog_can_include_closed_catalog_entries() -> None:

@@ -53,8 +53,11 @@ under:
 - `environments.<name>.service_auth.jwt_secret`
 - `environments.<name>.service_auth.jwt_public_key_pem`
 - `environments.<name>.service_auth.role_claim`
+- `environments.<name>.service_auth.scope_claim`
 - `environments.<name>.service_auth.reader_roles`
 - `environments.<name>.service_auth.operator_roles`
+- `environments.<name>.service_auth.reader_scopes`
+- `environments.<name>.service_auth.operator_scopes`
 - `environments.<name>.service_auth.subject_claim`
 
 Two modes are supported:
@@ -65,8 +68,21 @@ Two modes are supported:
   - maps external claims into internal `reader` and `operator` roles
   - `role_claim` and `subject_claim` may use dotted paths such as
     `realm_access.roles`
+  - `scope_claim` may also use a dotted path and can narrow the token's
+    effective permission set below the default role scope set
 - `mode: api_key`
   - keeps the simpler static API-key compatibility path
+
+The stable service scope names for the current line are:
+
+- `service:health`
+- `service:metrics`
+- `runs:read`
+- `runs:replay`
+- `golden:read`
+- `crosswalk:read`
+- `review_cases:read`
+- `review_cases:write`
 
 The default production environment now uses JWT bearer auth with:
 

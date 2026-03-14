@@ -12,7 +12,8 @@ deployment with these boundaries:
 
 - persisted SQLite state is enabled
 - authenticated service access is enabled with distinct `reader` and
-  `operator` roles, typically via JWT bearer auth
+  `operator` roles, typically via JWT bearer auth, plus endpoint-level
+  scopes
 - operators deploy either the documented single-host container topology
   or an equivalent single-host Python runtime with the same config and
   state model
@@ -81,7 +82,8 @@ Platform operators own:
 
 - deployment of the batch runtime and authenticated service
 - secret injection for service and runtime environments, including JWT
-  issuer, audience, and signing metadata
+  issuer, audience, signing metadata, and the deployed role/scope
+  contract
 - SQLite state durability, backup scheduling, and restore execution
 - health, metrics, structured-log, and audit-event collection
 - applying release upgrades and state migrations

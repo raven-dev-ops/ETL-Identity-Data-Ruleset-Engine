@@ -174,13 +174,25 @@ def _jwt_service_auth() -> ServiceAuthConfig:
         algorithms=("HS256",),
         jwt_secret=JWT_TEST_SECRET,
         role_claim="realm_access.roles",
+        scope_claim="scope",
         reader_roles=("etl-reader",),
         operator_roles=("etl-operator",),
+        reader_scopes=("service:health", "service:metrics", "runs:read", "golden:read", "crosswalk:read", "review_cases:read"),
+        operator_scopes=(
+            "service:health",
+            "service:metrics",
+            "runs:read",
+            "golden:read",
+            "crosswalk:read",
+            "review_cases:read",
+            "review_cases:write",
+            "runs:replay",
+        ),
         subject_claim="preferred_username",
     )
 
 
-def _jwt_headers(*roles: str, username: str = "analyst.one") -> dict[str, str]:
+def _jwt_headers(*roles: str, username: str = "analyst.one", scopes: tuple[str, ...] | None = None) -> dict[str, str]:
     token = jwt.encode(
         {
             "iss": "https://idp.example.test",
@@ -188,6 +200,7 @@ def _jwt_headers(*roles: str, username: str = "analyst.one") -> dict[str, str]:
             "sub": f"subject-{username}",
             "preferred_username": username,
             "realm_access": {"roles": list(roles)},
+            "scope": " ".join(scopes or ()),
         },
         JWT_TEST_SECRET,
         algorithm="HS256",
@@ -363,9 +376,23 @@ def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp
 def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
     review_row = store.list_review_cases(run_id=run_id)[0]
+    manifest_path = tmp_path / "manifest.yml"
     client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
-    reader_headers = _jwt_headers("etl-reader", username="reader.user")
-    operator_headers = _jwt_headers("etl-operator", username="operator.user")
+    reader_headers = _jwt_headers(
+        "etl-reader",
+        username="reader.user",
+        scopes=("service:health", "runs:read", "review_cases:read"),
+    )
+    operator_review_headers = _jwt_headers(
+        "etl-operator",
+        username="review.operator",
+        scopes=("service:health", "runs:read", "review_cases:read", "review_cases:write"),
+    )
+    operator_replay_headers = _jwt_headers(
+        "etl-operator",
+        username="replay.operator",
+        scopes=("service:health", "runs:read", "runs:replay"),
+    )
 
     health_response = client.get("/healthz", headers=reader_headers)
     assert health_response.status_code == 200
@@ -383,11 +410,33 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
 
     operator_response = client.post(
         f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
-        headers=operator_headers,
+        headers=operator_review_headers,
         json={"decision": "approved", "notes": "approved via jwt"},
     )
     assert operator_response.status_code == 200
     assert operator_response.json()["case"]["queue_status"] == "approved"
+
+    updated_manifest = manifest_path.read_text(encoding="utf-8").replace(
+        "batch_id: service-api-001",
+        "batch_id: service-api-003",
+    )
+    manifest_path.write_text(updated_manifest, encoding="utf-8")
+
+    missing_scope_response = client.post(
+        f"/api/v1/runs/{run_id}/replay",
+        headers=operator_review_headers,
+        json={"base_dir": str(tmp_path / "jwt-missing-scope"), "refresh_mode": "incremental"},
+    )
+    assert missing_scope_response.status_code == 403
+    assert "runs:replay" in missing_scope_response.json()["detail"]
+
+    replay_response = client.post(
+        f"/api/v1/runs/{run_id}/replay",
+        headers=operator_replay_headers,
+        json={"base_dir": str(tmp_path / "jwt-replay"), "refresh_mode": "incremental"},
+    )
+    assert replay_response.status_code == 200
+    assert replay_response.json()["action"] == "replayed"
 
     invalid_token_response = client.get(
         "/healthz",
@@ -403,6 +452,18 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
 
     audit_events = store.list_audit_events(limit=10)
     assert any(
-        event.action == "apply_review_decision" and event.actor_id == "operator.user"
+        event.action == "apply_review_decision"
+        and event.actor_id == "review.operator"
+        and event.details["actor_role"] == "operator"
+        and event.details["actor_subject"] == "review.operator"
+        and event.details["required_scopes"] == ["review_cases:write"]
+        and event.details["auth_mode"] == "jwt"
+        for event in audit_events
+    )
+    assert any(
+        event.action == "replay_run"
+        and event.actor_id == "replay.operator"
+        and event.details["required_scopes"] == ["runs:replay"]
+        and "runs:replay" in event.details["granted_scopes"]
         for event in audit_events
     )
