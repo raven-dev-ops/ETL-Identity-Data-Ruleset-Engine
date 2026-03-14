@@ -1779,7 +1779,8 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
     runtime_environment = _resolve_runtime_environment(args)
     if runtime_environment is None or runtime_environment.service_auth is None:
         raise ValueError(
-            "serve-api requires a runtime environment with service_auth configured via environment-backed secrets"
+            "serve-api requires a runtime environment with service_auth configured via "
+            "environment-backed auth settings"
         )
     emit_structured_log(
         "service_api_starting",

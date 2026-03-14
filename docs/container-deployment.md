@@ -67,8 +67,9 @@ The service container runs:
 
 - `serve-api --environment container --host 0.0.0.0 --port 8000`
 
-Health endpoints remain authenticated, so the compose service health
-check uses the configured `reader` API key.
+The `container` runtime environment intentionally stays on API-key
+compatibility mode. Health endpoints remain authenticated, so the
+compose service health check uses the configured `reader` API key.
 
 ## Local Smoke Path
 

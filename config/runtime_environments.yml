@@ -17,6 +17,7 @@ environments:
       object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
       object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
     service_auth:
+      mode: api_key
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
@@ -28,6 +29,15 @@ environments:
       object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY}
       object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY}
     service_auth:
-      header_name: X-API-Key
-      reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
-      operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+      mode: jwt
+      header_name: Authorization
+      issuer: ${ETL_IDENTITY_SERVICE_JWT_ISSUER}
+      audience: ${ETL_IDENTITY_SERVICE_JWT_AUDIENCE}
+      algorithms:
+        - RS256
+      jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
+      role_claim: roles
+      reader_roles:
+        - etl-identity-reader
+      operator_roles:
+        - etl-identity-operator

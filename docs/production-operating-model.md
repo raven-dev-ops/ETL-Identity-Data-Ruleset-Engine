@@ -12,7 +12,7 @@ deployment with these boundaries:
 
 - persisted SQLite state is enabled
 - authenticated service access is enabled with distinct `reader` and
-  `operator` API keys
+  `operator` roles, typically via JWT bearer auth
 - operators deploy either the documented single-host container topology
   or an equivalent single-host Python runtime with the same config and
   state model
@@ -33,11 +33,7 @@ The current supported deployment environments are:
 The current production target does not yet claim support for:
 
 - clustered or multi-node database topologies
-- external identity-provider integration
 - real-time or streaming identity resolution
-- point-in-time state resume from mid-pipeline checkpoints
-- replay independent of the stored manifest path and landed input
-  snapshot
 
 ## Rollout Phases
 
@@ -84,7 +80,8 @@ In steady state:
 Platform operators own:
 
 - deployment of the batch runtime and authenticated service
-- secret injection for service and runtime environments
+- secret injection for service and runtime environments, including JWT
+  issuer, audience, and signing metadata
 - SQLite state durability, backup scheduling, and restore execution
 - health, metrics, structured-log, and audit-event collection
 - applying release upgrades and state migrations

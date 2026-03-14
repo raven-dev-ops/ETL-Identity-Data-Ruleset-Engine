@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 
@@ -11,6 +12,9 @@ from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
 from etl_identity_engine.runtime_config import ServiceAuthConfig
 from etl_identity_engine.service_api import create_service_app
 from etl_identity_engine.storage.sqlite_store import SQLitePipelineStore
+
+
+JWT_TEST_SECRET = "shared-signing-secret-material-32b"
 
 
 def _write_csv_rows(path: Path, rows: list[dict[str, str]]) -> None:
@@ -159,6 +163,36 @@ def _service_auth() -> ServiceAuthConfig:
 
 def _auth_headers(api_key: str) -> dict[str, str]:
     return {"X-API-Key": api_key}
+
+
+def _jwt_service_auth() -> ServiceAuthConfig:
+    return ServiceAuthConfig(
+        header_name="Authorization",
+        mode="jwt",
+        issuer="https://idp.example.test",
+        audience="etl-identity-api",
+        algorithms=("HS256",),
+        jwt_secret=JWT_TEST_SECRET,
+        role_claim="realm_access.roles",
+        reader_roles=("etl-reader",),
+        operator_roles=("etl-operator",),
+        subject_claim="preferred_username",
+    )
+
+
+def _jwt_headers(*roles: str, username: str = "analyst.one") -> dict[str, str]:
+    token = jwt.encode(
+        {
+            "iss": "https://idp.example.test",
+            "aud": "etl-identity-api",
+            "sub": f"subject-{username}",
+            "preferred_username": username,
+            "realm_access": {"roles": list(roles)},
+        },
+        JWT_TEST_SECRET,
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_service_api_exposes_run_golden_crosswalk_and_review_state(tmp_path: Path) -> None:
@@ -324,3 +358,51 @@ def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp
     audit_events = store.list_audit_events(limit=10)
     assert {event.action for event in audit_events} >= {"apply_review_decision", "replay_run"}
     assert all(event.actor_type == "service_api" for event in audit_events[:2])
+
+
+def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    review_row = store.list_review_cases(run_id=run_id)[0]
+    client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
+    reader_headers = _jwt_headers("etl-reader", username="reader.user")
+    operator_headers = _jwt_headers("etl-operator", username="operator.user")
+
+    health_response = client.get("/healthz", headers=reader_headers)
+    assert health_response.status_code == 200
+
+    run_response = client.get(f"/api/v1/runs/{run_id}", headers=reader_headers)
+    assert run_response.status_code == 200
+    assert run_response.json()["run_id"] == run_id
+
+    forbidden_reader_response = client.post(
+        f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
+        headers=reader_headers,
+        json={"decision": "approved", "notes": "reader token cannot mutate"},
+    )
+    assert forbidden_reader_response.status_code == 403
+
+    operator_response = client.post(
+        f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
+        headers=operator_headers,
+        json={"decision": "approved", "notes": "approved via jwt"},
+    )
+    assert operator_response.status_code == 200
+    assert operator_response.json()["case"]["queue_status"] == "approved"
+
+    invalid_token_response = client.get(
+        "/healthz",
+        headers={"Authorization": "Bearer not-a-valid-token"},
+    )
+    assert invalid_token_response.status_code == 401
+
+    unmapped_role_response = client.get(
+        "/healthz",
+        headers=_jwt_headers("unmapped-role", username="unknown.user"),
+    )
+    assert unmapped_role_response.status_code == 403
+
+    audit_events = store.list_audit_events(limit=10)
+    assert any(
+        event.action == "apply_review_decision" and event.actor_id == "operator.user"
+        for event in audit_events
+    )

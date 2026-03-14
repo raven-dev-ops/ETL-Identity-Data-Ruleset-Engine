@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import re
+from typing import Literal
 
 import yaml
 from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_NAME, DELIVERY_CONTRACT_VERSION
@@ -106,8 +107,18 @@ class RuntimeEnvironmentConfig:
 @dataclass(frozen=True)
 class ServiceAuthConfig:
     header_name: str
-    reader_api_key: str
-    operator_api_key: str
+    reader_api_key: str | None = None
+    operator_api_key: str | None = None
+    mode: Literal["api_key", "jwt"] = "api_key"
+    issuer: str | None = None
+    audience: str | None = None
+    algorithms: tuple[str, ...] = ()
+    jwt_secret: str | None = None
+    jwt_public_key_pem: str | None = None
+    role_claim: str = "roles"
+    reader_roles: tuple[str, ...] = ()
+    operator_roles: tuple[str, ...] = ()
+    subject_claim: str = "sub"
 
 
 @dataclass(frozen=True)
@@ -344,6 +355,178 @@ def _optional_non_empty_string(
     return value.strip()
 
 
+def _load_service_auth_config(
+    raw_service_auth: object,
+    *,
+    config_path: Path,
+    environment_name: str,
+) -> ServiceAuthConfig | None:
+    context = f"environments.{environment_name}.service_auth"
+    if raw_service_auth in (None, {}):
+        return None
+    if not isinstance(raw_service_auth, Mapping):
+        raise _config_error(config_path, f"{context} must be a mapping")
+
+    raw_mode = str(raw_service_auth.get("mode", "") or "").strip()
+    if not raw_mode:
+        mode: Literal["api_key", "jwt"] = (
+            "jwt"
+            if {
+                "issuer",
+                "audience",
+                "algorithms",
+                "jwt_secret",
+                "jwt_public_key_pem",
+                "role_claim",
+                "reader_roles",
+                "operator_roles",
+                "subject_claim",
+            }
+            & set(raw_service_auth)
+            else "api_key"
+        )
+    elif raw_mode in {"api_key", "jwt"}:
+        mode = raw_mode
+    else:
+        raise _config_error(
+            config_path,
+            f"{context}.mode must be one of: api_key, jwt",
+        )
+
+    if mode == "api_key":
+        _validate_allowed_keys(
+            raw_service_auth,
+            allowed_keys={"mode", "header_name", "reader_api_key", "operator_api_key"},
+            path=config_path,
+            context=context,
+        )
+        header_name = _optional_non_empty_string(
+            raw_service_auth,
+            "header_name",
+            path=config_path,
+            context=context,
+            default="X-API-Key",
+        )
+        reader_api_key = str(raw_service_auth.get("reader_api_key", "") or "").strip()
+        operator_api_key = str(raw_service_auth.get("operator_api_key", "") or "").strip()
+        if not reader_api_key and not operator_api_key:
+            return None
+        if not reader_api_key or not operator_api_key:
+            raise _config_error(
+                config_path,
+                f"{context} must define both reader_api_key and operator_api_key",
+            )
+        if reader_api_key == operator_api_key:
+            raise _config_error(
+                config_path,
+                f"{context} must use distinct API keys for reader and operator access",
+            )
+        return ServiceAuthConfig(
+            header_name=header_name,
+            reader_api_key=reader_api_key,
+            operator_api_key=operator_api_key,
+            mode="api_key",
+        )
+
+    _validate_allowed_keys(
+        raw_service_auth,
+        allowed_keys={
+            "mode",
+            "header_name",
+            "issuer",
+            "audience",
+            "algorithms",
+            "jwt_secret",
+            "jwt_public_key_pem",
+            "role_claim",
+            "reader_roles",
+            "operator_roles",
+            "subject_claim",
+        },
+        path=config_path,
+        context=context,
+    )
+    header_name = _optional_non_empty_string(
+        raw_service_auth,
+        "header_name",
+        path=config_path,
+        context=context,
+        default="Authorization",
+    )
+    issuer = _require_non_empty_string(
+        raw_service_auth,
+        "issuer",
+        path=config_path,
+        context=context,
+    )
+    audience = _require_non_empty_string(
+        raw_service_auth,
+        "audience",
+        path=config_path,
+        context=context,
+    )
+    algorithms = _require_string_list(
+        raw_service_auth,
+        "algorithms",
+        path=config_path,
+        context=context,
+    )
+    jwt_secret = str(raw_service_auth.get("jwt_secret", "") or "").strip()
+    jwt_public_key_pem = str(raw_service_auth.get("jwt_public_key_pem", "") or "").strip()
+    if bool(jwt_secret) == bool(jwt_public_key_pem):
+        raise _config_error(
+            config_path,
+            f"{context} must define exactly one of jwt_secret or jwt_public_key_pem",
+        )
+    role_claim = _optional_non_empty_string(
+        raw_service_auth,
+        "role_claim",
+        path=config_path,
+        context=context,
+        default="roles",
+    )
+    subject_claim = _optional_non_empty_string(
+        raw_service_auth,
+        "subject_claim",
+        path=config_path,
+        context=context,
+        default="sub",
+    )
+    reader_roles = _require_string_list(
+        raw_service_auth,
+        "reader_roles",
+        path=config_path,
+        context=context,
+    )
+    operator_roles = _require_string_list(
+        raw_service_auth,
+        "operator_roles",
+        path=config_path,
+        context=context,
+    )
+    overlapping_roles = sorted(set(reader_roles) & set(operator_roles))
+    if overlapping_roles:
+        raise _config_error(
+            config_path,
+            f"{context} must use distinct reader_roles and operator_roles "
+            f"(overlap: {', '.join(overlapping_roles)})",
+        )
+
+    return ServiceAuthConfig(
+        header_name=header_name,
+        mode="jwt",
+        issuer=issuer,
+        audience=audience,
+        algorithms=algorithms,
+        jwt_secret=jwt_secret or None,
+        jwt_public_key_pem=jwt_public_key_pem or None,
+        role_claim=role_claim,
+        reader_roles=reader_roles,
+        operator_roles=operator_roles,
+        subject_claim=subject_claim,
+    )
+
+
 def load_runtime_environment(
     environment: str | None = None,
     runtime_config_path: Path | None = None,
@@ -436,50 +619,11 @@ def load_runtime_environment(
         secrets[key.strip()] = value.strip()
 
     raw_service_auth = selected.get("service_auth")
-    service_auth: ServiceAuthConfig | None
-    if raw_service_auth in (None, {}):
-        service_auth = None
-    else:
-        if not isinstance(raw_service_auth, Mapping):
-            raise _config_error(
-                config_path,
-                f"environments.{default_environment}.service_auth must be a mapping",
-            )
-        _validate_allowed_keys(
-            raw_service_auth,
-            allowed_keys={"header_name", "reader_api_key", "operator_api_key"},
-            path=config_path,
-            context=f"environments.{default_environment}.service_auth",
-        )
-        header_name = _optional_non_empty_string(
-            raw_service_auth,
-            "header_name",
-            path=config_path,
-            context=f"environments.{default_environment}.service_auth",
-            default="X-API-Key",
-        )
-        reader_api_key = str(raw_service_auth.get("reader_api_key", "") or "").strip()
-        operator_api_key = str(raw_service_auth.get("operator_api_key", "") or "").strip()
-        if not reader_api_key and not operator_api_key:
-            service_auth = None
-        else:
-            if not reader_api_key or not operator_api_key:
-                raise _config_error(
-                    config_path,
-                    f"environments.{default_environment}.service_auth must define both "
-                    "reader_api_key and operator_api_key",
-                )
-            if reader_api_key == operator_api_key:
-                raise _config_error(
-                    config_path,
-                    f"environments.{default_environment}.service_auth must use distinct API keys "
-                    "for reader and operator access",
-                )
-            service_auth = ServiceAuthConfig(
-                header_name=header_name,
-                reader_api_key=reader_api_key,
-                operator_api_key=operator_api_key,
-            )
+    service_auth = _load_service_auth_config(
+        raw_service_auth,
+        config_path=config_path,
+        environment_name=default_environment,
+    )
 
     return RuntimeEnvironmentConfig(
         name=default_environment,

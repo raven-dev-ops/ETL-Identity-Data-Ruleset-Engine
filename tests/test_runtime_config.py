@@ -603,6 +603,7 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     assert environment.state_db == (tmp_path / "state" / "prod.sqlite").resolve()
     assert environment.secrets == {"object_storage_access_key": "access-key"}
     assert environment.service_auth is not None
+    assert environment.service_auth.mode == "api_key"
     assert environment.service_auth.header_name == "X-API-Key"
     assert environment.service_auth.reader_api_key == "reader-key"
     assert environment.service_auth.operator_api_key == "operator-key"
@@ -690,6 +691,92 @@ def test_load_runtime_environment_rejects_partial_service_auth_config(
     with pytest.raises(
         ValueError,
         match=r"runtime_environments\.yml: environments\.prod\.service_auth must define both reader_api_key and operator_api_key",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
+def test_load_runtime_environment_supports_jwt_service_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    service_auth:
+      mode: jwt
+      header_name: Authorization
+      issuer: ${TEST_SERVICE_JWT_ISSUER}
+      audience: ${TEST_SERVICE_JWT_AUDIENCE}
+      algorithms:
+        - HS256
+      jwt_secret: ${TEST_SERVICE_JWT_SECRET}
+      role_claim: realm_access.roles
+      subject_claim: preferred_username
+      reader_roles:
+        - etl-reader
+      operator_roles:
+        - etl-operator
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_SERVICE_JWT_ISSUER", "https://idp.example.test")
+    monkeypatch.setenv("TEST_SERVICE_JWT_AUDIENCE", "etl-identity-api")
+    monkeypatch.setenv("TEST_SERVICE_JWT_SECRET", "shared-signing-secret-material-32b")
+
+    environment = load_runtime_environment("prod", runtime_config)
+
+    assert environment.service_auth is not None
+    assert environment.service_auth.mode == "jwt"
+    assert environment.service_auth.header_name == "Authorization"
+    assert environment.service_auth.issuer == "https://idp.example.test"
+    assert environment.service_auth.audience == "etl-identity-api"
+    assert environment.service_auth.algorithms == ("HS256",)
+    assert environment.service_auth.jwt_secret == "shared-signing-secret-material-32b"
+    assert environment.service_auth.jwt_public_key_pem is None
+    assert environment.service_auth.role_claim == "realm_access.roles"
+    assert environment.service_auth.subject_claim == "preferred_username"
+    assert environment.service_auth.reader_roles == ("etl-reader",)
+    assert environment.service_auth.operator_roles == ("etl-operator",)
+
+
+def test_load_runtime_environment_rejects_invalid_jwt_service_auth_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    service_auth:
+      mode: jwt
+      issuer: https://idp.example.test
+      audience: etl-identity-api
+      algorithms:
+        - HS256
+      jwt_secret: ${TEST_SERVICE_JWT_SECRET}
+      reader_roles:
+        - shared-role
+      operator_roles:
+        - shared-role
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_SERVICE_JWT_SECRET", "shared-signing-secret-material-32b")
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.service_auth must use distinct reader_roles and operator_roles",
     ):
         load_runtime_environment("prod", runtime_config)
 

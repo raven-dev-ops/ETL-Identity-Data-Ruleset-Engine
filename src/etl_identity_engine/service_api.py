@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import asdict
 from pathlib import Path
+import re
 import time
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
+import jwt
+from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, ConfigDict, Field
 
 from etl_identity_engine import __version__
@@ -35,6 +39,8 @@ ServiceRole = Literal["reader", "operator"]
 @dataclass(frozen=True)
 class AuthenticatedPrincipal:
     role: ServiceRole
+    auth_mode: Literal["api_key", "jwt"]
+    subject: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -264,6 +270,101 @@ def _serialize_metrics(
     )
 
 
+def _extract_claim_value(claims: Mapping[str, Any], claim_path: str) -> Any:
+    current: Any = claims
+    for segment in claim_path.split("."):
+        if not isinstance(current, Mapping) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
+def _normalize_claim_values(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {
+            item
+            for item in re.split(r"[\s,]+", value.strip())
+            if item
+        }
+    if isinstance(value, (list, tuple, set)):
+        return {
+            item.strip()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        }
+    return set()
+
+
+def _authenticate_api_key(
+    service_auth: ServiceAuthConfig,
+    *,
+    header_value: str | None,
+) -> AuthenticatedPrincipal:
+    if header_value is None or not header_value.strip():
+        raise HTTPException(
+            status_code=401,
+            detail=f"Missing API key in header {service_auth.header_name}",
+        )
+
+    normalized_key = header_value.strip()
+    if normalized_key == service_auth.reader_api_key:
+        return AuthenticatedPrincipal(role="reader", auth_mode="api_key")
+    if normalized_key == service_auth.operator_api_key:
+        return AuthenticatedPrincipal(role="operator", auth_mode="api_key")
+    raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def _authenticate_jwt_bearer(
+    service_auth: ServiceAuthConfig,
+    *,
+    header_value: str | None,
+) -> AuthenticatedPrincipal:
+    if header_value is None or not header_value.strip():
+        raise HTTPException(
+            status_code=401,
+            detail=f"Missing bearer token in header {service_auth.header_name}",
+        )
+
+    scheme, _, token = header_value.strip().partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(
+            status_code=401,
+            detail=f"Expected Bearer token in header {service_auth.header_name}",
+        )
+
+    signing_key = service_auth.jwt_public_key_pem or service_auth.jwt_secret
+    if signing_key is None:
+        raise HTTPException(status_code=500, detail="JWT service authentication is misconfigured")
+
+    try:
+        claims = jwt.decode(
+            token.strip(),
+            signing_key,
+            algorithms=list(service_auth.algorithms),
+            audience=service_auth.audience,
+            issuer=service_auth.issuer,
+        )
+    except InvalidTokenError as error:
+        raise HTTPException(status_code=401, detail=f"Invalid bearer token: {error}") from error
+
+    mapped_roles = _normalize_claim_values(_extract_claim_value(claims, service_auth.role_claim))
+    subject_value = _extract_claim_value(claims, service_auth.subject_claim)
+    subject = subject_value.strip() if isinstance(subject_value, str) and subject_value.strip() else None
+    if mapped_roles & set(service_auth.operator_roles):
+        return AuthenticatedPrincipal(role="operator", auth_mode="jwt", subject=subject)
+    if mapped_roles & set(service_auth.reader_roles):
+        return AuthenticatedPrincipal(role="reader", auth_mode="jwt", subject=subject)
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Bearer token claims do not map to a permitted service role via "
+            f"{service_auth.role_claim}"
+        ),
+    )
+
+
 def create_service_app(
     state_db_path: str,
     *,
@@ -296,6 +397,8 @@ def create_service_app(
                 path=request.url.path,
                 duration_seconds=seconds_since(started),
                 principal_role=getattr(request.state, "principal_role", "anonymous"),
+                principal_subject=getattr(request.state, "principal_subject", ""),
+                auth_mode=getattr(request.state, "principal_auth_mode", "none"),
             )
             raise
 
@@ -307,6 +410,8 @@ def create_service_app(
             status_code=response.status_code,
             duration_seconds=seconds_since(started),
             principal_role=getattr(request.state, "principal_role", "anonymous"),
+            principal_subject=getattr(request.state, "principal_subject", ""),
+            auth_mode=getattr(request.state, "principal_auth_mode", "none"),
         )
         return response
 
@@ -315,21 +420,12 @@ def create_service_app(
 
         def dependency(
             request: Request,
-            api_key: str | None = Header(default=None, alias=service_auth.header_name),
+            auth_header: str | None = Header(default=None, alias=service_auth.header_name),
         ) -> AuthenticatedPrincipal:
-            if api_key is None or not api_key.strip():
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"Missing API key in header {service_auth.header_name}",
-                )
-
-            normalized_key = api_key.strip()
-            if normalized_key == service_auth.reader_api_key:
-                principal = AuthenticatedPrincipal(role="reader")
-            elif normalized_key == service_auth.operator_api_key:
-                principal = AuthenticatedPrincipal(role="operator")
+            if service_auth.mode == "jwt":
+                principal = _authenticate_jwt_bearer(service_auth, header_value=auth_header)
             else:
-                raise HTTPException(status_code=401, detail="Invalid API key")
+                principal = _authenticate_api_key(service_auth, header_value=auth_header)
 
             if principal.role not in allowed:
                 raise HTTPException(
@@ -337,6 +433,8 @@ def create_service_app(
                     detail=f"Role {principal.role!r} is not permitted for this operation",
                 )
             request.state.principal_role = principal.role
+            request.state.principal_subject = principal.subject or ""
+            request.state.principal_auth_mode = principal.auth_mode
             return principal
 
         return dependency
@@ -495,7 +593,7 @@ def create_service_app(
         except FileNotFoundError as error:
             store.record_audit_event(
                 actor_type="service_api",
-                actor_id=principal.role,
+                actor_id=principal.subject or principal.role,
                 action="apply_review_decision",
                 resource_type="review_case",
                 resource_id=review_id,
@@ -512,7 +610,7 @@ def create_service_app(
         except ValueError as error:
             store.record_audit_event(
                 actor_type="service_api",
-                actor_id=principal.role,
+                actor_id=principal.subject or principal.role,
                 action="apply_review_decision",
                 resource_type="review_case",
                 resource_id=review_id,
@@ -528,7 +626,7 @@ def create_service_app(
             _resolve_operation_conflict(error)
         store.record_audit_event(
             actor_type="service_api",
-            actor_id=principal.role,
+            actor_id=principal.subject or principal.role,
             action="apply_review_decision",
             resource_type="review_case",
             resource_id=result.case.review_id,
@@ -545,6 +643,7 @@ def create_service_app(
             "review_decision_applied",
             component="service_api",
             actor_role=principal.role,
+            actor_subject=principal.subject or "",
             run_id=result.case.run_id,
             review_id=result.case.review_id,
             action=result.action,
@@ -576,7 +675,7 @@ def create_service_app(
         except FileNotFoundError as error:
             store.record_audit_event(
                 actor_type="service_api",
-                actor_id=principal.role,
+                actor_id=principal.subject or principal.role,
                 action="replay_run",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -592,7 +691,7 @@ def create_service_app(
         except ValueError as error:
             store.record_audit_event(
                 actor_type="service_api",
-                actor_id=principal.role,
+                actor_id=principal.subject or principal.role,
                 action="replay_run",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -607,7 +706,7 @@ def create_service_app(
             _resolve_operation_conflict(error)
         store.record_audit_event(
             actor_type="service_api",
-            actor_id=principal.role,
+            actor_id=principal.subject or principal.role,
             action="replay_run",
             resource_type="pipeline_run",
             resource_id=result.result_run.run_id,
@@ -626,6 +725,7 @@ def create_service_app(
             "pipeline_run_replayed",
             component="service_api",
             actor_role=principal.role,
+            actor_subject=principal.subject or "",
             requested_run_id=result.requested_run.run_id,
             result_run_id=result.result_run.run_id,
             refresh_mode=result.refresh_mode,

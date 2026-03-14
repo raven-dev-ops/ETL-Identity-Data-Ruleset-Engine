@@ -140,6 +140,9 @@ is included in the repository.
   manifest-driven incremental refresh, a container image, a single-host
   compose deployment baseline, named benchmark fixtures with capacity
   targets, and an authenticated operator service API are now available.
+  The current production runtime supports JWT bearer auth backed by
+  deployment-supplied issuer, audience, and signing metadata, while the
+  local container baseline retains API-key compatibility mode.
   The current service line supports read-only lookups plus operator-only
   review decision and replay actions; publication and export
   orchestration remain CLI-driven.

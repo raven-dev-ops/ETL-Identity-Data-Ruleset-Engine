@@ -29,7 +29,10 @@ The authenticated service exposes:
 - `GET /readyz`
   - readiness-style SQLite connectivity plus latest batch-state summary
 
-Both endpoints require a valid `reader` or `operator` API key.
+Both endpoints require authenticated `reader` or `operator` access. In
+JWT mode, that means a bearer token whose external claims map to one of
+those two service roles. In compatibility mode, it is the configured
+API key.
 
 ## Metrics Endpoint
 

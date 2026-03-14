@@ -43,23 +43,45 @@ line. Secrets should not be committed directly into the repo config.
 Runtime environments can also define service authentication defaults
 under:
 
+- `environments.<name>.service_auth.mode`
 - `environments.<name>.service_auth.header_name`
 - `environments.<name>.service_auth.reader_api_key`
 - `environments.<name>.service_auth.operator_api_key`
+- `environments.<name>.service_auth.issuer`
+- `environments.<name>.service_auth.audience`
+- `environments.<name>.service_auth.algorithms`
+- `environments.<name>.service_auth.jwt_secret`
+- `environments.<name>.service_auth.jwt_public_key_pem`
+- `environments.<name>.service_auth.role_claim`
+- `environments.<name>.service_auth.reader_roles`
+- `environments.<name>.service_auth.operator_roles`
+- `environments.<name>.service_auth.subject_claim`
 
-The default production environment uses:
+Two modes are supported:
 
-- `ETL_IDENTITY_SERVICE_READER_API_KEY`
-- `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY`
+- `mode: jwt`
+  - validates bearer tokens against configured issuer, audience,
+    algorithms, and deployment-provided signing material
+  - maps external claims into internal `reader` and `operator` roles
+  - `role_claim` and `subject_claim` may use dotted paths such as
+    `realm_access.roles`
+- `mode: api_key`
+  - keeps the simpler static API-key compatibility path
 
-If both API-key values resolve to blank strings, service auth is treated
-as unconfigured. `serve-api` then fails fast until the deployment
-environment provides both values.
+The default production environment now uses JWT bearer auth with:
+
+- `ETL_IDENTITY_SERVICE_JWT_ISSUER`
+- `ETL_IDENTITY_SERVICE_JWT_AUDIENCE`
+- `ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM`
+
+If `mode: api_key` is configured and both API-key values resolve to
+blank strings, service auth is treated as unconfigured. `serve-api`
+then fails fast until the deployment environment provides both values.
 
 The `container` environment is different from `prod` in one important
 way: it provides default placeholder object-storage secret values so the
 local container topology can start without cloud credentials. Service
-API keys still must be supplied for `serve-api`.
+authentication there remains in API-key compatibility mode.
 
 ## Config Overlays
 

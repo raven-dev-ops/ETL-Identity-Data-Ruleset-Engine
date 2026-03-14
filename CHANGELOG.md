@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - Added durable run checkpoints plus failed-run resume support so
   persisted reruns can continue from the latest completed stage instead
   of restarting the entire pipeline.
+- Added JWT bearer service authentication with issuer, audience,
+  signing-key, and external-claim role mapping support, while retaining
+  API-key auth as a documented compatibility mode for local/container
+  deployments.
 
 ## [0.6.0] - 2026-03-14
 

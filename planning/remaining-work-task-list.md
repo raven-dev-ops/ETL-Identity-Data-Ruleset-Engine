@@ -33,13 +33,17 @@ of truth for tracked work; this file is the short maintainer view.
   stage checkpoints, failed attempts record resumable summary state, and
   reruns resume from the latest checkpoint instead of redoing earlier
   completed stages.
+- GitHub issue `#88` is complete: the service now supports JWT bearer
+  authentication backed by deployment-provided issuer, audience,
+  signing, and claim-mapping metadata while retaining API-key auth as a
+  documented compatibility mode.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
   - Open GitHub issues: none
 - [ ] `v0.8.0` Enterprise access and service control plane
-  - Open GitHub issues: `#88`, `#89`, `#90`, `#91`
+  - Open GitHub issues: `#89`, `#90`, `#91`
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
   - Open GitHub issues: `#92`, `#93`, `#94`, `#95`
 
@@ -49,7 +53,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Immutable replay bundles for manifests and landed inputs
 - [x] Replay independent of original landing paths
 - [x] Checkpointed resume for failed persisted runs
-- [ ] OIDC or JWT service authentication
+- [x] OIDC or JWT service authentication
 - [ ] Fine-grained RBAC and actor identity propagation
 - [ ] HTTP publish and export triggers
 - [ ] Paginated service list and search endpoints
@@ -60,5 +64,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#88`: Add OIDC or JWT service authentication for
-  enterprise identity providers.
+- Start issue `#89`: Add fine-grained RBAC scopes and actor identity
+  propagation.
