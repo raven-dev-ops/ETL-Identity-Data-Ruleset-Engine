@@ -10,8 +10,9 @@ Persisted run state is split across two layers:
 - the persisted state store, which stores run registry rows, normalized
   rows, candidate decisions, clusters, golden records, crosswalk rows,
   review cases, export history, and audit events
-- the manifest plus landed source snapshot referenced by a manifest-
-  driven run
+- the archived replay bundle for a manifest-driven run, which stores
+  the original manifest plus the landed source snapshot needed for
+  recovery
 
 That distinction matters operationally:
 
@@ -20,10 +21,11 @@ That distinction matters operationally:
 - `replay-run` requires the stored `manifest_path` to exist again, and
   the landed files referenced by that manifest must also be available
 
-The current runtime does not yet provide immutable replay independent of
-the stored manifest path and landing-zone contents. Recovery therefore
-means backing up both the persisted state database and the manifest-era
-input snapshot.
+The runtime now archives and verifies replay bundles, but it does not
+yet replay directly from those bundles alone. Recovery therefore means
+backing up the persisted state database plus the replay bundle, then
+restoring the archived manifest and landed snapshot to the expected
+paths before using `replay-run`.
 
 ## Minimum Backup Set
 
@@ -32,8 +34,8 @@ up:
 
 - the SQLite state database, for example
   `data/state/pipeline_state.sqlite`
-- the manifest file referenced by `pipeline_runs.manifest_path`
-- the landed input snapshot referenced by that manifest
+- the replay bundle referenced by `run_summary.json` and
+  `summary.replay_bundle`
 - any custom runtime config directory used for that run if it differs
   from the committed repo `config/` files
 
@@ -47,9 +49,16 @@ manifest-era inputs when operators need replay.
 1. Quiesce new writes for the target state DB. The safest point is after
    a batch completes and before the next persisted write begins.
 2. Copy the SQLite DB file to a backup location.
-3. Copy the manifest file stored in the completed run record.
-4. Copy the landed input files referenced by that manifest as one
-   snapshot.
+3. Run replay-bundle verification for the target run:
+
+```bash
+python -m etl_identity_engine.cli verify-replay-bundle \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345
+```
+
+4. Copy the verified replay bundle referenced by the completed run
+   summary.
 5. If the run used a custom `--config-dir` or runtime environment
    overlay, copy that config snapshot too.
 6. Record the selected `run_id`, `batch_id`, and backup timestamp with
@@ -58,10 +67,11 @@ manifest-era inputs when operators need replay.
 ## Restore Procedure
 
 1. Restore the SQLite DB to the target runtime location.
-2. Restore the manifest file to the same absolute path recorded in the
-   persisted run when replay is required.
-3. Restore the landed input snapshot to the locations referenced by the
-   restored manifest.
+2. Restore the archived original manifest copy from the replay bundle to
+   the same absolute path recorded in the persisted run when replay is
+   required.
+3. Restore the archived landing snapshot from the replay bundle to the
+   locations referenced by the restored manifest.
 4. If the original run used a custom config overlay, restore that config
    snapshot before replaying.
 5. Verify the restored DB schema is readable:
@@ -104,8 +114,8 @@ an already-completed run.
 Use replay when you need a new completed run based on restored review
 decisions plus the restored manifest-era inputs.
 
-1. Restore the SQLite DB, manifest, landed input snapshot, and any
-   custom config snapshot.
+1. Restore the SQLite DB, the archived original manifest, the archived
+   landing snapshot, and any custom config snapshot.
 2. If the replay should create a distinct completed run, update the
    restored manifest `batch_id` to a new value.
 3. Run `replay-run` against the restored state DB:
@@ -133,10 +143,9 @@ are persisted.
 For the compose topology in [container-deployment.md](container-deployment.md):
 
 - back up the mounted runtime path that contains the SQLite DB
-- back up the manifest and landed input snapshot mounted for the batch
-  run
-- restore the manifest and landed files to the same container-visible
-  paths before using `replay-run`
+- back up the verified replay bundle for the manifest-driven batch
+- restore the archived manifest and landed files to the same
+  container-visible paths before using `replay-run`
 
 The container baseline remains single-host. Recovery is file- and
 volume-oriented rather than orchestrator-managed.
@@ -151,7 +160,7 @@ python scripts/persisted_state_recovery_smoke.py
 
 That smoke path validates:
 
-- backup of SQLite state plus manifest-era landed inputs
+- verification plus backup of SQLite state and the archived replay bundle
 - restore of persisted review state
 - report rebuild from restored SQLite state
 - replay of a restored manifest-driven run with an approved review

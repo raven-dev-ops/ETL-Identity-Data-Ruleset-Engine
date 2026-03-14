@@ -57,6 +57,8 @@ golden records, and reporting artifacts.
      batch manifest
    - Can optionally persist completed run state into the configured
      state store
+   - Manifest-backed persisted runs now archive and verify immutable
+     replay bundles containing the manifest plus landed-input snapshot
    - Supports manifest-driven incremental refresh when paired with
      `--state-db --refresh-mode incremental`
 9. `publish-delivery`

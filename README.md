@@ -136,6 +136,7 @@ is included in the repository.
   production-style evaluation. Local filesystem and object-storage-
   compatible landing zones are supported. Persisted SQL state via
   SQLite paths or PostgreSQL URLs,
+  archived replay bundles for manifest-era inputs,
   manifest-driven incremental refresh, a container image, a single-host
   compose deployment baseline, named benchmark fixtures with capacity
   targets, and an authenticated operator service API are now available.

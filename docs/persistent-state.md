@@ -170,6 +170,40 @@ If the latest attempt for a given `run_key` failed:
 - the next successful attempt completes under the same `run_key` with a
   higher `attempt_number`
 
+## Replay Bundles
+
+Manifest-driven persisted runs now archive an immutable replay bundle
+under `data/replay_bundles/<run_id>/`.
+
+Each replay bundle contains:
+
+- the original manifest copy
+- a local-filesystem replay manifest
+- a landed-input snapshot copied from the manifest references
+- a `bundle_manifest.json` file with artifact paths, hashes, and sizes
+
+The persisted run summary now records replay-bundle metadata under
+`summary.replay_bundle`, including:
+
+- bundle ID and bundle root
+- bundle-manifest path
+- original-manifest and replay-manifest paths
+- landing-snapshot root
+- verification status
+- recoverability flag
+
+Operators can re-verify the archived bundle at any time:
+
+```bash
+python -m etl_identity_engine.cli verify-replay-bundle \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345
+```
+
+That verification rechecks artifact existence plus SHA-256 hashes and
+updates the persisted run summary with the resulting recoverability
+state.
+
 ## Incremental Refresh Model
 
 Manifest-driven persisted runs now support:
@@ -369,16 +403,16 @@ Operators should treat the minimum recoverable backup set for
 manifest-driven persisted runs as:
 
 - the persisted state store
-- the manifest file referenced by the completed run
-- the landed input snapshot referenced by that manifest
+- the archived replay bundle referenced by `summary.replay_bundle`
 - any custom runtime config snapshot used for that run
 
 That distinction is important because:
 
 - `report`, `publish-run`, and downstream export jobs can rebuild from a
   restored persisted state store alone
-- `replay-run` requires the stored `manifest_path` plus the landed input
-  snapshot to exist again
+- `replay-run` still requires the stored `manifest_path` plus the
+  landed input snapshot to exist again, but the verified replay bundle
+  now provides the archived files operators can restore to those paths
 
 ## Current Boundary
 
@@ -395,5 +429,6 @@ The current line does not yet provide:
 
 Recovery procedures for the current supported model are now documented
 in [recovery-runbooks.md](recovery-runbooks.md). The remaining boundary
-above stays in effect until the runtime can replay independently of the
-stored manifest path and landing snapshot.
+above stays in effect until the runtime can replay directly from the
+stored replay bundle without restoring the original manifest path and
+landing snapshot.

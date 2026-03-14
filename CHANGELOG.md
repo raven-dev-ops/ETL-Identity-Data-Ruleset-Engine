@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 - Added PostgreSQL-backed persisted-state support alongside SQLite,
   normalized state-store URL handling, and PostgreSQL dialect coverage
   for the migration/runtime path.
+- Added immutable replay-bundle archiving plus verification for
+  manifest-driven persisted runs, including archived manifest/input
+  snapshots recorded in persisted run summaries.
 
 ## [0.6.0] - 2026-03-14
 

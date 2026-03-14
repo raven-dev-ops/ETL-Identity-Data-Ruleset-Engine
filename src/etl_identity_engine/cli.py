@@ -26,6 +26,16 @@ from etl_identity_engine.ingest.manifest import (
     peek_manifest_batch_id,
     resolve_batch_manifest,
 )
+from etl_identity_engine.ingest.replay_bundle import (
+    REPLAY_BUNDLE_RESTORE_MODE,
+    REPLAY_BUNDLE_VERSION,
+    archive_replay_bundle,
+    replay_bundle_manifest_path_from_summary,
+    replay_bundle_root_for_run,
+    replay_bundle_summary_from_result,
+    utc_now as replay_bundle_utc_now,
+    verify_replay_bundle,
+)
 from etl_identity_engine.io.read import read_dict_rows
 from etl_identity_engine.io.write import write_csv_dicts, write_markdown
 from etl_identity_engine.matching.blocking import BlockingPassMetric, generate_candidates_with_metrics
@@ -126,6 +136,7 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
         "review-case-list",
         "review-case-update",
         "apply-review-decision",
+        "verify-replay-bundle",
         "publish-delivery",
         "publish-run",
         "export-job-run",
@@ -1015,6 +1026,25 @@ def _serialize_run_record(record: PipelineRunRecord) -> dict[str, object]:
     }
 
 
+def _write_run_summary_artifacts(
+    *,
+    report_file: Path,
+    normalized_file: Path,
+    summary: dict[str, object],
+) -> None:
+    report_file.write_text(
+        build_run_report_markdown(
+            os.path.relpath(normalized_file, report_file.parent).replace("\\", "/"),
+            summary,
+        ),
+        encoding="utf-8",
+    )
+    report_file.with_name("run_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def _serialize_export_job(job: ExportJobConfig) -> dict[str, object]:
     return {
         "name": job.name,
@@ -1198,6 +1228,88 @@ def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
             sort_keys=True,
         )
     )
+
+
+def _verify_run_replay_bundle(
+    *,
+    store: PipelineStateStore,
+    run_id: str,
+) -> dict[str, object]:
+    record = store.load_run_record(run_id)
+    bundle_manifest_path = replay_bundle_manifest_path_from_summary(record.summary)
+    if bundle_manifest_path is None:
+        raise FileNotFoundError(f"Persisted run {run_id} does not have archived replay-bundle metadata")
+
+    verification = verify_replay_bundle(bundle_manifest_path)
+    updated_summary = dict(record.summary)
+    updated_summary["replay_bundle"] = replay_bundle_summary_from_result(verification)
+    store.update_run_summary(run_id=run_id, summary=updated_summary)
+    base_dir = Path(record.base_dir)
+    normalized_file = base_dir / "data" / "normalized" / "normalized_person_records.csv"
+    report_file = base_dir / "data" / "exceptions" / "run_report.md"
+    if normalized_file.exists() and report_file.parent.exists():
+        _write_run_summary_artifacts(
+            report_file=report_file,
+            normalized_file=normalized_file,
+            summary=updated_summary,
+        )
+    return {
+        "run_id": run_id,
+        "status": verification.status,
+        "recoverable": verification.recoverable,
+        "replay_bundle": replay_bundle_summary_from_result(verification),
+    }
+
+
+def _cmd_verify_replay_bundle(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
+    state_db = _require_state_db(args)
+    store = PipelineStateStore(state_db)
+    run_id = _resolve_completed_run_id(args, store)
+
+    try:
+        payload = _verify_run_replay_bundle(store=store, run_id=run_id)
+    except Exception as exc:
+        _record_cli_audit_event(
+            store,
+            action="verify_replay_bundle",
+            resource_type="pipeline_run",
+            resource_id=run_id,
+            run_id=run_id,
+            status="failed",
+            details={"error": str(exc)},
+        )
+        emit_structured_log(
+            "replay_bundle_verification_failed",
+            component="cli",
+            command="verify-replay-bundle",
+            run_id=run_id,
+            duration_seconds=seconds_since(started),
+            error=str(exc),
+            level="ERROR",
+        )
+        raise
+
+    verification_status = str(payload["status"])
+    _record_cli_audit_event(
+        store,
+        action="verify_replay_bundle",
+        resource_type="pipeline_run",
+        resource_id=run_id,
+        run_id=run_id,
+        status="succeeded" if bool(payload["recoverable"]) else "failed",
+        details={"status": verification_status, "recoverable": bool(payload["recoverable"])},
+    )
+    emit_structured_log(
+        "replay_bundle_verified",
+        component="cli",
+        command="verify-replay-bundle",
+        run_id=run_id,
+        status=verification_status,
+        recoverable=bool(payload["recoverable"]),
+        duration_seconds=seconds_since(started),
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 def _cmd_publish_delivery(args: argparse.Namespace) -> None:
@@ -1961,16 +2073,10 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             "total_duration_seconds": round(seconds_since(started), 6),
             "phase_metrics": phase_metrics,
         }
-        report_file.write_text(
-            build_run_report_markdown(
-                os.path.relpath(normalized_file, report_file.parent).replace("\\", "/"),
-                summary,
-            ),
-            encoding="utf-8",
-        )
-        report_file.with_name("run_summary.json").write_text(
-            json.dumps(summary, indent=2, sort_keys=True),
-            encoding="utf-8",
+        _write_run_summary_artifacts(
+            report_file=report_file,
+            normalized_file=normalized_file,
+            summary=summary,
         )
         if state_store is not None and run_id is not None:
             persist_started = time.perf_counter()
@@ -2010,17 +2116,77 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 "phase_metrics": phase_metrics,
             }
             state_store.update_run_summary(run_id=run_id, summary=summary)
-            report_file.write_text(
-                build_run_report_markdown(
-                    os.path.relpath(normalized_file, report_file.parent).replace("\\", "/"),
-                    summary,
-                ),
-                encoding="utf-8",
+            _write_run_summary_artifacts(
+                report_file=report_file,
+                normalized_file=normalized_file,
+                summary=summary,
             )
-            report_file.with_name("run_summary.json").write_text(
-                json.dumps(summary, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
+            if resolved_manifest is not None:
+                archive_started = time.perf_counter()
+                bundle_root = replay_bundle_root_for_run(base_dir=base, run_id=run_id)
+                try:
+                    verification = archive_replay_bundle(
+                        run_id=run_id,
+                        base_dir=base,
+                        resolved_manifest=resolved_manifest,
+                    )
+                    summary["replay_bundle"] = replay_bundle_summary_from_result(verification)
+                    emit_structured_log(
+                        "replay_bundle_archived",
+                        component="cli",
+                        command="run-all",
+                        run_id=run_id,
+                        bundle_manifest_path=verification.bundle_manifest_path,
+                        recoverable=verification.recoverable,
+                        artifact_count=verification.artifact_count,
+                    )
+                    print(f"archived replay bundle: {verification.bundle_manifest_path}")
+                except Exception as exc:
+                    summary["replay_bundle"] = {
+                        "bundle_id": f"replay-bundle-{run_id}",
+                        "bundle_version": REPLAY_BUNDLE_VERSION,
+                        "status": "failed",
+                        "recoverable": False,
+                        "restore_mode": REPLAY_BUNDLE_RESTORE_MODE,
+                        "bundle_root": str(bundle_root),
+                        "bundle_manifest_path": str(bundle_root / "bundle_manifest.json"),
+                        "original_manifest_path": "",
+                        "replay_manifest_path": "",
+                        "landing_snapshot_root": str(bundle_root / "landing_snapshot"),
+                        "created_at_utc": replay_bundle_utc_now(),
+                        "verified_at_utc": "",
+                        "artifact_count": 0,
+                        "source_count": 0,
+                        "total_bytes": 0,
+                        "verification_errors": [str(exc)],
+                        "artifacts": [],
+                    }
+                    emit_structured_log(
+                        "replay_bundle_archive_failed",
+                        component="cli",
+                        command="run-all",
+                        run_id=run_id,
+                        bundle_manifest_path=bundle_root / "bundle_manifest.json",
+                        duration_seconds=seconds_since(archive_started),
+                        error=str(exc),
+                        level="ERROR",
+                    )
+                    print(f"replay bundle unavailable: {exc}")
+                phase_metrics["archive_replay_bundle"] = _build_phase_metric(
+                    seconds_since(archive_started),
+                    input_record_count=len(normalized_rows),
+                    output_record_count=1,
+                )
+                summary["performance"] = {
+                    "total_duration_seconds": round(seconds_since(started), 6),
+                    "phase_metrics": phase_metrics,
+                }
+                state_store.update_run_summary(run_id=run_id, summary=summary)
+                _write_run_summary_artifacts(
+                    report_file=report_file,
+                    normalized_file=normalized_file,
+                    summary=summary,
+                )
             print(f"persisted run state: {state_store_display_name(args.state_db)} (run_id={run_id})")
         emit_structured_log(
             "pipeline_run_completed",
@@ -2488,6 +2654,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional export-run status filter.",
     )
     export_job_history_parser.set_defaults(func=_cmd_export_job_history)
+
+    verify_replay_bundle_parser = subparsers.add_parser(
+        "verify-replay-bundle",
+        help="Verify the archived replay bundle for a persisted manifest-backed run.",
+    )
+    verify_replay_bundle_parser.add_argument("--environment", default=None)
+    verify_replay_bundle_parser.add_argument("--runtime-config", default=None)
+    verify_replay_bundle_parser.add_argument("--state-db", default=None)
+    verify_replay_bundle_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to verify. Defaults to the latest completed run in --state-db.",
+    )
+    verify_replay_bundle_parser.set_defaults(func=_cmd_verify_replay_bundle)
 
     replay_run_parser = subparsers.add_parser(
         "replay-run",

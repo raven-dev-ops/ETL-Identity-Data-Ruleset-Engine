@@ -21,11 +21,15 @@ of truth for tracked work; this file is the short maintainer view.
 - GitHub issue `#84` is complete: persisted state now supports
   PostgreSQL DSNs alongside SQLite paths, and the state-store migration
   and runtime surface has PostgreSQL dialect coverage.
+- GitHub issue `#85` is complete: manifest-backed persisted runs now
+  archive immutable replay bundles with the original manifest, landed
+  input snapshot, verification metadata, and operator bundle-validation
+  support.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
-  - Open GitHub issues: `#85`, `#86`, `#87`
+  - Open GitHub issues: `#86`, `#87`
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: `#88`, `#89`, `#90`, `#91`
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
@@ -34,7 +38,7 @@ of truth for tracked work; this file is the short maintainer view.
 ## Gaps Now Explicitly Tracked
 
 - [x] PostgreSQL-backed persisted state
-- [ ] Immutable replay bundles for manifests and landed inputs
+- [x] Immutable replay bundles for manifests and landed inputs
 - [ ] Replay independent of original landing paths
 - [ ] Checkpointed resume for failed persisted runs
 - [ ] OIDC or JWT service authentication
@@ -48,5 +52,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#85`: Archive manifest and landed-input snapshots as
-  immutable replay bundles.
+- Start issue `#86`: Support replay from archived bundles without the
+  original landing paths.

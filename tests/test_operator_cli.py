@@ -271,6 +271,62 @@ def test_apply_review_decision_and_replay_run_support_operator_workflow(
     assert replay_noop_payload["result_run_id"] == result_run_id
 
 
+def test_verify_replay_bundle_updates_recoverability_for_manifest_runs(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path, _manifest_path, store, run_id = _create_manifest_review_run(tmp_path)
+    run_record = store.load_run_record(run_id)
+    replay_bundle = run_record.summary["replay_bundle"]
+
+    assert replay_bundle["status"] == "verified"
+    assert replay_bundle["recoverable"] is True
+    assert Path(str(replay_bundle["bundle_manifest_path"])).exists()
+    assert Path(str(replay_bundle["original_manifest_path"])).exists()
+    assert Path(str(replay_bundle["landing_snapshot_root"])).exists()
+
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "verify-replay-bundle",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+            ]
+        )
+        == 0
+    )
+    verified_payload = _json_output(capsys)
+    assert verified_payload["status"] == "verified"
+    assert verified_payload["recoverable"] is True
+
+    archived_source = Path(str(replay_bundle["landing_snapshot_root"])) / "agency_a.csv"
+    archived_source.write_text("corrupted", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "verify-replay-bundle",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+            ]
+        )
+        == 0
+    )
+    incomplete_payload = _json_output(capsys)
+    assert incomplete_payload["status"] == "incomplete"
+    assert incomplete_payload["recoverable"] is False
+    assert incomplete_payload["replay_bundle"]["verification_errors"]
+
+    refreshed_record = store.load_run_record(run_id)
+    assert refreshed_record.summary["replay_bundle"]["status"] == "incomplete"
+    assert refreshed_record.summary["replay_bundle"]["recoverable"] is False
+
+
 def test_publish_run_returns_json_and_reuses_existing_snapshot(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

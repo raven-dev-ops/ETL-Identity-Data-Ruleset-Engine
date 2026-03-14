@@ -212,6 +212,27 @@ def main(argv: list[str] | None = None) -> int:
         if source_run_id is None:
             raise SystemExit("expected an initial completed persisted run")
 
+        verify_payload = _run_cli(
+            [
+                "verify-replay-bundle",
+                "--state-db",
+                str(state_db),
+                "--run-id",
+                source_run_id,
+            ],
+            expect_json=True,
+        )
+        if verify_payload["recoverable"] is not True:
+            raise SystemExit("expected manifest-backed recovery smoke batch to produce a verified replay bundle")
+
+        source_run = original_store.load_run_record(source_run_id)
+        replay_bundle = source_run.summary.get("replay_bundle", {})
+        if not isinstance(replay_bundle, dict):
+            raise SystemExit("expected persisted run summary to expose replay-bundle metadata")
+        replay_bundle_root = Path(str(replay_bundle.get("bundle_root", "")))
+        if not replay_bundle_root.exists():
+            raise SystemExit("expected replay bundle root to exist after verification")
+
         review_cases = original_store.list_review_cases(run_id=source_run_id)
         if len(review_cases) != 1:
             raise SystemExit(
@@ -241,8 +262,7 @@ def main(argv: list[str] | None = None) -> int:
 
         backup_root.mkdir(parents=True, exist_ok=True)
         shutil.copy2(state_db, backup_root / "pipeline_state.sqlite")
-        shutil.copy2(manifest_path, backup_root / "manifest.yml")
-        shutil.copytree(landing_dir, backup_root / "landing")
+        shutil.copytree(replay_bundle_root, backup_root / "replay_bundle")
 
         if original_base_dir.exists():
             shutil.rmtree(original_base_dir)
@@ -254,8 +274,12 @@ def main(argv: list[str] | None = None) -> int:
         restored_manifest_path = manifest_path
         restored_landing_dir = landing_dir
         restored_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(backup_root / "manifest.yml", restored_manifest_path)
-        shutil.copytree(backup_root / "landing", restored_landing_dir)
+        backup_replay_bundle_root = backup_root / "replay_bundle"
+        shutil.copy2(
+            backup_replay_bundle_root / "manifest" / "original" / manifest_path.name,
+            restored_manifest_path,
+        )
+        shutil.copytree(backup_replay_bundle_root / "landing_snapshot", restored_landing_dir)
 
         restored_state_db = restored_root / "state" / "pipeline_state.sqlite"
         restored_state_db.parent.mkdir(parents=True, exist_ok=True)
@@ -334,7 +358,8 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "status": "ok",
                     "validated_steps": [
-                        "backup_sqlite_manifest_and_landing_snapshot",
+                        "verify_archived_replay_bundle",
+                        "backup_sqlite_and_replay_bundle",
                         "restore_review_state",
                         "rebuild_report_outputs_from_restored_state",
                         "replay_recovered_run_with_review_override",
