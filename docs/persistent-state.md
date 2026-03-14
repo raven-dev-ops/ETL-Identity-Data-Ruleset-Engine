@@ -352,6 +352,26 @@ The shared logging, metrics, health, and audit-event baseline is
 documented in
 [operations-observability.md](operations-observability.md).
 
+## Recovery Model
+
+The supported recovery model is now documented in
+[recovery-runbooks.md](recovery-runbooks.md).
+
+Operators should treat the minimum recoverable backup set for
+manifest-driven persisted runs as:
+
+- the SQLite state DB
+- the manifest file referenced by the completed run
+- the landed input snapshot referenced by that manifest
+- any custom runtime config snapshot used for that run
+
+That distinction is important because:
+
+- `report`, `publish-run`, and downstream export jobs can rebuild from a
+  restored SQLite DB alone
+- `replay-run` requires the stored `manifest_path` plus the landed input
+  snapshot to exist again
+
 ## Current Boundary
 
 This issue adds durable relational persistence, a basic run registry,
@@ -365,4 +385,7 @@ The current line does not yet provide:
 - immutable source-data replay independent of the current manifest and
   landing-zone contents
 
-Those remain tracked follow-on work in the active backlog.
+Recovery procedures for the current supported model are now documented
+in [recovery-runbooks.md](recovery-runbooks.md). The remaining boundary
+above stays in effect until the runtime can replay independently of the
+stored manifest path and landing snapshot.

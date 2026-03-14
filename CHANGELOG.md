@@ -56,6 +56,9 @@ All notable changes to this project will be documented in this file.
 - Named scale benchmark fixtures, a `benchmark-run` CLI command, and a
   documented `single_host_container` capacity-target baseline for
   larger-batch operational validation.
+- Backup, restore, and replay runbooks for persisted SQLite state,
+  including a documented recovery smoke path in
+  `scripts/persisted_state_recovery_smoke.py`.
 
 ### Changed
 
@@ -100,6 +103,9 @@ All notable changes to this project will be documented in this file.
   profile so the single-host deployment topology can start without
   cloud object-storage credentials while still using the persisted-state
   and service-auth model.
+- `scripts/run_checks.py` now executes a persisted-state recovery smoke
+  path, so local validation and CI cover backup, restore, report
+  rebuild, and replay behavior for manifest-driven persisted runs.
 
 ## [0.1.4] - 2026-03-13
 

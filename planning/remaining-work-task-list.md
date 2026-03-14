@@ -1,7 +1,7 @@
 # Remaining Work Task List
 
 Date prepared: 2026-03-13
-Last updated: 2026-03-13
+Last updated: 2026-03-14
 
 This checklist mirrors the active production-readiness backlog in
 `planning/active-github-issues-backlog.md`. GitHub remains the source of
@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#78` through `#80`.
+  open child issues `#79` and `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -69,6 +69,10 @@ truth for tracked work; this file is the short maintainer view.
   `config/benchmark_fixtures.yml`, `run-all` now records phase timing
   and throughput metrics, and `benchmark-run` now validates those runs
   against the supported `single_host_container` capacity targets.
+- Issue `#78` is complete: backup, restore, and replay runbooks now
+  document the supported persisted-state recovery model, and local plus
+  CI validation now execute a recovery smoke path that restores review
+  state, rebuilds report artifacts, and replays a recovered run.
 
 ## Open Task Groups
 
@@ -79,7 +83,7 @@ truth for tracked work; this file is the short maintainer view.
   - Open issues: none. `v0.5.0` implementation work is complete in the
     active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
-  - Open issues: `#78` through `#80` in the active backlog catalog.
+  - Open issues: `#79` and `#80` in the active backlog catalog.
 
 ## Production-Readiness Gaps Now Explicitly Tracked
 
@@ -104,9 +108,9 @@ truth for tracked work; this file is the short maintainer view.
   single-host environment manifests
 - [x] Large-batch benchmark fixtures and SLO-style capacity targets for
   the supported deployment baseline
-- [ ] Recovery runbooks and release hardening
+- [ ] Release hardening and production operating-model documentation
 
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#78`.
+  then `v0.6.0`, continuing with issue `#79`.

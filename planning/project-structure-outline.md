@@ -1,7 +1,7 @@
 # Project Structure Outline
 
 Date prepared: 2026-03-12
-Last updated: 2026-03-13
+Last updated: 2026-03-14
 
 ## Objective
 
@@ -58,14 +58,22 @@ ETL-Identity-Data-Ruleset-Engine/
   docs/
     architecture.md
     benchmarking-and-capacity.md
+    compatibility-policy.md
     container-deployment.md
     data-model.md
+    delivery-contracts.md
     evaluation-and-metrics.md
+    export-jobs.md
     matching-and-thresholds.md
     normalization.md
     operations-observability.md
     output-contracts.md
+    persistent-state.md
+    production-batch-manifest.md
+    recovery-runbooks.md
     release-process.md
+    review-workflow.md
+    runtime-environments.md
     service-api.md
     standards-mapping.md
     survivorship.md
@@ -82,6 +90,7 @@ ETL-Identity-Data-Ruleset-Engine/
     create_github_backlog.py
     create_github_backlog.ps1
     package_release_sample.py
+    persisted_state_recovery_smoke.py
     run_checks.py
     run_checks.ps1
     run_checks.sh

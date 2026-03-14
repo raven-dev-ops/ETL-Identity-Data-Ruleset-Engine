@@ -87,6 +87,23 @@ That script:
 - starts the service container
 - waits for authenticated `GET /healthz`
 
+## State Recovery
+
+Backup, restore, and replay procedures for mounted persisted state are
+now documented in [recovery-runbooks.md](recovery-runbooks.md).
+
+For the single-host compose topology, the recoverable set is:
+
+- the mounted SQLite DB under the runtime volume
+- the manifest file used for a manifest-driven batch
+- the landed input snapshot referenced by that manifest
+- any custom config overlay mounted into the container runtime
+
+Rebuilding reports or downstream publications only requires the
+restored SQLite DB. Replaying a manifest-driven run also requires the
+restored manifest and landed files to exist again at the stored
+container-visible path.
+
 ## Current Boundary
 
 This deployment baseline now provides:
@@ -95,11 +112,12 @@ This deployment baseline now provides:
 - a deployable compose topology for single-host persisted-state usage
 - CI smoke validation that the containerized batch and service surfaces
   start successfully
+- documented backup, restore, and replay procedures for the mounted
+  persisted-state model
 
 It does not yet provide:
 
 - orchestration manifests for a clustered environment
-- backup or restore procedures for mounted persisted state
 - image-signing or supply-chain hardening
 
 Those remain tracked in the active backlog.

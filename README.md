@@ -180,6 +180,7 @@ is included in the repository.
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Export Jobs](docs/export-jobs.md)
 - [Persistent State](docs/persistent-state.md)
+- [Recovery Runbooks](docs/recovery-runbooks.md)
 - [Review Workflow](docs/review-workflow.md)
 - [Service API](docs/service-api.md)
 - [Runtime Environments](docs/runtime-environments.md)
@@ -371,9 +372,10 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 `run_checks.ps1` now covers the same local validation surface as the
 documented CI baseline: package-build verification, `ruff`, `pytest`,
 the installed `etl-identity-engine` console entrypoint smoke check, the
-active-backlog dry-run, and release-sample packaging. The build and
-packaging checks use temporary output directories, so the wrapper does
-not leave artifacts under `dist/`.
+active-backlog dry-run, release-sample packaging, and the persisted-
+state recovery smoke path. The build and packaging checks use temporary
+output directories, so the wrapper does not leave artifacts under
+`dist/`.
 It also verifies that the installed editable package metadata matches
 `pyproject.toml`, so rerun the bootstrap script or
 `python -m pip install -e .[dev]` after pulling a version bump.
@@ -398,9 +400,10 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 `run_checks.sh` covers the same local validation surface as the
 documented CI baseline: package-build verification, `ruff`, `pytest`,
 the installed `etl-identity-engine` console entrypoint smoke check, the
-active-backlog dry-run, and release-sample packaging. The build and
-packaging checks use temporary output directories, so the wrapper does
-not leave artifacts under `dist/`.
+active-backlog dry-run, release-sample packaging, and the persisted-
+state recovery smoke path. The build and packaging checks use temporary
+output directories, so the wrapper does not leave artifacts under
+`dist/`.
 It also verifies that the installed editable package metadata matches
 `pyproject.toml`, so rerun the bootstrap script or
 `python -m pip install -e .[dev]` after pulling a version bump.
@@ -476,10 +479,11 @@ bash path. The Python-native `scripts/run_checks.py` and
 platform.
 The local `run_checks` wrappers are the authoritative pre-push
 validation path. They include the local `pytest` suite plus the
-active-backlog dry-run and release-sample packaging checks, and they use
-temporary packaging output so pre-push validation does not leave release
-artifacts behind. The remote metadata check validates only what GitHub
-currently sees on the pushed default branch.
+active-backlog dry-run, release-sample packaging, and persisted-state
+recovery smoke checks, and they use temporary packaging output so
+pre-push validation does not leave release artifacts behind. The remote
+metadata check validates only what GitHub currently sees on the pushed
+default branch.
 
 ## License
 

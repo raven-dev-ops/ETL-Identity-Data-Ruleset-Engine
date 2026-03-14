@@ -9,7 +9,7 @@ backlog files remain available as read-only records:
 - `planning/post-v0.1.0-github-issues-backlog.md`
 
 Date prepared: 2026-03-13
-Last synced to GitHub: 2026-03-13
+Last synced to GitHub: 2026-03-14
 
 ## Milestones
 
@@ -289,7 +289,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 78) Add backup, restore, and replay runbooks for persisted state
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.6.0`
 - Labels: `type:docs`, `area:operations`, `priority:p1`
 - Depends on: #63, #64, #76
@@ -347,15 +347,15 @@ Create these 3 epics first, then link child issues:
 
 ## Tracker Status Snapshot
 
-Snapshot date: 2026-03-13
+Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#78`
-  through `#80`
+- Open child issues represented in this local active catalog: `#79`
+  and `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
   - `v0.5.0` with epic `#59`
-  - `v0.6.0` with epic `#60` plus child issues `#77` through `#80`
+  - `v0.6.0` with epic `#60` plus child issues `#79` and `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
   `planning/post-v0.1.0-github-issues-backlog.md`
@@ -424,3 +424,8 @@ Snapshot date: 2026-03-13
   throughput metrics in `run_summary.json`, and `benchmark-run` now
   executes the real persisted pipeline against the supported
   `single_host_container` capacity targets.
+- Issue `#78` is complete in-repo: backup, restore, and replay runbooks
+  now document the supported manifest-era recovery model, and
+  `scripts/run_checks.py` now runs a persisted-state recovery smoke path
+  that validates state restore, report rebuild, and replay with an
+  approved review override.

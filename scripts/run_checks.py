@@ -216,6 +216,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
 
+    _run_command((python_executable, "scripts/persisted_state_recovery_smoke.py"))
+
     if not args.include_remote_github_checks:
         return 0
 
