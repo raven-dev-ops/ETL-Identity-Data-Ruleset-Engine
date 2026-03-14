@@ -144,8 +144,9 @@ is included in the repository.
 - The supported manual-review operating model for the current `0.x` line
   now has two layers: the CSV queue artifact remains the portable file
   handoff, and persisted runs can also track review-case status,
-  assignee, timestamps, and notes in SQLite. Applying those decisions
-  back into cluster and golden rebuilds remains follow-on work.
+  assignee, timestamps, and notes in SQLite. Approved and rejected
+  review decisions now carry forward into later persisted reruns and can
+  override heuristic cluster and golden outcomes.
 
 ## Future Enhancements
 
@@ -273,8 +274,9 @@ crosswalk snapshots with `publish-delivery`.
 The current manual-review operating model keeps the file handoff via
 `data/review_queue/manual_review_queue.csv`, and persisted runs now also
 support durable review-case state through `review-case-list` and
-`review-case-update`. Applying those decisions back into cluster and
-golden rebuilds is not implemented yet.
+`review-case-update`. Approved and rejected review decisions now apply
+to later persisted reruns, forcing merge or non-merge outcomes before
+cluster and golden rebuilds.
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

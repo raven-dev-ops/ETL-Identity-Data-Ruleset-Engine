@@ -8,6 +8,12 @@ import re
 
 from etl_identity_engine.matching.blocking import BlockingPassMetric, blocking_key, generate_candidates_with_metrics
 from etl_identity_engine.matching.clustering import cluster_links
+from etl_identity_engine.review_cases import (
+    apply_review_decisions,
+    build_review_case_rows,
+    build_review_override_map,
+    review_pair_key,
+)
 from etl_identity_engine.matching.scoring import classify_score, explain_pair_score
 from etl_identity_engine.runtime_config import PipelineConfig
 from etl_identity_engine.storage.sqlite_store import PersistedRunBundle
@@ -22,6 +28,7 @@ class IncrementalRefreshResult:
     cluster_output_rows: list[dict[str, str]]
     golden_rows: list[dict[str, str]]
     crosswalk_rows: list[dict[str, str]]
+    active_review_rows: list[dict[str, str | float]]
     review_rows: list[dict[str, str | float]]
     metadata: dict[str, object]
 
@@ -32,6 +39,10 @@ def _source_record_id(row: dict[str, object]) -> str:
 
 def _pair_key(left_id: str, right_id: str) -> tuple[str, str]:
     return tuple(sorted((left_id, right_id)))
+
+
+def _override_decision(status: str) -> str:
+    return "auto_merge" if status == "approved" else "no_match"
 
 
 def _blocking_metrics_rows(
@@ -55,6 +66,9 @@ def _blocking_metrics_rows(
 def _build_match_rows(
     rows: list[dict[str, str]],
     config: PipelineConfig,
+    *,
+    forced_pairs: set[tuple[str, str]] | None = None,
+    review_overrides: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[dict[str, str | float]], list[BlockingPassMetric]]:
     blocking_passes = [blocking_pass.fields for blocking_pass in config.matching.blocking_passes]
     blocking_pass_names = [blocking_pass.name for blocking_pass in config.matching.blocking_passes]
@@ -63,6 +77,20 @@ def _build_match_rows(
         blocking_passes=blocking_passes,
         pass_names=blocking_pass_names,
     )
+    rows_by_id = {_source_record_id(row): row for row in rows if _source_record_id(row)}
+    seen_pairs = {
+        review_pair_key(str(left.get("source_record_id", "")), str(right.get("source_record_id", "")))
+        for left, right in pairs
+    }
+    for forced_pair in sorted(forced_pairs or set()):
+        if forced_pair in seen_pairs:
+            continue
+        left_row = rows_by_id.get(forced_pair[0])
+        right_row = rows_by_id.get(forced_pair[1])
+        if left_row is None or right_row is None:
+            continue
+        pairs.append((left_row, right_row))
+        seen_pairs.add(forced_pair)
     scored_rows: list[dict[str, str | float]] = []
     for left, right in pairs:
         detail = explain_pair_score(left, right, weights=config.matching.weights)
@@ -81,36 +109,10 @@ def _build_match_rows(
                 "reason_trace": ";".join(detail.reason_trace),
             }
         )
+    if review_overrides:
+        scored_rows = apply_review_decisions(scored_rows, review_overrides)
+    scored_rows.sort(key=lambda row: (str(row.get("left_id", "")), str(row.get("right_id", ""))))
     return scored_rows, blocking_metrics
-
-
-def _build_manual_review_rows(
-    match_rows: list[dict[str, str | float]],
-) -> list[dict[str, str | float]]:
-    review_candidates = [row for row in match_rows if row.get("decision") == "manual_review"]
-    ordered_candidates = sorted(
-        review_candidates,
-        key=lambda row: (
-            -float(row.get("score", 0.0)),
-            str(row.get("left_id", "")),
-            str(row.get("right_id", "")),
-        ),
-    )
-
-    review_rows: list[dict[str, str | float]] = []
-    for index, row in enumerate(ordered_candidates, start=1):
-        review_rows.append(
-            {
-                "review_id": f"REV-{index:05d}",
-                "left_id": row.get("left_id", ""),
-                "right_id": row.get("right_id", ""),
-                "score": row.get("score", 0.0),
-                "reason_codes": row.get("reason_trace", ""),
-                "top_contributing_match_signals": row.get("matched_fields", ""),
-                "queue_status": "pending",
-            }
-        )
-    return review_rows
 
 
 def _build_crosswalk_rows(
@@ -188,6 +190,7 @@ def _collect_impacted_record_ids(
     previous_rows_by_id: dict[str, dict[str, str]],
     previous_cluster_by_record: dict[str, str],
     previous_cluster_members: dict[str, set[str]],
+    review_override_pairs: set[tuple[str, str]],
     config: PipelineConfig,
 ) -> tuple[set[str], dict[str, int]]:
     current_ids = set(current_rows_by_id)
@@ -202,7 +205,22 @@ def _collect_impacted_record_ids(
     }
 
     impacted_ids: set[str] = set()
-    pending_record_ids: deque[str] = deque(sorted(inserted_ids | changed_ids))
+    review_neighbors: dict[str, set[str]] = defaultdict(set)
+    for left_id, right_id in review_override_pairs:
+        review_neighbors[left_id].add(right_id)
+        review_neighbors[right_id].add(left_id)
+    pending_record_ids: deque[str] = deque(
+        sorted(
+            inserted_ids
+            | changed_ids
+            | {
+                record_id
+                for pair in review_override_pairs
+                for record_id in pair
+                if record_id in current_rows_by_id
+            }
+        )
+    )
     pending_cluster_ids: deque[str] = deque(
         sorted(
             {
@@ -238,6 +256,9 @@ def _collect_impacted_record_ids(
             pending_cluster_ids.append(previous_cluster_id)
 
         row = current_rows_by_id[record_id]
+        for neighbor_id in sorted(review_neighbors.get(record_id, ())):
+            if neighbor_id in current_rows_by_id and neighbor_id not in impacted_ids:
+                pending_record_ids.append(neighbor_id)
         for buckets, blocking_pass in zip(indexed_buckets, config.matching.blocking_passes, strict=True):
             key = blocking_key(row, fields=blocking_pass.fields)
             if not all(key):
@@ -347,15 +368,29 @@ def refresh_incremental_run(
     current_rows_by_id = {_source_record_id(row): dict(row) for row in current_rows if _source_record_id(row)}
     previous_rows_by_id = {_source_record_id(row): dict(row) for row in previous_bundle.normalized_rows if _source_record_id(row)}
     previous_cluster_by_record, previous_cluster_members, previous_cluster_rows_by_record = _build_previous_cluster_indexes(previous_bundle)
+    review_overrides = build_review_override_map(previous_bundle.review_rows)
+    current_record_ids = set(current_rows_by_id)
+    previous_match_decisions = {
+        review_pair_key(str(row.get("left_id", "")), str(row.get("right_id", ""))): str(row.get("decision", ""))
+        for row in previous_bundle.candidate_pairs
+    }
+    review_override_pairs = {
+        pair for pair in review_overrides if pair[0] in current_record_ids and pair[1] in current_record_ids
+    }
+    effective_review_override_pairs = {
+        pair
+        for pair in review_override_pairs
+        if previous_match_decisions.get(pair) != _override_decision(review_overrides[pair])
+    }
 
     impacted_record_ids, diff_counts = _collect_impacted_record_ids(
         current_rows_by_id=current_rows_by_id,
         previous_rows_by_id=previous_rows_by_id,
         previous_cluster_by_record=previous_cluster_by_record,
         previous_cluster_members=previous_cluster_members,
+        review_override_pairs=effective_review_override_pairs,
         config=config,
     )
-    current_record_ids = set(current_rows_by_id)
     reused_record_ids = current_record_ids - impacted_record_ids
 
     if not impacted_record_ids:
@@ -381,7 +416,10 @@ def refresh_incremental_run(
             }
             for row in clustered_rows
         ]
-        review_rows = _build_manual_review_rows(match_rows)
+        active_review_rows, review_rows = build_review_case_rows(
+            match_rows,
+            previous_review_cases=previous_bundle.review_rows,
+        )
         golden_rows = sorted(
             [dict(row) for row in previous_bundle.golden_rows],
             key=lambda row: str(row.get("cluster_id", "")),
@@ -413,12 +451,23 @@ def refresh_incremental_run(
             cluster_output_rows=cluster_output_rows,
             golden_rows=golden_rows,
             crosswalk_rows=crosswalk_rows,
+            active_review_rows=active_review_rows,
             review_rows=review_rows,
             metadata=metadata,
         )
 
     impacted_rows = [current_rows_by_id[record_id] for record_id in sorted(impacted_record_ids)]
-    recalculated_match_rows, recalculated_blocking_metrics = _build_match_rows(impacted_rows, config)
+    recalculated_review_override_pairs = {
+        pair
+        for pair in review_override_pairs
+        if pair[0] in impacted_record_ids and pair[1] in impacted_record_ids
+    }
+    recalculated_match_rows, recalculated_blocking_metrics = _build_match_rows(
+        impacted_rows,
+        config,
+        forced_pairs=recalculated_review_override_pairs,
+        review_overrides=review_overrides,
+    )
     reused_match_rows = [
         dict(row)
         for row in previous_bundle.candidate_pairs
@@ -488,7 +537,10 @@ def refresh_incremental_run(
         reused_golden_rows=reused_golden_rows,
     )
     crosswalk_rows = _build_crosswalk_rows(clustered_rows, golden_rows)
-    review_rows = _build_manual_review_rows(match_rows)
+    active_review_rows, review_rows = build_review_case_rows(
+        match_rows,
+        previous_review_cases=previous_bundle.review_rows,
+    )
 
     metadata = {
         "mode": "incremental",
@@ -509,6 +561,7 @@ def refresh_incremental_run(
         cluster_output_rows=cluster_output_rows,
         golden_rows=golden_rows,
         crosswalk_rows=crosswalk_rows,
+        active_review_rows=active_review_rows,
         review_rows=review_rows,
         metadata=metadata,
     )

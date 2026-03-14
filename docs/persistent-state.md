@@ -189,6 +189,15 @@ python -m etl_identity_engine.cli review-case-update \
 The lifecycle contract itself is documented in
 [review-workflow.md](review-workflow.md).
 
+Approved and rejected review decisions now affect later persisted reruns
+for the same manifest lineage:
+
+- `approved` forces the reviewed pair to merge before clustering
+- `rejected` blocks the reviewed pair from merging even if the heuristic
+  scorer would otherwise auto-merge it
+- the resulting cluster and golden rebuilds are then persisted as the
+  next completed run state
+
 ## Delivery Publication
 
 Completed persisted runs can now be published under the versioned
@@ -214,7 +223,6 @@ contract, not full orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints
-- review-decision application into cluster or golden rebuilds
 - service APIs over the persisted store
 
 Those remain tracked follow-on work in the active backlog.

@@ -418,11 +418,11 @@ class SQLitePipelineStore:
                     row.get("reason_codes", ""),
                     row.get("top_contributing_match_signals", ""),
                     validate_review_case_status(str(row.get("queue_status", "pending") or "pending")),
-                    "",
-                    "",
-                    created_at_utc,
-                    created_at_utc,
-                    "",
+                    str(row.get("assigned_to", "") or ""),
+                    str(row.get("operator_notes", "") or ""),
+                    str(row.get("created_at_utc", "") or created_at_utc),
+                    str(row.get("updated_at_utc", "") or created_at_utc),
+                    str(row.get("resolved_at_utc", "") or ""),
                 )
                 for index, row in enumerate(rows)
             ],

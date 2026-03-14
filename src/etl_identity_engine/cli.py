@@ -41,6 +41,12 @@ from etl_identity_engine.output_contracts import (
     NORMALIZED_HEADERS,
 )
 from etl_identity_engine.review_cases import REVIEW_CASE_STATUSES
+from etl_identity_engine.review_cases import (
+    apply_review_decisions,
+    build_review_case_rows,
+    build_review_override_map,
+    filter_active_review_queue_rows,
+)
 from etl_identity_engine.quality.exceptions import (
     build_run_report_markdown,
     build_run_summary,
@@ -363,7 +369,7 @@ def _collect_report_context_from_store(
         len(bundle.candidate_pairs),
         cluster_count,
         len(bundle.golden_rows),
-        len(bundle.review_rows),
+        len(filter_active_review_queue_rows(bundle.review_rows)),
         {
             key: bundle.run.summary[key]
             for key in ("refresh", "run_context")
@@ -449,6 +455,9 @@ def _write_normalized_output(
 def _build_match_rows(
     rows: list[dict[str, str]],
     config: PipelineConfig,
+    *,
+    forced_pairs: set[tuple[str, str]] | None = None,
+    review_overrides: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[dict[str, str | float]], list[BlockingPassMetric]]:
     blocking_passes = [blocking_pass.fields for blocking_pass in config.matching.blocking_passes]
     blocking_pass_names = [blocking_pass.name for blocking_pass in config.matching.blocking_passes]
@@ -457,6 +466,26 @@ def _build_match_rows(
         blocking_passes=blocking_passes,
         pass_names=blocking_pass_names,
     )
+    rows_by_id = {
+        str(row.get("source_record_id", "")).strip(): row
+        for row in rows
+        if str(row.get("source_record_id", "")).strip()
+    }
+    seen_pairs = {
+        tuple(sorted((str(left.get("source_record_id", "")), str(right.get("source_record_id", "")))))
+        for left, right in pairs
+    }
+    for forced_pair in sorted(forced_pairs or set()):
+        left_id, right_id = forced_pair
+        if forced_pair in seen_pairs:
+            continue
+        left_row = rows_by_id.get(left_id)
+        right_row = rows_by_id.get(right_id)
+        if left_row is None or right_row is None:
+            continue
+        pairs.append((left_row, right_row))
+        seen_pairs.add(forced_pair)
+
     scored_rows: list[dict[str, str | float]] = []
     for left, right in pairs:
         detail = explain_pair_score(left, right, weights=config.matching.weights)
@@ -475,6 +504,9 @@ def _build_match_rows(
                 "reason_trace": ";".join(detail.reason_trace),
             }
         )
+    if review_overrides:
+        scored_rows = apply_review_decisions(scored_rows, review_overrides)
+    scored_rows.sort(key=lambda row: (str(row.get("left_id", "")), str(row.get("right_id", ""))))
     return scored_rows, blocking_metrics
 
 
@@ -500,8 +532,16 @@ def _write_match_output(
     output_file: Path,
     rows: list[dict[str, str]],
     config: PipelineConfig,
+    *,
+    forced_pairs: set[tuple[str, str]] | None = None,
+    review_overrides: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[dict[str, str | float]], list[dict[str, str | int]]]:
-    scored_rows, blocking_metrics = _build_match_rows(rows, config)
+    scored_rows, blocking_metrics = _build_match_rows(
+        rows,
+        config,
+        forced_pairs=forced_pairs,
+        review_overrides=review_overrides,
+    )
     blocking_metrics_rows = _build_blocking_metrics_rows(
         blocking_metrics,
         overall_candidate_pair_count=len(scored_rows),
@@ -568,43 +608,19 @@ def _write_cluster_output(
     return clustered_rows
 
 
-def _build_manual_review_rows(
-    match_rows: list[dict[str, str | float]],
-) -> list[dict[str, str | float]]:
-    review_candidates = [row for row in match_rows if row.get("decision") == "manual_review"]
-    ordered_candidates = sorted(
-        review_candidates,
-        key=lambda row: (
-            -float(row.get("score", 0.0)),
-            str(row.get("left_id", "")),
-            str(row.get("right_id", "")),
-        ),
-    )
-
-    review_rows: list[dict[str, str | float]] = []
-    for index, row in enumerate(ordered_candidates, start=1):
-        review_rows.append(
-            {
-                "review_id": f"REV-{index:05d}",
-                "left_id": row.get("left_id", ""),
-                "right_id": row.get("right_id", ""),
-                "score": row.get("score", 0.0),
-                "reason_codes": row.get("reason_trace", ""),
-                "top_contributing_match_signals": row.get("matched_fields", ""),
-                "queue_status": "pending",
-            }
-        )
-    return review_rows
-
-
 def _write_manual_review_output(
     output_file: Path,
     match_rows: list[dict[str, str | float]],
-) -> list[dict[str, str | float]]:
-    review_rows = _build_manual_review_rows(match_rows)
-    write_csv_dicts(output_file, review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
+    *,
+    previous_review_rows: list[dict[str, str | float]] | list[dict[str, str]] | None = None,
+) -> tuple[list[dict[str, str | float]], list[dict[str, str | float]]]:
+    active_review_rows, persisted_review_rows = build_review_case_rows(
+        match_rows,
+        previous_review_cases=previous_review_rows or (),
+    )
+    write_csv_dicts(output_file, active_review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
     print(f"manual review queue written: {output_file}")
-    return review_rows
+    return active_review_rows, persisted_review_rows
 
 
 def _write_golden_output(
@@ -698,7 +714,11 @@ def _write_precomputed_review_queue_output(
     output_file: Path,
     review_rows: list[dict[str, str | float]],
 ) -> None:
-    write_csv_dicts(output_file, review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
+    write_csv_dicts(
+        output_file,
+        filter_active_review_queue_rows(review_rows),
+        fieldnames=MANUAL_REVIEW_HEADERS,
+    )
     print(f"manual review queue written: {output_file}")
 
 
@@ -790,7 +810,11 @@ def _restore_persisted_run_outputs(base: Path, bundle) -> None:
     write_csv_dicts(clusters_file, bundle.cluster_rows, fieldnames=ENTITY_CLUSTER_HEADERS)
     write_csv_dicts(golden_file, bundle.golden_rows, fieldnames=GOLDEN_HEADERS)
     write_csv_dicts(crosswalk_file, bundle.crosswalk_rows, fieldnames=CROSSWALK_HEADERS)
-    write_csv_dicts(review_queue_file, bundle.review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
+    write_csv_dicts(
+        review_queue_file,
+        filter_active_review_queue_rows(bundle.review_rows),
+        fieldnames=MANUAL_REVIEW_HEADERS,
+    )
 
     exception_rows = extract_exception_rows(bundle.normalized_rows)
     for exception_type, records in exception_rows.items():
@@ -1082,18 +1106,37 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 config,
             )
 
+        review_source_bundle = None
+        review_overrides: dict[tuple[str, str], str] = {}
+        forced_review_pairs: set[tuple[str, str]] = set()
+        if state_store is not None and resolved_manifest is not None:
+            review_source_run = state_store.latest_completed_run_for_manifest(
+                manifest_path=str(resolved_manifest.manifest_path),
+                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+            )
+            if review_source_run is not None:
+                review_source_bundle = state_store.load_run_bundle(review_source_run.run_id)
+                review_overrides = build_review_override_map(review_source_bundle.review_rows)
+                current_record_ids = {
+                    str(row.get("source_record_id", "")).strip()
+                    for row in normalized_rows
+                    if str(row.get("source_record_id", "")).strip()
+                }
+                forced_review_pairs = {
+                    pair
+                    for pair in review_overrides
+                    if pair[0] in current_record_ids and pair[1] in current_record_ids
+                }
+
         previous_bundle = None
         if (
             args.refresh_mode == "incremental"
             and state_store is not None
             and resolved_manifest is not None
         ):
-            previous_run = state_store.latest_completed_run_for_manifest(
-                manifest_path=str(resolved_manifest.manifest_path),
-                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
-            )
+            previous_run = review_source_bundle.run if review_source_bundle is not None else None
             if previous_run is not None:
-                previous_bundle = state_store.load_run_bundle(previous_run.run_id)
+                previous_bundle = review_source_bundle
                 previous_config_fingerprint = str(
                     previous_bundle.run.summary.get("run_context", {}).get("config_fingerprint", "")
                 )
@@ -1109,11 +1152,12 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     cluster_output_rows = incremental_result.cluster_output_rows
                     golden_rows = incremental_result.golden_rows
                     crosswalk_rows = incremental_result.crosswalk_rows
+                    active_review_rows = incremental_result.active_review_rows
                     review_rows = incremental_result.review_rows
                     refresh_summary = incremental_result.metadata
                     _write_precomputed_match_outputs(matches_file, match_rows, blocking_metrics_rows)
                     _write_precomputed_cluster_output(clusters_file, cluster_output_rows)
-                    _write_precomputed_review_queue_output(review_queue_file, review_rows)
+                    _write_precomputed_review_queue_output(review_queue_file, active_review_rows)
                     _write_precomputed_golden_output(golden_file, golden_rows)
                     _write_precomputed_crosswalk_output(crosswalk_file, crosswalk_rows)
                 else:
@@ -1138,9 +1182,19 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 print("incremental refresh fell back to full rebuild: no prior completed manifest run found")
 
         if args.refresh_mode != "incremental" or previous_bundle is None or refresh_summary.get("fallback_to_full", False):
-            match_rows, blocking_metrics_rows = _write_match_output(matches_file, normalized_rows, config)
+            match_rows, blocking_metrics_rows = _write_match_output(
+                matches_file,
+                normalized_rows,
+                config,
+                forced_pairs=forced_review_pairs,
+                review_overrides=review_overrides,
+            )
             clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
-            review_rows = _write_manual_review_output(review_queue_file, match_rows)
+            active_review_rows, review_rows = _write_manual_review_output(
+                review_queue_file,
+                match_rows,
+                previous_review_rows=review_source_bundle.review_rows if review_source_bundle is not None else None,
+            )
             golden_rows = _write_golden_output(golden_file, clustered_rows, config)
             crosswalk_rows = _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
             if args.refresh_mode == "full":
@@ -1170,7 +1224,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             decision_counts=dict(decision_counts),
             cluster_count=len({row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}),
             golden_record_count=len(golden_rows),
-            review_queue_count=len(review_rows),
+            review_queue_count=len(active_review_rows),
             summary_updates={
                 "run_context": {
                     "input_mode": input_mode,

@@ -433,8 +433,7 @@ def test_persisted_review_case_workflow_supports_assignment_and_lifecycle_transi
         == 0
     )
     restored_review_rows = _read_csv_rows(base_dir / "data" / "review_queue" / "manual_review_queue.csv")
-    restored_case = next(row for row in restored_review_rows if row["review_id"] == case.review_id)
-    assert restored_case["queue_status"] == "approved"
+    assert all(row["review_id"] != case.review_id for row in restored_review_rows)
 
 
 def test_run_all_records_failed_attempt_and_allows_clean_restart(tmp_path: Path) -> None:
@@ -663,3 +662,264 @@ def test_incremental_manifest_refresh_reuses_unaffected_entities(tmp_path: Path)
         == first_golden_by_id[first_crosswalk_by_record["A-1"]]["address"]
     )
     assert second_golden_by_id[second_crosswalk_by_record["A-2"]]["address"] == "99 Elm Street"
+
+
+def test_approved_review_case_forces_merge_and_replays_across_manifest_reruns(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+    landing_dir = tmp_path / "landing"
+    manifest_path = _write_manifest(
+        tmp_path / "manifest.yml",
+        batch_id="review-approve-001",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+
+    source_a_rows = [
+        _person_row(
+            source_record_id="A-1",
+            person_entity_id="P-1",
+            source_system="source_a",
+            first_name="John",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main St",
+            phone="5551111111",
+        )
+    ]
+    source_b_rows = [
+        _person_row(
+            source_record_id="B-1",
+            person_entity_id="P-2",
+            source_system="source_b",
+            first_name="Jon",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main St",
+            phone="5551111111",
+        )
+    ]
+    _write_csv_rows(landing_dir / "agency_a.csv", source_a_rows)
+    _write_parquet_rows(landing_dir / "agency_b.parquet", source_b_rows)
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "full",
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    first_run_id = store.latest_run_id()
+    assert first_run_id is not None
+    first_bundle = store.load_run_bundle(first_run_id)
+    first_match = first_bundle.candidate_pairs[0]
+    assert first_match["decision"] == "manual_review"
+    assert len(first_bundle.golden_rows) == 2
+
+    review_case = store.list_review_cases(run_id=first_run_id)[0]
+    updated_case = store.update_review_case(
+        run_id=first_run_id,
+        review_id=review_case.review_id,
+        queue_status="approved",
+        operator_notes="Approved by analyst",
+        updated_at_utc="2026-03-14T03:10:00Z",
+    )
+    assert updated_case.queue_status == "approved"
+
+    _write_manifest(
+        manifest_path,
+        batch_id="review-approve-002",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "incremental",
+            ]
+        )
+        == 0
+    )
+
+    second_run_id = store.latest_run_id()
+    assert second_run_id is not None and second_run_id != first_run_id
+    second_bundle = store.load_run_bundle(second_run_id)
+    second_match = second_bundle.candidate_pairs[0]
+    second_summary = second_bundle.run.summary
+
+    assert second_match["decision"] == "auto_merge"
+    assert "review_case_approved_override" in second_match["reason_trace"]
+    assert len(second_bundle.golden_rows) == 1
+    assert second_summary["review_queue_count"] == 0
+    assert second_summary["cluster_count"] == 1
+    assert second_bundle.review_rows[0]["queue_status"] == "approved"
+
+    _write_manifest(
+        manifest_path,
+        batch_id="review-approve-003",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "incremental",
+            ]
+        )
+        == 0
+    )
+
+    third_run_id = store.latest_run_id()
+    assert third_run_id is not None and third_run_id != second_run_id
+    third_bundle = store.load_run_bundle(third_run_id)
+    refresh = third_bundle.run.summary["refresh"]
+    assert third_bundle.candidate_pairs[0]["decision"] == "auto_merge"
+    assert len(third_bundle.golden_rows) == 1
+    assert refresh["affected_record_count"] == 0
+    assert refresh["reused_candidate_pair_count"] == 1
+
+
+def test_rejected_review_case_blocks_future_auto_merge_on_manifest_rerun(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+    landing_dir = tmp_path / "landing"
+    manifest_path = _write_manifest(
+        tmp_path / "manifest.yml",
+        batch_id="review-reject-001",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+
+    initial_source_a_rows = [
+        _person_row(
+            source_record_id="A-1",
+            person_entity_id="P-1",
+            source_system="source_a",
+            first_name="John",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main St",
+            phone="5551111111",
+        )
+    ]
+    initial_source_b_rows = [
+        _person_row(
+            source_record_id="B-1",
+            person_entity_id="P-2",
+            source_system="source_b",
+            first_name="Jon",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main St",
+            phone="5551111111",
+        )
+    ]
+    _write_csv_rows(landing_dir / "agency_a.csv", initial_source_a_rows)
+    _write_parquet_rows(landing_dir / "agency_b.parquet", initial_source_b_rows)
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "full",
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    first_run_id = store.latest_run_id()
+    assert first_run_id is not None
+    review_case = store.list_review_cases(run_id=first_run_id)[0]
+    updated_case = store.update_review_case(
+        run_id=first_run_id,
+        review_id=review_case.review_id,
+        queue_status="rejected",
+        operator_notes="Do not merge",
+        updated_at_utc="2026-03-14T03:15:00Z",
+    )
+    assert updated_case.queue_status == "rejected"
+
+    updated_source_b_rows = [
+        _person_row(
+            source_record_id="B-1",
+            person_entity_id="P-2",
+            source_system="source_b",
+            first_name="John",
+            last_name="Smith",
+            dob="1985-03-12",
+            address="123 Main St",
+            phone="5551111111",
+        )
+    ]
+    _write_manifest(
+        manifest_path,
+        batch_id="review-reject-002",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+    _write_csv_rows(landing_dir / "agency_a.csv", initial_source_a_rows)
+    _write_parquet_rows(landing_dir / "agency_b.parquet", updated_source_b_rows)
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "incremental",
+            ]
+        )
+        == 0
+    )
+
+    second_run_id = store.latest_run_id()
+    assert second_run_id is not None and second_run_id != first_run_id
+    second_bundle = store.load_run_bundle(second_run_id)
+    second_match = second_bundle.candidate_pairs[0]
+
+    assert second_match["score"] == "1.0" or float(second_match["score"]) == 1.0
+    assert second_match["decision"] == "no_match"
+    assert "review_case_rejected_override" in second_match["reason_trace"]
+    assert len(second_bundle.golden_rows) == 2
+    assert second_bundle.run.summary["review_queue_count"] == 0
+    assert second_bundle.review_rows[0]["queue_status"] == "rejected"

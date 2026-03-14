@@ -61,11 +61,15 @@ Both commands emit JSON so operators can script around them.
 
 ## Current Boundary
 
-This issue adds durable case state and transitions only.
+This workflow now includes decision application on later persisted
+manifest reruns:
+
+- `approved` forces the reviewed pair into `auto_merge`
+- `rejected` forces the reviewed pair into `no_match`
+- those overrides are applied before cluster and golden rebuilds
 
 It does not yet:
 
-- apply approved or rejected decisions back into cluster rebuilds
 - publish review workflow APIs
 - add full operator replay tooling
 

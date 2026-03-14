@@ -31,6 +31,9 @@ All notable changes to this project will be documented in this file.
 - Persisted manual-review case workflow support with durable assignee,
   notes, timestamps, lifecycle status, and CLI inspection/update
   commands.
+- Review-decision override support on persisted reruns, so approved
+  cases can force merges and rejected cases can block later
+  cluster/golden rebuilds.
 
 ### Changed
 
@@ -50,6 +53,9 @@ All notable changes to this project will be documented in this file.
 - Persisted review-case rows now survive run reuse and expose the
   `pending`, `approved`, `rejected`, and `deferred` lifecycle states
   through SQLite-backed workflow commands.
+- Later manifest-driven reruns now carry approved/rejected review
+  decisions forward into candidate decisions, active-queue projection,
+  cluster assignments, and golden-record rebuilds.
 
 ## [0.1.4] - 2026-03-13
 
