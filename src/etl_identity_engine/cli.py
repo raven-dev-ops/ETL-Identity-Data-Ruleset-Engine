@@ -57,6 +57,7 @@ from etl_identity_engine.runtime_config import (
     load_pipeline_config,
     load_runtime_environment,
 )
+from etl_identity_engine.service_api import create_service_app
 from etl_identity_engine.storage.migration_runner import (
     current_sqlite_store_revision,
     head_revision,
@@ -105,6 +106,7 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
         "review-case-list",
         "review-case-update",
         "publish-delivery",
+        "serve-api",
         "run-all",
     }:
         state_db_should_default = True
@@ -979,6 +981,14 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     print(f"delivery pointer updated: {published.current_pointer_path}")
 
 
+def _cmd_serve_api(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    state_db = _require_state_db(args)
+    app = create_service_app(state_db)
+    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+
+
 def _cmd_report(args: argparse.Namespace) -> None:
     (
         input_file,
@@ -1501,6 +1511,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Versioned consumer contract to publish. Defaults to the current stable delivery contract.",
     )
     publish_delivery_parser.set_defaults(func=_cmd_publish_delivery)
+
+    serve_api_parser = subparsers.add_parser(
+        "serve-api",
+        help="Serve the operator API over a persisted SQLite state database.",
+    )
+    serve_api_parser.add_argument("--environment", default=None)
+    serve_api_parser.add_argument("--runtime-config", default=None)
+    serve_api_parser.add_argument("--state-db", default=None)
+    serve_api_parser.add_argument("--host", default="127.0.0.1")
+    serve_api_parser.add_argument("--port", default=8000, type=int)
+    serve_api_parser.add_argument("--log-level", default="info")
+    serve_api_parser.set_defaults(func=_cmd_serve_api)
 
     run_all_parser = subparsers.add_parser("run-all", help="Run all scaffold stages in sequence.")
     run_all_parser.add_argument("--base-dir", default=".")

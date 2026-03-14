@@ -646,6 +646,39 @@ class SQLitePipelineStore:
             ).fetchall()
         return [_row_to_strings(row, headers) for row in rows]
 
+    def _load_single_artifact_row(
+        self,
+        table_name: str,
+        *,
+        run_id: str,
+        filters: dict[str, str],
+    ) -> dict[str, str]:
+        headers = ARTIFACT_HEADERS[table_name]
+        where_parts = ["run_id = ?"]
+        parameters: list[str] = [run_id]
+        for column, value in filters.items():
+            where_parts.append(f"{column} = ?")
+            parameters.append(value)
+        where_clause = " AND ".join(where_parts)
+
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                f"""
+                SELECT {", ".join(headers)}
+                FROM {table_name}
+                WHERE {where_clause}
+                ORDER BY row_index ASC
+                LIMIT 1
+                """,
+                parameters,
+            ).fetchone()
+        if row is None:
+            filter_text = ", ".join(f"{column}={value}" for column, value in filters.items())
+            raise FileNotFoundError(
+                f"Persisted {table_name} row not found: run_id={run_id} {filter_text}"
+            )
+        return _row_to_strings(row, headers)
+
     def load_run_bundle(self, run_id: str) -> PersistedRunBundle:
         run = self.load_run_record(run_id)
         return PersistedRunBundle(
@@ -657,6 +690,30 @@ class SQLitePipelineStore:
             golden_rows=self._load_artifact_rows("golden_records", run_id),
             crosswalk_rows=self._load_artifact_rows("source_to_golden_crosswalk", run_id),
             review_rows=self._load_artifact_rows("review_cases", run_id),
+        )
+
+    def load_golden_record(
+        self,
+        *,
+        run_id: str,
+        golden_id: str,
+    ) -> dict[str, str]:
+        return self._load_single_artifact_row(
+            "golden_records",
+            run_id=run_id,
+            filters={"golden_id": golden_id},
+        )
+
+    def load_crosswalk_record_for_source(
+        self,
+        *,
+        run_id: str,
+        source_record_id: str,
+    ) -> dict[str, str]:
+        return self._load_single_artifact_row(
+            "source_to_golden_crosswalk",
+            run_id=run_id,
+            filters={"source_record_id": source_record_id},
         )
 
     def list_review_cases(

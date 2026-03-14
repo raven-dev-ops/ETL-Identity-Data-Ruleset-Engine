@@ -133,10 +133,10 @@ is included in the repository.
 - The runtime now supports two input modes: synthetic generation for
   safe experimentation and manifest-driven landed batches for
   production-style evaluation. Local filesystem and object-storage-
-  compatible landing zones are supported. Persisted SQLite state and
-  manifest-driven incremental refresh are now available; service
-  workflows remain follow-on work rather than implicit capabilities of
-  the current line.
+  compatible landing zones are supported. Persisted SQLite state,
+  manifest-driven incremental refresh, and a read-only operator service
+  API are now available. Write-side service actions remain follow-on
+  work rather than implicit capabilities of the current line.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
@@ -173,6 +173,7 @@ is included in the repository.
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Persistent State](docs/persistent-state.md)
 - [Review Workflow](docs/review-workflow.md)
+- [Service API](docs/service-api.md)
 - [Runtime Environments](docs/runtime-environments.md)
 - [Matching and Thresholds](docs/matching-and-thresholds.md)
 - [Survivorship](docs/survivorship.md)
@@ -212,7 +213,8 @@ This repository now includes a working `M1` scaffold:
 
 - Python package skeleton under `src/etl_identity_engine/`
 - stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
-  `review-queue`, `golden`, `report`, `publish-delivery`, `run-all`
+  `review-queue`, `golden`, `report`, `publish-delivery`, `serve-api`,
+  `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
 - governance files: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
@@ -277,6 +279,12 @@ support durable review-case state through `review-case-list` and
 `review-case-update`. Approved and rejected review decisions now apply
 to later persisted reruns, forcing merge or non-merge outcomes before
 cluster and golden rebuilds.
+
+Persisted SQLite state can also now be served through a read-only
+operator API with `serve-api`. That surface exposes run status, golden
+record lookups, source-to-golden crosswalk lookups, and persisted
+review-case retrieval for downstream systems and operators. The service
+contract is documented in [docs/service-api.md](docs/service-api.md).
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

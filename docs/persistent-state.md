@@ -45,6 +45,15 @@ python -m etl_identity_engine.cli publish-delivery \
   --output-dir published/delivery
 ```
 
+You can also serve persisted state through the read-only operator API:
+
+```bash
+python -m etl_identity_engine.cli serve-api \
+  --state-db data/state/pipeline_state.sqlite \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
 ## Tables
 
 The current schema includes:
@@ -214,6 +223,17 @@ The publish path:
 The consumer-facing contract is documented in
 [delivery-contracts.md](delivery-contracts.md).
 
+## Service Access
+
+The persisted store now also supports a read-only service surface for:
+
+- run status lookup
+- golden-record lookup
+- source-to-golden crosswalk lookup
+- review-case retrieval
+
+That API contract is documented in [service-api.md](service-api.md).
+
 ## Current Boundary
 
 This issue adds durable relational persistence, a basic run registry,
@@ -223,6 +243,7 @@ contract, not full orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints
-- service APIs over the persisted store
+- authenticated or write-capable service actions over the persisted
+  store
 
 Those remain tracked follow-on work in the active backlog.

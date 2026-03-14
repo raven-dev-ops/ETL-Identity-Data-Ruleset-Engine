@@ -70,7 +70,7 @@ manifest reruns:
 
 It does not yet:
 
-- publish review workflow APIs
+- expose write-side review workflow APIs
 - add full operator replay tooling
 
 Those remain tracked in the active backlog.

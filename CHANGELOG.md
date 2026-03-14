@@ -34,6 +34,8 @@ All notable changes to this project will be documented in this file.
 - Review-decision override support on persisted reruns, so approved
   cases can force merges and rejected cases can block later
   cluster/golden rebuilds.
+- A read-only operator service API for persisted run status, golden
+  record lookup, crosswalk lookup, and review-case retrieval.
 
 ### Changed
 
@@ -56,6 +58,9 @@ All notable changes to this project will be documented in this file.
 - Later manifest-driven reruns now carry approved/rejected review
   decisions forward into candidate decisions, active-queue projection,
   cluster assignments, and golden-record rebuilds.
+- The runtime now exposes `serve-api` for local and CI-accessible
+  operator queries over persisted SQLite state with explicit request and
+  response validation.
 
 ## [0.1.4] - 2026-03-13
 

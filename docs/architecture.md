@@ -9,8 +9,9 @@ golden records, and reporting artifacts.
 
 - The current runtime supports synthetic generation plus manifest-driven
   local and object-storage-compatible landed batches. Persisted SQLite
-  state is now supported; service workflows remain tracked follow-on
-  work rather than implicit capabilities of the current line.
+  state is now supported, and a read-only operator service API now
+  exposes persisted run, golden, crosswalk, and review-case lookups.
+  Write-side service workflows remain tracked follow-on work.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -60,6 +61,10 @@ golden records, and reporting artifacts.
      source-to-golden crosswalk
    - Updates an atomic `current.json` consumer pointer under the
      versioned delivery-contract root
+10. `serve-api`
+   - Reads persisted SQLite state through a local HTTP service
+   - Exposes run status, golden-record lookup, source-to-golden
+     crosswalk lookup, and review-case retrieval
 
 ## Config Surfaces
 
@@ -116,6 +121,8 @@ summary.
 `publish-delivery --state-db ...` can then materialize a versioned
 golden/crosswalk snapshot from any completed persisted run without
 needing the original working-directory files.
+`serve-api --state-db ...` can expose the same persisted state through a
+read-only operator API for local and CI integration testing.
 
 ## Output Layout
 
@@ -142,6 +149,7 @@ The current manual-review model now has two surfaces:
   SQLite with lifecycle status, assignee, timestamps, and notes
 - operators can inspect and update persisted cases through
   `review-case-list` and `review-case-update`
+- service consumers can retrieve persisted cases through `serve-api`
 - approved review decisions force future merge outcomes and rejected
   review decisions block future merges on persisted reruns of the same
   manifest lineage
