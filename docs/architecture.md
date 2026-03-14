@@ -84,6 +84,9 @@ The runtime now supports optional SQLite-backed persistence for:
 `report --state-db ... --run-id ...` can reload that state to reproduce
 the reporting slice from the database instead of the filesystem. The
 state schema is documented in [persistent-state.md](persistent-state.md).
+The registry now records `running`, `completed`, and `failed` attempts,
+reuses completed runs idempotently, and treats failed reruns as clean
+restart attempts under the same `run_key`.
 
 ## Output Layout
 

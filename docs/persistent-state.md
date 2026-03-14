@@ -43,6 +43,8 @@ The current schema includes:
 `pipeline_runs` stores:
 
 - `run_id`
+- `run_key`
+- `attempt_number`
 - `batch_id`
 - `input_mode`
 - `manifest_path`
@@ -59,7 +61,45 @@ The current schema includes:
 - `cluster_count`
 - `golden_record_count`
 - `review_queue_count`
+- `failure_detail`
 - `summary_json`
+
+## Lifecycle Semantics
+
+The run registry now uses these statuses:
+
+- `running`
+- `completed`
+- `failed`
+
+When `run-all --state-db ...` starts, it registers a `running` attempt
+before the main pipeline work begins. On success, that attempt is
+updated to `completed`. On failure, the attempt is updated to `failed`
+with the operator-readable error text in `failure_detail`.
+
+## Idempotent Replay Model
+
+Completed runs are deduplicated by a stable `run_key` derived from the
+input mode plus the batch-or-config identity for the invocation.
+
+If `run-all` is called again with the same persisted run inputs and a
+completed run already exists:
+
+- the runtime does not create a second completed run row
+- persisted artifact rows are not duplicated
+- file artifacts are restored from persisted state into the requested
+  `base_dir`
+
+## Failed-Run Restart Model
+
+The current restart model is a clean restart, not an in-place resume.
+
+If the latest attempt for a given `run_key` failed:
+
+- rerunning the same persisted invocation starts a new attempt
+- the failed attempt remains in the registry for auditability
+- the next successful attempt completes under the same `run_key` with a
+  higher `attempt_number`
 
 ## Artifact Storage
 
@@ -74,11 +114,11 @@ reloaded in the same sequence as the file artifacts.
 
 ## Current Boundary
 
-This issue adds durable relational persistence, not full orchestration.
+This issue adds durable relational persistence and a basic run registry,
+not full orchestration.
 The current line does not yet provide:
 
-- idempotent replay semantics
-- persisted failure-state recovery
+- persisted failure-state resume from mid-pipeline checkpoints
 - migration tooling beyond schema bootstrap
 - service APIs over the persisted store
 

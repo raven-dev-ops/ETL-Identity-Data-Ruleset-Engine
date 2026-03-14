@@ -40,7 +40,7 @@ from etl_identity_engine.runtime_config import PipelineConfig, load_pipeline_con
 from etl_identity_engine.storage.sqlite_store import (
     PersistRunMetadata,
     SQLitePipelineStore,
-    build_run_id,
+    build_run_key,
 )
 from etl_identity_engine.survivorship.rules_engine import build_golden_records
 
@@ -608,6 +608,56 @@ def _write_quality_outputs(
     return summary
 
 
+def _resolve_run_key_args(args: argparse.Namespace) -> dict[str, object | None]:
+    manifest_path = getattr(args, "manifest", None)
+    return {
+        "input_mode": "manifest" if manifest_path else "synthetic",
+        "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else None,
+        "config_dir": str(Path(args.config_dir).resolve()) if args.config_dir else None,
+        "profile": None if manifest_path else args.profile,
+        "seed": None if manifest_path else args.seed,
+        "duplicate_rate": None if manifest_path else args.duplicate_rate,
+        "formats": None if manifest_path else args.formats,
+    }
+
+
+def _restore_persisted_run_outputs(base: Path, bundle) -> None:
+    normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
+    matches_file = base / "data" / "matches" / "candidate_scores.csv"
+    clusters_file = base / "data" / "matches" / "entity_clusters.csv"
+    golden_file = base / "data" / "golden" / "golden_person_records.csv"
+    crosswalk_file = base / "data" / "golden" / "source_to_golden_crosswalk.csv"
+    review_queue_file = base / "data" / "review_queue" / "manual_review_queue.csv"
+    report_file = base / "data" / "exceptions" / "run_report.md"
+
+    write_csv_dicts(normalized_file, bundle.normalized_rows, fieldnames=NORMALIZED_HEADERS)
+    write_csv_dicts(matches_file, bundle.candidate_pairs, fieldnames=MATCH_SCORE_HEADERS)
+    write_csv_dicts(
+        matches_file.with_name("blocking_metrics.csv"),
+        bundle.blocking_metrics_rows,
+        fieldnames=BLOCKING_METRICS_HEADERS,
+    )
+    write_csv_dicts(clusters_file, bundle.cluster_rows, fieldnames=ENTITY_CLUSTER_HEADERS)
+    write_csv_dicts(golden_file, bundle.golden_rows, fieldnames=GOLDEN_HEADERS)
+    write_csv_dicts(crosswalk_file, bundle.crosswalk_rows, fieldnames=CROSSWALK_HEADERS)
+    write_csv_dicts(review_queue_file, bundle.review_rows, fieldnames=MANUAL_REVIEW_HEADERS)
+
+    exception_rows = extract_exception_rows(bundle.normalized_rows)
+    for exception_type, records in exception_rows.items():
+        write_csv_dicts(
+            report_file.parent / f"{exception_type}.csv",
+            records,
+            fieldnames=EXCEPTION_HEADERS,
+        )
+
+    display_input_path = os.path.relpath(normalized_file, report_file.parent).replace("\\", "/")
+    write_markdown(report_file, build_run_report_markdown(display_input_path, bundle.run.summary))
+    report_file.with_name("run_summary.json").write_text(
+        json.dumps(bundle.run.summary, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def _cmd_generate(args: argparse.Namespace) -> None:
     output_dir = Path(args.output)
     formats = _parse_formats(args.formats)
@@ -690,10 +740,12 @@ def _cmd_report(args: argparse.Namespace) -> None:
 
 def _cmd_run_all(args: argparse.Namespace) -> None:
     base = Path(args.base_dir)
-    config = _load_config(args.config_dir)
     state_store = SQLitePipelineStore(Path(args.state_db)) if args.state_db else None
-    run_started = datetime.now(timezone.utc)
-    run_id = build_run_id(run_started)
+    run_started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    run_key_args = _resolve_run_key_args(args)
+    run_key = build_run_key(**run_key_args)
+    run_id: str | None = None
+    attempt_number = 0
     normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
     matches_file = base / "data" / "matches" / "candidate_scores.csv"
     clusters_file = base / "data" / "matches" / "entity_clusters.csv"
@@ -702,87 +754,121 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     review_queue_file = base / "data" / "review_queue" / "manual_review_queue.csv"
     report_file = base / "data" / "exceptions" / "run_report.md"
 
-    manifest_path = getattr(args, "manifest", None)
-    resolved_manifest: ResolvedBatchManifest | None = None
-    input_mode = "manifest" if manifest_path else "synthetic"
-    batch_id: str | None = None
-    formats_value: str | None = None
-    if manifest_path:
-        resolved_manifest = _resolve_manifest_inputs(manifest_path)
-        batch_id = resolved_manifest.manifest.batch_id
-        print(
-            f"validated batch manifest: {resolved_manifest.manifest_path} "
-            f"(batch_id={resolved_manifest.manifest.batch_id})"
-        )
-        for path in resolved_manifest.input_paths:
-            print(f" - {path}")
-        normalized_rows = _write_normalized_output(
-            normalized_file,
-            resolved_manifest.all_rows(),
-            config,
-        )
-    else:
-        formats = _parse_formats(args.formats)
-        formats_value = ",".join(formats)
-        batch_id = f"synthetic:{args.profile}:{args.seed}"
-        synthetic_dir = base / "data" / "synthetic_sources"
-        generate_synthetic_sources(
-            output_dir=synthetic_dir,
-            profile=args.profile,
-            seed=args.seed,
-            duplicate_rate=args.duplicate_rate,
-            formats=formats,
-        )
-        normalized_rows = _write_normalized_output(
-            normalized_file,
-            _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
-            config,
-        )
-    match_rows, blocking_metrics_rows = _write_match_output(matches_file, normalized_rows, config)
-    clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
-    review_rows = _write_manual_review_output(review_queue_file, match_rows)
-    golden_rows = _write_golden_output(golden_file, clustered_rows, config)
-    _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
-
-    decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
-    summary = _write_quality_outputs(
-        report_file,
-        normalized_file,
-        normalized_rows,
-        candidate_pair_count=len(match_rows),
-        decision_counts=dict(decision_counts),
-        cluster_count=len({row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}),
-        golden_record_count=len(golden_rows),
-        review_queue_count=len(review_rows),
-    )
-    crosswalk_rows = _build_crosswalk_rows(clustered_rows, golden_rows)
     if state_store is not None:
-        state_store.persist_run(
-            metadata=PersistRunMetadata(
-                run_id=run_id,
-                batch_id=batch_id,
-                input_mode=input_mode,
-                manifest_path=str(resolved_manifest.manifest_path) if resolved_manifest else None,
-                base_dir=str(base.resolve()),
-                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
-                profile=None if manifest_path else args.profile,
-                seed=None if manifest_path else args.seed,
-                formats=formats_value,
-                started_at_utc=run_started.isoformat().replace("+00:00", "Z"),
-                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                status="completed",
-            ),
-            normalized_rows=normalized_rows,
-            match_rows=match_rows,
-            blocking_metrics_rows=blocking_metrics_rows,
-            cluster_rows=read_dict_rows(clusters_file),
-            golden_rows=golden_rows,
-            crosswalk_rows=crosswalk_rows,
-            review_rows=review_rows,
-            summary=summary,
+        start_decision = state_store.begin_run(
+            run_key=run_key,
+            batch_id=None,
+            input_mode=str(run_key_args["input_mode"]),
+            manifest_path=run_key_args["manifest_path"],
+            base_dir=str(base.resolve()),
+            config_dir=run_key_args["config_dir"],
+            profile=run_key_args["profile"],
+            seed=run_key_args["seed"],
+            formats=run_key_args["formats"],
+            started_at_utc=run_started,
         )
-        print(f"persisted run state: {Path(args.state_db)} (run_id={run_id})")
-    print("pipeline run complete")
+        if start_decision.action == "reuse_completed":
+            bundle = state_store.load_run_bundle(start_decision.run_id)
+            _restore_persisted_run_outputs(base, bundle)
+            print(f"reused persisted completed run: {Path(args.state_db)} (run_id={bundle.run.run_id})")
+            print("pipeline run complete")
+            return
+        run_id = start_decision.run_id
+        attempt_number = start_decision.attempt_number
+
+    try:
+        config = _load_config(args.config_dir)
+        manifest_path = getattr(args, "manifest", None)
+        resolved_manifest: ResolvedBatchManifest | None = None
+        input_mode = "manifest" if manifest_path else "synthetic"
+        batch_id: str | None = None
+        formats_value: str | None = None
+        if manifest_path:
+            resolved_manifest = _resolve_manifest_inputs(manifest_path)
+            batch_id = resolved_manifest.manifest.batch_id
+            print(
+                f"validated batch manifest: {resolved_manifest.manifest_path} "
+                f"(batch_id={resolved_manifest.manifest.batch_id})"
+            )
+            for path in resolved_manifest.input_paths:
+                print(f" - {path}")
+            normalized_rows = _write_normalized_output(
+                normalized_file,
+                resolved_manifest.all_rows(),
+                config,
+            )
+        else:
+            formats = _parse_formats(args.formats)
+            formats_value = ",".join(formats)
+            batch_id = f"synthetic:{args.profile}:{args.seed}"
+            synthetic_dir = base / "data" / "synthetic_sources"
+            generate_synthetic_sources(
+                output_dir=synthetic_dir,
+                profile=args.profile,
+                seed=args.seed,
+                duplicate_rate=args.duplicate_rate,
+                formats=formats,
+            )
+            normalized_rows = _write_normalized_output(
+                normalized_file,
+                _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
+                config,
+            )
+        match_rows, blocking_metrics_rows = _write_match_output(matches_file, normalized_rows, config)
+        clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
+        review_rows = _write_manual_review_output(review_queue_file, match_rows)
+        golden_rows = _write_golden_output(golden_file, clustered_rows, config)
+        _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
+
+        decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
+        summary = _write_quality_outputs(
+            report_file,
+            normalized_file,
+            normalized_rows,
+            candidate_pair_count=len(match_rows),
+            decision_counts=dict(decision_counts),
+            cluster_count=len({row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}),
+            golden_record_count=len(golden_rows),
+            review_queue_count=len(review_rows),
+        )
+        crosswalk_rows = _build_crosswalk_rows(clustered_rows, golden_rows)
+        if state_store is not None and run_id is not None:
+            state_store.persist_run(
+                metadata=PersistRunMetadata(
+                    run_id=run_id,
+                    run_key=run_key,
+                    attempt_number=attempt_number,
+                    batch_id=batch_id,
+                    input_mode=input_mode,
+                    manifest_path=str(resolved_manifest.manifest_path) if resolved_manifest else None,
+                    base_dir=str(base.resolve()),
+                    config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+                    profile=None if manifest_path else args.profile,
+                    seed=None if manifest_path else args.seed,
+                    formats=formats_value,
+                    started_at_utc=run_started,
+                    finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    status="completed",
+                ),
+                normalized_rows=normalized_rows,
+                match_rows=match_rows,
+                blocking_metrics_rows=blocking_metrics_rows,
+                cluster_rows=read_dict_rows(clusters_file),
+                golden_rows=golden_rows,
+                crosswalk_rows=crosswalk_rows,
+                review_rows=review_rows,
+                summary=summary,
+            )
+            print(f"persisted run state: {Path(args.state_db)} (run_id={run_id})")
+        print("pipeline run complete")
+    except Exception as exc:
+        if state_store is not None and run_id is not None:
+            state_store.mark_run_failed(
+                run_id=run_id,
+                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                failure_detail=str(exc),
+            )
+        raise
 
 
 def build_parser() -> argparse.ArgumentParser:

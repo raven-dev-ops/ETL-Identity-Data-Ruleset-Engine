@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
   `memory://` batches.
 - Optional SQLite-backed persistence for completed runs and core
   pipeline artifacts, plus a persisted-state reload path for `report`.
+- Run-registry lifecycle support for persisted executions, including
+  `running`/`completed`/`failed` status, failure detail capture,
+  idempotent completed-run reuse, and clean restart attempts after
+  failure.
 
 ### Changed
 

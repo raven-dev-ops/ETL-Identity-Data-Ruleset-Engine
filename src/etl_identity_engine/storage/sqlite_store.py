@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -20,7 +21,7 @@ from etl_identity_engine.output_contracts import (
 )
 
 
-RUN_STATUSES = frozenset({"completed"})
+RUN_STATUSES = frozenset({"running", "completed", "failed"})
 ARTIFACT_TABLE_NAMES = (
     "normalized_source_records",
     "candidate_pairs",
@@ -35,6 +36,8 @@ ARTIFACT_TABLE_NAMES = (
 @dataclass(frozen=True)
 class PipelineRunRecord:
     run_id: str
+    run_key: str
+    attempt_number: int
     batch_id: str | None
     input_mode: str
     manifest_path: str | None
@@ -51,6 +54,7 @@ class PipelineRunRecord:
     cluster_count: int
     golden_record_count: int
     review_queue_count: int
+    failure_detail: str | None
     summary: dict[str, object]
 
 
@@ -69,6 +73,8 @@ class PersistedRunBundle:
 @dataclass(frozen=True)
 class PersistRunMetadata:
     run_id: str
+    run_key: str
+    attempt_number: int
     batch_id: str | None
     input_mode: str
     manifest_path: str | None
@@ -80,6 +86,16 @@ class PersistRunMetadata:
     started_at_utc: str
     finished_at_utc: str
     status: str
+    failure_detail: str | None = None
+
+
+@dataclass(frozen=True)
+class RunStartDecision:
+    action: str
+    run_id: str
+    run_key: str
+    attempt_number: int
+    started_at_utc: str
 
 
 ARTIFACT_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
@@ -142,6 +158,33 @@ def build_run_id(now: datetime | None = None) -> str:
     return f"RUN-{timestamp}-{uuid4().hex[:8].upper()}"
 
 
+def build_run_key(
+    *,
+    input_mode: str,
+    manifest_path: str | None,
+    config_dir: str | None,
+    profile: str | None,
+    seed: int | None,
+    duplicate_rate: float | None,
+    formats: str | None,
+) -> str:
+    payload = json.dumps(
+        {
+            "input_mode": input_mode,
+            "manifest_path": manifest_path,
+            "config_dir": config_dir,
+            "profile": profile,
+            "seed": seed,
+            "duplicate_rate": duplicate_rate,
+            "formats": formats,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16].upper()
+    return f"RK-{digest}"
+
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
@@ -175,6 +218,8 @@ def bootstrap_sqlite_store(db_path: Path) -> None:
             """
             CREATE TABLE IF NOT EXISTS pipeline_runs (
                 run_id TEXT PRIMARY KEY,
+                run_key TEXT,
+                attempt_number INTEGER,
                 batch_id TEXT,
                 input_mode TEXT NOT NULL,
                 manifest_path TEXT,
@@ -191,8 +236,30 @@ def bootstrap_sqlite_store(db_path: Path) -> None:
                 cluster_count INTEGER NOT NULL,
                 golden_record_count INTEGER NOT NULL,
                 review_queue_count INTEGER NOT NULL,
+                failure_detail TEXT,
                 summary_json TEXT NOT NULL
             )
+            """
+        )
+        _ensure_pipeline_runs_columns(connection)
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_runs_completed_run_key
+            ON pipeline_runs (run_key)
+            WHERE status = 'completed'
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_runs_running_run_key
+            ON pipeline_runs (run_key)
+            WHERE status = 'running'
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_pipeline_runs_run_key
+            ON pipeline_runs (run_key, attempt_number)
             """
         )
 
@@ -212,6 +279,21 @@ def bootstrap_sqlite_store(db_path: Path) -> None:
         connection.commit()
 
 
+def _ensure_pipeline_runs_columns(connection: sqlite3.Connection) -> None:
+    rows = connection.execute("PRAGMA table_info(pipeline_runs)").fetchall()
+    existing_columns = {str(row["name"]) for row in rows}
+    required_columns = {
+        "run_key": "TEXT",
+        "attempt_number": "INTEGER",
+        "failure_detail": "TEXT",
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE pipeline_runs ADD COLUMN {column_name} {column_type}"
+            )
+
+
 def _row_to_strings(row: sqlite3.Row, headers: tuple[str, ...]) -> dict[str, str]:
     resolved: dict[str, str] = {}
     for header in headers:
@@ -228,7 +310,97 @@ class SQLitePipelineStore:
     def _clear_existing_run(self, connection: sqlite3.Connection, run_id: str) -> None:
         for table_name in ARTIFACT_TABLE_NAMES:
             connection.execute(f"DELETE FROM {table_name} WHERE run_id = ?", (run_id,))
-        connection.execute("DELETE FROM pipeline_runs WHERE run_id = ?", (run_id,))
+        
+    def begin_run(
+        self,
+        *,
+        run_key: str,
+        batch_id: str | None,
+        input_mode: str,
+        manifest_path: str | None,
+        base_dir: str,
+        config_dir: str | None,
+        profile: str | None,
+        seed: int | None,
+        formats: str | None,
+        started_at_utc: str,
+    ) -> RunStartDecision:
+        with _connect(self.db_path) as connection:
+            completed = connection.execute(
+                """
+                SELECT run_id, attempt_number
+                FROM pipeline_runs
+                WHERE run_key = ? AND status = 'completed'
+                ORDER BY attempt_number DESC
+                LIMIT 1
+                """,
+                (run_key,),
+            ).fetchone()
+            if completed is not None:
+                return RunStartDecision(
+                    action="reuse_completed",
+                    run_id=str(completed["run_id"]),
+                    run_key=run_key,
+                    attempt_number=int(completed["attempt_number"] or 1),
+                    started_at_utc=started_at_utc,
+                )
+
+            attempt_row = connection.execute(
+                "SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt FROM pipeline_runs WHERE run_key = ?",
+                (run_key,),
+            ).fetchone()
+            attempt_number = int(attempt_row["max_attempt"] or 0) + 1
+            run_id = build_run_id(datetime.fromisoformat(started_at_utc.replace("Z", "+00:00")))
+            connection.execute(
+                """
+                INSERT INTO pipeline_runs (
+                    run_id,
+                    run_key,
+                    attempt_number,
+                    batch_id,
+                    input_mode,
+                    manifest_path,
+                    base_dir,
+                    config_dir,
+                    profile,
+                    seed,
+                    formats,
+                    status,
+                    started_at_utc,
+                    finished_at_utc,
+                    total_records,
+                    candidate_pair_count,
+                    cluster_count,
+                    golden_record_count,
+                    review_queue_count,
+                    failure_detail,
+                    summary_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, '', 0, 0, 0, 0, 0, '', '{}')
+                """,
+                (
+                    run_id,
+                    run_key,
+                    attempt_number,
+                    batch_id,
+                    input_mode,
+                    manifest_path,
+                    base_dir,
+                    config_dir,
+                    profile,
+                    seed,
+                    formats,
+                    started_at_utc,
+                ),
+            )
+            connection.commit()
+
+        return RunStartDecision(
+            action="start_new",
+            run_id=run_id,
+            run_key=run_key,
+            attempt_number=attempt_number,
+            started_at_utc=started_at_utc,
+        )
 
     def _persist_artifact_rows(
         self,
@@ -265,36 +437,39 @@ class SQLitePipelineStore:
         review_rows: list[dict[str, str | float]],
         summary: dict[str, object],
     ) -> None:
-        if metadata.status not in RUN_STATUSES:
+        if metadata.status != "completed":
             raise ValueError(f"Unsupported persisted run status: {metadata.status}")
 
         with _connect(self.db_path) as connection:
             self._clear_existing_run(connection, metadata.run_id)
             connection.execute(
                 """
-                INSERT INTO pipeline_runs (
-                    run_id,
-                    batch_id,
-                    input_mode,
-                    manifest_path,
-                    base_dir,
-                    config_dir,
-                    profile,
-                    seed,
-                    formats,
-                    status,
-                    started_at_utc,
-                    finished_at_utc,
-                    total_records,
-                    candidate_pair_count,
-                    cluster_count,
-                    golden_record_count,
-                    review_queue_count,
-                    summary_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE pipeline_runs
+                SET run_key = ?,
+                    attempt_number = ?,
+                    batch_id = ?,
+                    input_mode = ?,
+                    manifest_path = ?,
+                    base_dir = ?,
+                    config_dir = ?,
+                    profile = ?,
+                    seed = ?,
+                    formats = ?,
+                    status = ?,
+                    started_at_utc = ?,
+                    finished_at_utc = ?,
+                    total_records = ?,
+                    candidate_pair_count = ?,
+                    cluster_count = ?,
+                    golden_record_count = ?,
+                    review_queue_count = ?,
+                    failure_detail = ?,
+                    summary_json = ?
+                WHERE run_id = ?
                 """,
                 (
-                    metadata.run_id,
+                    metadata.run_key,
+                    metadata.attempt_number,
                     metadata.batch_id,
                     metadata.input_mode,
                     metadata.manifest_path,
@@ -311,7 +486,9 @@ class SQLitePipelineStore:
                     int(summary.get("cluster_count", 0)),
                     int(summary.get("golden_record_count", 0)),
                     int(summary.get("review_queue_count", 0)),
+                    metadata.failure_detail or "",
                     json.dumps(summary, sort_keys=True),
+                    metadata.run_id,
                 ),
             )
             self._persist_artifact_rows(connection, "normalized_source_records", metadata.run_id, normalized_rows)
@@ -321,6 +498,27 @@ class SQLitePipelineStore:
             self._persist_artifact_rows(connection, "golden_records", metadata.run_id, golden_rows)
             self._persist_artifact_rows(connection, "source_to_golden_crosswalk", metadata.run_id, crosswalk_rows)
             self._persist_artifact_rows(connection, "review_cases", metadata.run_id, review_rows)
+            connection.commit()
+
+    def mark_run_failed(
+        self,
+        *,
+        run_id: str,
+        finished_at_utc: str,
+        failure_detail: str,
+    ) -> None:
+        with _connect(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = 'failed',
+                    finished_at_utc = ?,
+                    failure_detail = ?,
+                    summary_json = '{}'
+                WHERE run_id = ?
+                """,
+                (finished_at_utc, failure_detail, run_id),
+            )
             connection.commit()
 
     def latest_run_id(self) -> str | None:
@@ -346,6 +544,8 @@ class SQLitePipelineStore:
 
         return PipelineRunRecord(
             run_id=str(row["run_id"]),
+            run_key="" if row["run_key"] is None else str(row["run_key"]),
+            attempt_number=int(row["attempt_number"] or 0),
             batch_id=row["batch_id"],
             input_mode=str(row["input_mode"]),
             manifest_path=row["manifest_path"],
@@ -362,6 +562,7 @@ class SQLitePipelineStore:
             cluster_count=int(row["cluster_count"]),
             golden_record_count=int(row["golden_record_count"]),
             review_queue_count=int(row["review_queue_count"]),
+            failure_detail=None if row["failure_detail"] in (None, "") else str(row["failure_detail"]),
             summary=json.loads(str(row["summary_json"])),
         )
 
