@@ -65,6 +65,11 @@ What it enforces:
 - required TLS, audit, and backup paths exist
 - required deployment attestation flags are affirmative
 
+The runtime observability baseline also now redacts raw auth material
+and free-text review-note content from structured logs and persisted
+audit-event details. That reduces the chance that operational traces
+become an uncontrolled copy of sensitive request content.
+
 The script emits JSON and exits non-zero on failure.
 
 ## Recommended Rollout Order

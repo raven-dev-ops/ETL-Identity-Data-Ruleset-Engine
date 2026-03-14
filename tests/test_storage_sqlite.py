@@ -268,6 +268,38 @@ def test_store_operational_metrics_and_audit_events_reflect_persisted_batch_stat
     assert listed_events[0].audit_event_id == audit_event.audit_event_id
 
 
+def test_record_audit_event_redacts_free_text_and_auth_material(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    store = SQLitePipelineStore(db_path)
+
+    audit_event = store.record_audit_event(
+        actor_type="service_api",
+        actor_id="review.operator",
+        action="apply_review_decision",
+        resource_type="review_case",
+        resource_id="REV-001",
+        status="succeeded",
+        details={
+            "notes": "Approved John Doe after manual CJIS-side verification",
+            "authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+            "nested": {
+                "token": "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+                "error": (
+                    "Replay failed for postgresql://svc_user:super-secret-password@db.internal/identity "
+                    "with Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature"
+                ),
+            },
+        },
+    )
+
+    assert audit_event.details["notes"].startswith("[REDACTED free_text len=")
+    assert audit_event.details["authorization"] == "[REDACTED auth_material]"
+    assert audit_event.details["nested"]["token"] == "[REDACTED auth_material]"
+    assert "super-secret-password" not in audit_event.details["nested"]["error"]
+    assert "payload.signature" not in audit_event.details["nested"]["error"]
+    assert "Bearer [REDACTED]" in audit_event.details["nested"]["error"]
+
+
 def test_run_all_reuses_completed_run_without_duplicating_persisted_state(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "pipeline_state.sqlite"
     base_dir = tmp_path / "run"

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added shared observability redaction for structured logs and persisted
+  audit-event details so free-text review notes, auth material, JWT-like
+  tokens, PEM payloads, and DSN passwords are not retained verbatim in
+  the operational trace surfaces.
+
 ## [0.9.1] - 2026-03-14
 
 - Added a dedicated `cjis` runtime environment, a `deploy/cjis.env.example`

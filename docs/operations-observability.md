@@ -20,6 +20,14 @@ Current event coverage includes:
 The current log payloads are intended for operators and deployment
 pipelines, not as a stable external data contract.
 
+Structured logs now apply shared redaction before emission:
+
+- free-text operator-note fields are replaced with a redaction marker
+- auth material such as bearer tokens, API keys, and JWT secrets is
+  removed
+- JWT-like token strings, PEM payloads, and DSN passwords are scrubbed
+  from free-form error text
+
 ## Health Endpoints
 
 The authenticated service exposes:
@@ -90,3 +98,8 @@ authenticated actor context:
 This audit surface is intended for operational traceability of
 privileged workflow and publication actions, not as a replacement for
 the core persisted pipeline artifacts.
+
+Persisted audit details now follow the same redaction baseline as the
+structured logs. Operator workflow metadata remains auditable, but raw
+review notes and raw auth material are not retained verbatim in
+`details_json`.

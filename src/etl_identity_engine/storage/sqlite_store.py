@@ -27,6 +27,7 @@ from etl_identity_engine.output_contracts import (
     MATCH_SCORE_HEADERS,
     NORMALIZED_HEADERS,
 )
+from etl_identity_engine.observability import sanitize_observability_fields
 from etl_identity_engine.storage.migration_runner import upgrade_state_store
 from etl_identity_engine.storage.state_store_target import resolve_state_store_target, create_state_store_engine
 
@@ -1581,6 +1582,7 @@ class SQLitePipelineStore:
         normalized_resource_type = resource_type.strip()
         normalized_resource_id = resource_id.strip()
         normalized_status = status.strip().lower()
+        sanitized_details = sanitize_observability_fields(details or {})
         if not normalized_actor_type:
             raise ValueError("Audit events require a non-empty actor_type")
         if not normalized_actor_id:
@@ -1637,7 +1639,7 @@ class SQLitePipelineStore:
                     "resource_id": normalized_resource_id,
                     "run_id": run_id,
                     "status": normalized_status,
-                    "details_json": json.dumps(details or {}, sort_keys=True),
+                    "details_json": json.dumps(sanitized_details, sort_keys=True),
                 },
             )
         return self.load_audit_event(audit_event_id)

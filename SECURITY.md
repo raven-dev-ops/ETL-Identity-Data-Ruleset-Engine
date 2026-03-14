@@ -25,6 +25,9 @@ If private reporting is unavailable, open an issue with minimal details and requ
   authenticated `reader` / `operator` boundary.
 - Restrict `runs:publish` and `exports:run` to trusted operator
   identities because they can materialize downstream datasets.
+- Treat structured logs and persisted audit trails as sensitive
+  operational artifacts even though the runtime now redacts free-text
+  notes and auth material before emitting them.
 
 For the supported production deployment boundary, including operator
 responsibilities, audit expectations, and rollback ownership, see

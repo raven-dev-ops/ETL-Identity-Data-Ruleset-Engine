@@ -714,6 +714,7 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
         and event.actor_id == "review.operator"
         and event.details["actor_role"] == "operator"
         and event.details["actor_subject"] == "review.operator"
+        and str(event.details["operator_notes"]).startswith("[REDACTED free_text len=")
         and event.details["required_scopes"] == ["review_cases:write"]
         and event.details["auth_mode"] == "jwt"
         for event in audit_events
