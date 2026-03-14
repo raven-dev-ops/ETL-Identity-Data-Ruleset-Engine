@@ -165,6 +165,7 @@ is included in the repository.
 - [Project Structure Outline](planning/project-structure-outline.md)
 - [Remaining Work Task List](planning/remaining-work-task-list.md)
 - [Active GitHub Issues Backlog](planning/active-github-issues-backlog.md)
+- [Post-v0.6.0 GitHub Issues Backlog (Historical)](planning/post-v0.6.0-github-issues-backlog.md)
 - [Post-v0.1.0 GitHub Issues Backlog (Historical)](planning/post-v0.1.0-github-issues-backlog.md)
 - [Bootstrap GitHub Issues Backlog (Historical)](planning/github-issues-backlog.md)
 
