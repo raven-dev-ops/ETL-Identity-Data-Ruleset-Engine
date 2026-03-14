@@ -68,6 +68,14 @@ def test_ci_support_matrix_includes_python_312_and_macos() -> None:
     assert "runs-on: macos-latest" in workflow_text
 
 
+def test_ci_includes_release_hardening_inventory_job() -> None:
+    workflow_text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "release-hardening:" in workflow_text
+    assert "scripts/release_hardening_check.py --output-dir dist/release-hardening" in workflow_text
+    assert "name: release-hardening-inventory" in workflow_text
+
+
 def test_package_version_matches_pyproject_version() -> None:
     pyproject_text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     pyproject = tomllib.loads(pyproject_text)

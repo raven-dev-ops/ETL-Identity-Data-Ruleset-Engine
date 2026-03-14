@@ -79,8 +79,8 @@ def test_select_sync_backlog_skips_closed_catalog_entries_by_default() -> None:
 
     assert sync_backlog.milestones == ("v0.6.0",)
     assert len(sync_backlog.epics) == 1
-    assert len(sync_backlog.issues) == 2
-    assert {issue.catalog_number for issue in sync_backlog.issues} == {79, 80}
+    assert len(sync_backlog.issues) == 1
+    assert {issue.catalog_number for issue in sync_backlog.issues} == {80}
 
 
 def test_select_sync_backlog_can_include_closed_catalog_entries() -> None:

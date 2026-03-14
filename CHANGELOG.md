@@ -59,6 +59,9 @@ All notable changes to this project will be documented in this file.
 - Backup, restore, and replay runbooks for persisted SQLite state,
   including a documented recovery smoke path in
   `scripts/persisted_state_recovery_smoke.py`.
+- A retained release-hardening check that builds the distribution,
+  writes dependency-inventory outputs, and records artifact hashes for
+  release validation.
 
 ### Changed
 
@@ -106,6 +109,9 @@ All notable changes to this project will be documented in this file.
 - `scripts/run_checks.py` now executes a persisted-state recovery smoke
   path, so local validation and CI cover backup, restore, report
   rebuild, and replay behavior for manifest-driven persisted runs.
+- CI now includes a `release-hardening` job that publishes a retained
+  dependency inventory and audit artifact for the built release
+  distribution.
 
 ## [0.1.4] - 2026-03-13
 

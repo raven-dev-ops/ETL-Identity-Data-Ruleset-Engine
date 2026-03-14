@@ -16,6 +16,7 @@ ruleset because they cannot be stored fully in git:
 - Require these status checks:
   - `CI / test-linux`
   - `CI / test-windows`
+  - `CI / release-hardening`
   - compatibility jobs for Python `3.12` and macOS should remain green
     even if branch protection keeps the baseline required-check list
     narrower
@@ -40,6 +41,10 @@ check baseline.
 - The backlog dry-run still parses the active planning backlog.
 - A source distribution and wheel are both produced successfully from
   the release commit.
+- The release hardening job produces a retained dependency inventory and
+  artifact-hash summary for the built release artifacts.
+- The release hardening dependency audit is green on the release
+  commit.
 - The installed `etl-identity-engine` console script resolves and shows
   the expected CLI help output from the release environment.
 - A fresh packaged small-profile release sample bundle is produced
@@ -114,6 +119,25 @@ That bundle should include at least:
 See [output-contracts.md](output-contracts.md) for the stable file
 shapes.
 
+## Release Hardening Outputs
+
+Generate the retained dependency-inventory and audit outputs with:
+
+```bash
+python scripts/release_hardening_check.py --output-dir dist/release-hardening
+```
+
+That command writes:
+
+- `artifacts/*.whl`
+- `artifacts/*.tar.gz`
+- `dependency_inventory.json`
+- `dependency_audit.json`
+- `release_hardening_summary.json`
+
+The CI `release-hardening` job publishes the same directory as the
+`release-hardening-inventory` artifact.
+
 ## Release Checklist
 
 - Confirm `pyproject.toml` version matches the intended tag.
@@ -130,6 +154,10 @@ shapes.
   directories; the
   explicit `package_release_sample.py --output-dir dist/release-samples`
   command remains the maintainer path when you want a retained bundle.
+- Run the retained release-hardening command:
+  - `python scripts/release_hardening_check.py --output-dir dist/release-hardening`
+- Review `dist/release-hardening/release_hardening_summary.json`,
+  `dependency_inventory.json`, and `dependency_audit.json`.
 - Run the backlog dry-run:
   - `python scripts/create_github_backlog.py --repo "<OWNER/REPO>" --dry-run`
   - For historical backlog validation, use `--include-closed`.

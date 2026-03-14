@@ -303,7 +303,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 79) Add supply-chain and release-hardening gates for production artifacts
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.6.0`
 - Labels: `type:chore`, `area:ci`, `priority:p1`
 - Depends on: #74, #76
@@ -350,12 +350,11 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#79`
-  and `#80`
+- Open child issues represented in this local active catalog: `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
   - `v0.5.0` with epic `#59`
-  - `v0.6.0` with epic `#60` plus child issues `#79` and `#80`
+  - `v0.6.0` with epic `#60` plus child issue `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
   `planning/post-v0.1.0-github-issues-backlog.md`
@@ -429,3 +428,8 @@ Snapshot date: 2026-03-14
   `scripts/run_checks.py` now runs a persisted-state recovery smoke path
   that validates state restore, report rebuild, and replay with an
   approved review override.
+- Issue `#79` is complete in-repo: CI now runs a retained
+  `release-hardening` job, `scripts/release_hardening_check.py` now
+  builds release artifacts plus dependency inventory and audit outputs,
+  and the release-process docs now require those hardening artifacts as
+  part of the release gate.

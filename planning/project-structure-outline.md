@@ -91,6 +91,7 @@ ETL-Identity-Data-Ruleset-Engine/
     create_github_backlog.ps1
     package_release_sample.py
     persisted_state_recovery_smoke.py
+    release_hardening_check.py
     run_checks.py
     run_checks.ps1
     run_checks.sh

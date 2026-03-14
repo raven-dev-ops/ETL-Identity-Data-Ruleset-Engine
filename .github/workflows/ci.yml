@@ -144,3 +144,30 @@ jobs:
 
       - name: Run container smoke test
         run: python scripts/container_smoke_test.py --image-tag etl-identity-engine:ci --service-port 18080
+
+  release-hardening:
+    name: release-hardening
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Bootstrap venv via documented bash path
+        env:
+          INSTALL_GH: "0"
+        run: bash ./scripts/bootstrap_venv.sh
+
+      - name: Run release hardening checks
+        run: .venv/bin/python scripts/release_hardening_check.py --output-dir dist/release-hardening
+
+      - name: Upload release hardening artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-hardening-inventory
+          path: dist/release-hardening
+          if-no-files-found: error
