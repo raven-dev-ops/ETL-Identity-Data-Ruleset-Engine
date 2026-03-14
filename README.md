@@ -138,8 +138,9 @@ is included in the repository.
   SQLite paths or PostgreSQL URLs,
   archived replay bundles for manifest-era inputs,
   manifest-driven incremental refresh, a container image, a single-host
-  compose deployment baseline, named benchmark fixtures with capacity
-  targets, and an authenticated operator service API are now available.
+  compose deployment baseline, a Kubernetes PostgreSQL-backed
+  deployment baseline, named benchmark fixtures with capacity targets,
+  and an authenticated operator service API are now available.
   The current production runtime supports JWT bearer auth backed by
   deployment-supplied issuer, audience, and signing metadata, while the
   local container baseline retains API-key compatibility mode. The
@@ -186,6 +187,7 @@ is included in the repository.
 - [Compatibility Policy](docs/compatibility-policy.md)
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
+- [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Export Jobs](docs/export-jobs.md)
 - [Persistent State](docs/persistent-state.md)

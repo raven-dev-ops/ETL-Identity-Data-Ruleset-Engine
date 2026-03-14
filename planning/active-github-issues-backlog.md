@@ -193,7 +193,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 101) Add Kubernetes or Helm deployment manifests for PostgreSQL-backed service topology
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.9.0`
 - Labels: `type:feature`, `area:operations`, `priority:p0`
 - Depends on: #93, #97, #98
@@ -279,7 +279,7 @@ Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog: `#81`, `#82`, `#83`
 - Open child issues represented in this local active catalog:
-  `#92`, `#93`, `#94`, `#95`
+  `#93`, `#94`, `#95`
 - Open milestones in GitHub for this backlog:
   - `v0.7.0` with epic `#81`
   - `v0.8.0` with epic `#82`

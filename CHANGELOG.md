@@ -29,6 +29,13 @@ All notable changes to this project will be documented in this file.
 - Added paginated run, golden-record, and review-case collection
   endpoints to the authenticated service API, with documented filter,
   sort, and page-token semantics.
+- Added a Kubernetes deployment baseline for PostgreSQL-backed service
+  and batch execution, including shipped manifests, example secrets, a
+  dedicated `cluster` runtime environment, and a Docker-backed
+  Kubernetes manifest smoke test wired into CI.
+- Changed runtime-environment loading to resolve only the selected
+  environment's secret placeholders, so compatibility and cluster
+  deployments do not require unrelated environment secrets.
 
 ## [0.6.0] - 2026-03-14
 

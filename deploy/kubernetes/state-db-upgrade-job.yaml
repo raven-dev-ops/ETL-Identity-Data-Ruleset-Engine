@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: identity-state-db-upgrade
+  labels:
+    app.kubernetes.io/name: etl-identity-engine
+    app.kubernetes.io/component: state-db-upgrade
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: etl-identity-engine
+        app.kubernetes.io/component: state-db-upgrade
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: state-db-upgrade
+          image: etl-identity-engine:v0.6.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - state-db-upgrade
+            - --environment
+            - cluster
+          envFrom:
+            - secretRef:
+                name: identity-runtime-secret

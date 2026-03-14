@@ -43,3 +43,115 @@ def test_container_smoke_script_targets_compose_topology() -> None:
     assert "identity-batch" in script_text
     assert "identity-service" in script_text
     assert "/healthz" in script_text
+
+
+def test_kubernetes_kustomization_defines_cluster_base_resources() -> None:
+    kustomization = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "kustomization.yaml").read_text(encoding="utf-8")
+    )
+
+    assert kustomization["namespace"] == "etl-identity"
+    assert set(kustomization["resources"]) == {
+        "namespace.yaml",
+        "landing-pvc.yaml",
+        "postgres-service.yaml",
+        "postgres-statefulset.yaml",
+        "service-service.yaml",
+        "service-deployment.yaml",
+    }
+
+
+def test_kubernetes_service_and_job_manifests_target_cluster_runtime() -> None:
+    service_deployment = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "service-deployment.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    batch_job = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "batch-job.yaml").read_text(encoding="utf-8")
+    )
+    upgrade_job = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "state-db-upgrade-job.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    service_container = service_deployment["spec"]["template"]["spec"]["containers"][0]
+    batch_container = batch_job["spec"]["template"]["spec"]["containers"][0]
+    upgrade_container = upgrade_job["spec"]["template"]["spec"]["containers"][0]
+
+    assert service_container["args"][:3] == ["serve-api", "--environment", "cluster"]
+    assert batch_container["args"][:7] == [
+        "run-all",
+        "--environment",
+        "cluster",
+        "--base-dir",
+        "/runtime/output",
+        "--manifest",
+        "/runtime/landing/batch-manifest.yaml",
+    ]
+    assert upgrade_container["args"][:3] == ["state-db-upgrade", "--environment", "cluster"]
+    assert service_container["envFrom"][0]["secretRef"]["name"] == "identity-runtime-secret"
+    assert batch_container["envFrom"][0]["secretRef"]["name"] == "identity-runtime-secret"
+    assert upgrade_container["envFrom"][0]["secretRef"]["name"] == "identity-runtime-secret"
+
+
+def test_kubernetes_example_secrets_document_required_keys() -> None:
+    postgres_secret = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "postgres-secret.example.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    runtime_secret = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "runtime-secret.example.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    ingress = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes" / "service-ingress.example.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert set(postgres_secret["stringData"]) == {"POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"}
+    assert set(runtime_secret["stringData"]) == {
+        "ETL_IDENTITY_STATE_DB",
+        "ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY",
+        "ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY",
+        "ETL_IDENTITY_SERVICE_READER_API_KEY",
+        "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY",
+    }
+    assert ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]["name"] == (
+        "identity-service"
+    )
+
+
+def test_kubernetes_cluster_runtime_environment_exists() -> None:
+    runtime_config = yaml.safe_load(
+        (REPO_ROOT / "config" / "runtime_environments.yml").read_text(encoding="utf-8")
+    )
+
+    cluster = runtime_config["environments"]["cluster"]
+    assert cluster["state_db"] == "${ETL_IDENTITY_STATE_DB}"
+    assert cluster["service_auth"]["mode"] == "api_key"
+    assert cluster["service_auth"]["reader_api_key"] == "${ETL_IDENTITY_SERVICE_READER_API_KEY}"
+    assert cluster["service_auth"]["operator_api_key"] == "${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}"
+
+
+def test_kubernetes_smoke_script_targets_postgresql_backed_cluster_topology() -> None:
+    script_text = (REPO_ROOT / "scripts" / "kubernetes_manifest_smoke.py").read_text(
+        encoding="utf-8"
+    )
+
+    expected_fragments = (
+        '"docker", "build"',
+        '"docker", "network", "create"',
+        "postgres:16-alpine",
+        "state-db-upgrade",
+        "/runtime/landing/batch-manifest.yaml",
+        "/api/v1/runs/latest",
+        "identity-postgres",
+    )
+
+    for fragment in expected_fragments:
+        assert fragment in script_text

@@ -6,7 +6,9 @@ editing committed YAML files in place.
 
 The default catalog now also includes a `container` environment for the
 single-host deployment baseline shipped in
-[container-deployment.md](container-deployment.md).
+[container-deployment.md](container-deployment.md), plus a `cluster`
+environment for the PostgreSQL-backed Kubernetes baseline in
+[kubernetes-deployment.md](kubernetes-deployment.md).
 
 ## Environment File
 
@@ -100,6 +102,11 @@ The `container` environment is different from `prod` in one important
 way: it provides default placeholder object-storage secret values so the
 local container topology can start without cloud credentials. Service
 authentication there remains in API-key compatibility mode.
+
+The `cluster` environment follows the same API-key compatibility model,
+but it requires a deployment-supplied PostgreSQL URL through
+`ETL_IDENTITY_STATE_DB` and is intended for the shipped Kubernetes
+topology.
 
 ## Config Overlays
 

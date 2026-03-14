@@ -39,6 +39,36 @@ environments:
         - review_cases:read
         - review_cases:write
         - exports:run
+  cluster:
+    description: Kubernetes defaults for PostgreSQL-backed clustered deployments.
+    config_dir: .
+    state_db: ${ETL_IDENTITY_STATE_DB}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
+    service_auth:
+      mode: api_key
+      header_name: X-API-Key
+      reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY}
+      operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}
+      reader_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+      operator_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - runs:replay
+        - runs:publish
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+        - review_cases:write
+        - exports:run
   prod:
     description: Production defaults sourced from deployment environment variables.
     config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}

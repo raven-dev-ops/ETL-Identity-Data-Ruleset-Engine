@@ -28,6 +28,7 @@ ETL-Identity-Data-Ruleset-Engine/
   deploy/
     compose.yaml
     container.env.example
+    kubernetes/
   .github/
     ISSUE_TEMPLATE/
       bug.yml
@@ -60,6 +61,7 @@ ETL-Identity-Data-Ruleset-Engine/
     benchmarking-and-capacity.md
     compatibility-policy.md
     container-deployment.md
+    kubernetes-deployment.md
     data-model.md
     delivery-contracts.md
     evaluation-and-metrics.md
@@ -91,6 +93,7 @@ ETL-Identity-Data-Ruleset-Engine/
     container_smoke_test.py
     create_github_backlog.py
     create_github_backlog.ps1
+    kubernetes_manifest_smoke.py
     package_release_sample.py
     persisted_state_recovery_smoke.py
     release_hardening_check.py
@@ -161,8 +164,8 @@ The current public line is now explicitly scoped around:
 
 ## Post-Release Focus
 
-- keep the shipped container image and compose topology aligned with the
-  documented single-host deployment path
+- keep the shipped container image plus single-host and Kubernetes
+  deployment assets aligned with the documented runtime paths
 - keep benchmark fixtures, capacity targets, and the persisted
   performance contract aligned with the supported deployment baseline
 - execute the new post-`v0.6.0` backlog cycle tracked in

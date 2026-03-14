@@ -114,10 +114,12 @@ This deployment baseline now provides:
   start successfully
 - documented backup, restore, and replay procedures for the mounted
   persisted-state model
+- a separate Kubernetes baseline for PostgreSQL-backed clustered
+  deployments documented in
+  [kubernetes-deployment.md](kubernetes-deployment.md)
 
 It does not yet provide:
 
-- orchestration manifests for a clustered environment
 - image-signing or supply-chain hardening
 
 Those remain tracked in the active backlog.

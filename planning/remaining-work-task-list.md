@@ -47,6 +47,10 @@ of truth for tracked work; this file is the short maintainer view.
 - GitHub issue `#91` is complete: the service now exposes paginated run,
   golden-record, and review-case collection endpoints with documented
   filter, sort, and page-token semantics.
+- GitHub issue `#92` is complete: the repo now ships a Kubernetes
+  deployment baseline for the PostgreSQL-backed topology, including
+  service, PostgreSQL, migration, and batch manifests plus a CI-backed
+  smoke path.
 
 ## Open Task Groups
 
@@ -55,7 +59,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: none
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
-  - Open GitHub issues: `#92`, `#93`, `#94`, `#95`
+  - Open GitHub issues: `#93`, `#94`, `#95`
 
 ## Gaps Now Explicitly Tracked
 
@@ -67,12 +71,12 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Fine-grained RBAC and actor identity propagation
 - [x] HTTP publish and export triggers
 - [x] Paginated service list and search endpoints
-- [ ] Clustered deployment manifests
+- [x] Clustered deployment manifests
 - [ ] Container signing and image-level supply-chain gates
 - [ ] Event-driven ingestion and streaming entity refresh
 - [ ] Clustered benchmarks and distributed SLO targets
 
 ## Next Step
 
-- Start issue `#92`: Add Kubernetes or Helm deployment manifests for
-  PostgreSQL-backed service topology.
+- Start issue `#93`: Add image signing, SBOM attestation, and container
+  scanning gates.

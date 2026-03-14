@@ -640,7 +640,7 @@ def test_load_runtime_environment_requires_declared_secret_env_vars(
 
     with pytest.raises(
         ValueError,
-        match=r"runtime_environments\.yml: configuration references required environment variable TEST_STATE_DB",
+        match=r"runtime_environments\.yml: environments\.prod references required environment variable TEST_STATE_DB",
     ):
         load_runtime_environment("prod", runtime_config)
 
@@ -695,6 +695,59 @@ environments:
         "object_storage_secret_key": "disabled",
     }
     assert environment.service_auth is None
+
+
+def test_load_runtime_environment_resolves_only_selected_environment_placeholders(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: container
+environments:
+  container:
+    config_dir: .
+    state_db: ${ETL_IDENTITY_STATE_DB:-/runtime/state/pipeline_state.sqlite}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
+    service_auth:
+      header_name: X-API-Key
+      reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
+      operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+  prod:
+    config_dir: .
+    state_db: ${TEST_STATE_DB}
+    service_auth:
+      mode: jwt
+      header_name: Authorization
+      issuer: ${TEST_SERVICE_JWT_ISSUER}
+      audience: ${TEST_SERVICE_JWT_AUDIENCE}
+      algorithms:
+        - HS256
+      jwt_secret: ${TEST_SERVICE_JWT_SECRET}
+      reader_roles:
+        - etl-reader
+      operator_roles:
+        - etl-operator
+""",
+    )
+    monkeypatch.delenv("ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("ETL_IDENTITY_SERVICE_READER_API_KEY", raising=False)
+    monkeypatch.delenv("ETL_IDENTITY_SERVICE_OPERATOR_API_KEY", raising=False)
+    monkeypatch.delenv("TEST_STATE_DB", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_JWT_ISSUER", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_JWT_AUDIENCE", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_JWT_SECRET", raising=False)
+
+    environment = load_runtime_environment("container", runtime_config)
+
+    assert environment.name == "container"
+    assert environment.state_db is not None
+    assert environment.state_db.as_posix().endswith("/runtime/state/pipeline_state.sqlite")
 
 
 def test_load_runtime_environment_rejects_partial_service_auth_config(

@@ -76,6 +76,13 @@ def test_ci_includes_release_hardening_inventory_job() -> None:
     assert "name: release-hardening-inventory" in workflow_text
 
 
+def test_ci_includes_kubernetes_manifest_smoke_job() -> None:
+    workflow_text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "kubernetes-manifest-smoke:" in workflow_text
+    assert "python scripts/kubernetes_manifest_smoke.py" in workflow_text
+
+
 def test_package_version_matches_pyproject_version() -> None:
     pyproject_text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     pyproject = tomllib.loads(pyproject_text)

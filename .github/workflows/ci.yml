@@ -145,6 +145,26 @@ jobs:
       - name: Run container smoke test
         run: python scripts/container_smoke_test.py --image-tag etl-identity-engine:ci --service-port 18080
 
+  kubernetes-manifest-smoke:
+    name: kubernetes-manifest-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Bootstrap venv via documented bash path
+        env:
+          INSTALL_GH: "0"
+        run: bash ./scripts/bootstrap_venv.sh
+
+      - name: Run Kubernetes manifest smoke test
+        run: .venv/bin/python scripts/kubernetes_manifest_smoke.py --image-tag etl-identity-engine:k8s-ci --service-port 18081
+
   release-hardening:
     name: release-hardening
     runs-on: ubuntu-latest

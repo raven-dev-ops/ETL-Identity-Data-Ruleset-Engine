@@ -28,6 +28,10 @@ The container deployment baseline uses the dedicated `container`
 environment documented in
 [container-deployment.md](container-deployment.md).
 
+The PostgreSQL-backed Kubernetes baseline uses the dedicated `cluster`
+environment documented in
+[kubernetes-deployment.md](kubernetes-deployment.md).
+
 ## Authentication And Roles
 
 The service now supports two authentication modes:
@@ -104,6 +108,11 @@ API-key auth remains supported for local and compatibility deployments.
 
 The repo's `container` environment continues to use API keys so the
 single-host compose topology stays easy to start locally.
+
+The shipped Kubernetes `cluster` environment also uses API keys so the
+shipped probes and deployment manifests stay self-contained. Deployments
+that need JWT-backed ingress should overlay that baseline onto the
+documented `prod` environment.
 
 The default production JWT environment expects:
 

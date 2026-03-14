@@ -13,8 +13,9 @@ golden records, and reporting artifacts.
   exposes persisted run, golden, crosswalk, and review-case lookups
   plus paginated run, golden, and review-case collections and
   operator-only review-decision, replay, publish, and export actions.
-  A container image, a single-host compose deployment baseline, and
-  named benchmark fixtures with capacity targets are now available.
+  A container image, a single-host compose deployment baseline, a
+  Kubernetes PostgreSQL-backed deployment baseline, and named benchmark
+  fixtures with capacity targets are now available.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -227,8 +228,9 @@ The current deployment baseline also includes:
 
 - one shared batch and service container image
 - a single-host compose topology under `deploy/`
-- CI smoke validation that the containerized CLI and service start
-  successfully
+- a Kubernetes PostgreSQL-backed topology under `deploy/kubernetes/`
+- CI smoke validation for the single-host and Kubernetes-backed
+  deployment assets
 - named benchmark fixtures and capacity targets for the supported
   single-host container baseline
 

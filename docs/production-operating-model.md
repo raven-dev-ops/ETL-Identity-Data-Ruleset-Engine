@@ -10,13 +10,13 @@ target.
 The current supported production target is a batch-plus-service
 deployment with these boundaries:
 
-- persisted SQLite state is enabled
+- persisted SQL state is enabled
 - authenticated service access is enabled with distinct `reader` and
   `operator` roles, typically via JWT bearer auth, plus endpoint-level
   scopes
-- operators deploy either the documented single-host container topology
-  or an equivalent single-host Python runtime with the same config and
-  state model
+- operators deploy either the documented single-host container topology,
+  the documented Kubernetes PostgreSQL-backed topology, or an
+  equivalent runtime with the same config and state model
 - downstream consumers integrate through the documented service API,
   delivery contract, or export-job surfaces
 
@@ -25,6 +25,8 @@ deployment with these boundaries:
 The current supported deployment environments are:
 
 - the documented single-host container topology under `deploy/`
+- the documented Kubernetes PostgreSQL-backed topology under
+  `deploy/kubernetes/`
 - an equivalent single-host Python runtime that uses the same
   persisted-state, service-auth, and runtime-config surfaces
 - Linux, Windows, and macOS for maintainer validation, with Linux and
@@ -33,7 +35,7 @@ The current supported deployment environments are:
 
 The current production target does not yet claim support for:
 
-- clustered or multi-node database topologies
+- multi-node or high-availability database topologies
 - real-time or streaming identity resolution
 
 ## Rollout Phases
@@ -57,8 +59,8 @@ Before first production cutover:
 For the first production rollout:
 
 - deploy the release artifact and config snapshot as one versioned unit
-- initialize or upgrade the SQLite state DB through the documented
-  migration commands
+- initialize or upgrade the state DB through the documented migration
+  commands or the Kubernetes migration Job
 - confirm health, readiness, metrics, and audit-event collection before
   exposing the operator API
 - run one manifest-driven batch end to end before enabling consumer
@@ -84,7 +86,7 @@ Platform operators own:
 - secret injection for service and runtime environments, including JWT
   issuer, audience, signing metadata, and the deployed role/scope
   contract
-- SQLite state durability, backup scheduling, and restore execution
+- state-store durability, backup scheduling, and restore execution
 - health, metrics, structured-log, and audit-event collection
 - applying release upgrades and state migrations
 
@@ -115,7 +117,7 @@ Consumer teams own:
 If a release must be rolled back:
 
 - redeploy the previous known-good image or Python package version
-- keep the SQLite state DB and published snapshots intact unless a data
+- keep the persisted state store and published snapshots intact unless a data
   recovery action is also required
 - rerun health and readiness checks before reopening the service surface
 
@@ -123,7 +125,7 @@ If a release must be rolled back:
 
 If the rollback requires reversing persisted run state:
 
-- restore the SQLite DB backup
+- restore the persisted state backup
 - restore the verified replay bundle required for replay
 - rebuild reports or republish outputs from the restored run state
 - use `replay-run` only after the restored replay bundle is back at its
@@ -168,16 +170,17 @@ Production operation should retain auditable evidence for:
 - export-job execution
 - release-hardening outputs for the shipped artifact set
 
-The current runtime already persists privileged action audit rows in
-SQLite and emits structured JSON logs. Operators are responsible for
-retaining and monitoring those signals in their deployment.
+The current runtime already persists privileged action audit rows in the
+configured state store and emits structured JSON logs. Operators are
+responsible for retaining and monitoring those signals in their
+deployment.
 
 ### Consumer Responsibilities
 
 Consumers must:
 
 - use only documented stable service, workflow, and delivery contracts
-- avoid direct reads from internal SQLite tables or repo-local working
+- avoid direct reads from internal state-store tables or repo-local working
   directories
 - treat golden and crosswalk outputs as identity-resolution products,
   not immutable source truth
@@ -219,7 +222,7 @@ Use these escalation boundaries:
 The current production-readiness cycle is complete when all of these are
 true for a release candidate:
 
-- the single-host persisted-state deployment path is documented and
+- the supported persisted-state deployment paths are documented and
   validated
 - recovery runbooks are documented and tested
 - the service-auth, audit, logging, metrics, and health baselines are in
