@@ -1,4 +1,4 @@
-"""Operator-facing service API over persisted SQLite pipeline state."""
+"""Operator-facing service API over persisted SQL pipeline state."""
 
 from __future__ import annotations
 
@@ -20,10 +20,11 @@ from etl_identity_engine.operator_actions import (
 from etl_identity_engine.runtime_config import ServiceAuthConfig
 from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
+    PipelineStateStore,
     PipelineRunRecord,
-    SQLitePipelineStore,
     StoreOperationalMetrics,
 )
+from etl_identity_engine.storage.state_store_target import resolve_state_store_target
 
 
 ReviewCaseStatus = Literal["pending", "approved", "rejected", "deferred"]
@@ -229,13 +230,13 @@ def _resolve_operation_conflict(error: ValueError) -> None:
 def _serialize_metrics(
     metrics: StoreOperationalMetrics,
     *,
-    state_db: Path,
+    state_db: str,
     service_started_at_utc: str,
     service_started_monotonic: float,
 ) -> ServiceMetricsResponse:
     return ServiceMetricsResponse(
         api_version=__version__,
-        state_db=str(state_db.resolve()),
+        state_db=state_db,
         service_started_at_utc=service_started_at_utc,
         service_uptime_seconds=seconds_since(service_started_monotonic),
         runs=RunStatusCountsResponse(
@@ -263,15 +264,16 @@ def _serialize_metrics(
 
 
 def create_service_app(
-    state_db_path: Path | str,
+    state_db_path: str,
     *,
     service_auth: ServiceAuthConfig,
 ) -> FastAPI:
-    state_db = Path(state_db_path)
-    if not state_db.exists():
-        raise FileNotFoundError(f"Persisted state database not found: {state_db}")
+    state_target = resolve_state_store_target(state_db_path)
+    if state_target.file_path is not None and not state_target.file_path.exists():
+        raise FileNotFoundError(f"Persisted state database not found: {state_target.display_name}")
 
-    store = SQLitePipelineStore(state_db)
+    state_db_display = state_target.display_name
+    store = PipelineStateStore(state_target.raw_value)
     app = FastAPI(
         title="ETL Identity Engine Operator API",
         version=__version__,
@@ -347,7 +349,7 @@ def create_service_app(
     ) -> HealthResponse:
         return HealthResponse(
             status="ok",
-            state_db=str(state_db.resolve()),
+            state_db=state_db_display,
             api_version=__version__,
             service_started_at_utc=service_started_at_utc,
         )
@@ -359,7 +361,7 @@ def create_service_app(
         metrics = store.load_operational_metrics()
         return ReadinessResponse(
             status="ready",
-            state_db=str(state_db.resolve()),
+            state_db=state_db_display,
             api_version=__version__,
             latest_completed_run_id=metrics.latest_completed_run_id,
             latest_failed_run_id=metrics.latest_failed_run_id,
@@ -373,7 +375,7 @@ def create_service_app(
     ) -> ServiceMetricsResponse:
         return _serialize_metrics(
             store.load_operational_metrics(),
-            state_db=state_db,
+            state_db=state_db_display,
             service_started_at_utc=service_started_at_utc,
             service_started_monotonic=service_started_monotonic,
         )
@@ -384,7 +386,7 @@ def create_service_app(
     ) -> RunStatusResponse:
         run_id = store.latest_completed_run_id()
         if run_id is None:
-            raise HTTPException(status_code=404, detail=f"No completed persisted runs found in {state_db}")
+            raise HTTPException(status_code=404, detail=f"No completed persisted runs found in {state_db_display}")
         return _serialize_run(store.load_run_record(run_id))
 
     @app.get("/api/v1/runs/{run_id}", response_model=RunStatusResponse, tags=["runs"])
@@ -564,7 +566,7 @@ def create_service_app(
 
             result = replay_run_operation(
                 store=store,
-                state_db=state_db,
+                state_db=state_target.raw_value,
                 source_run_id=run_id,
                 base_dir=Path(request.base_dir) if request.base_dir else None,
                 refresh_mode=request.refresh_mode,

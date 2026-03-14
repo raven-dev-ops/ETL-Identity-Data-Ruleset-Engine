@@ -12,9 +12,10 @@ from etl_identity_engine.ingest.manifest import peek_manifest_batch_id
 from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
     PipelineRunRecord,
-    SQLitePipelineStore,
+    PipelineStateStore,
     build_run_key,
 )
+from etl_identity_engine.storage.state_store_target import state_store_display_name
 
 
 CommandRunner = Callable[[Sequence[str] | None], int]
@@ -31,29 +32,29 @@ class ReplayRunOperationResult:
     action: str
     requested_run: PipelineRunRecord
     result_run: PipelineRunRecord
-    state_db: Path
+    state_db: str
     base_dir: Path
     refresh_mode: str
     replay_command: tuple[str, ...]
 
 
-def resolve_completed_run_id(store: SQLitePipelineStore, requested_run_id: str | None) -> str:
+def resolve_completed_run_id(store: PipelineStateStore, requested_run_id: str | None) -> str:
     run_id = requested_run_id or store.latest_completed_run_id()
     if run_id is None:
-        raise FileNotFoundError(f"No completed persisted runs found in {store.db_path}")
+        raise FileNotFoundError(f"No completed persisted runs found in {store.display_name}")
     return run_id
 
 
-def resolve_review_case_run_id(store: SQLitePipelineStore, requested_run_id: str | None) -> str:
+def resolve_review_case_run_id(store: PipelineStateStore, requested_run_id: str | None) -> str:
     run_id = requested_run_id or store.latest_completed_run_id_with_review_cases()
     if run_id is None:
-        raise FileNotFoundError(f"No completed persisted review-case runs found in {store.db_path}")
+        raise FileNotFoundError(f"No completed persisted review-case runs found in {store.display_name}")
     return run_id
 
 
 def apply_review_decision_operation(
     *,
-    store: SQLitePipelineStore,
+    store: PipelineStateStore,
     run_id: str | None,
     review_id: str,
     decision: str,
@@ -85,8 +86,8 @@ def apply_review_decision_operation(
 
 def replay_run_operation(
     *,
-    store: SQLitePipelineStore,
-    state_db: Path,
+    store: PipelineStateStore,
+    state_db: str | Path,
     source_run_id: str | None,
     base_dir: Path | None,
     refresh_mode: str | None,
@@ -169,7 +170,7 @@ def replay_run_operation(
         action=action,
         requested_run=source_run,
         result_run=result_run,
-        state_db=state_db.resolve(),
+        state_db=state_store_display_name(state_db),
         base_dir=replay_base_dir.resolve(),
         refresh_mode=resolved_refresh_mode,
         replay_command=tuple(replay_argv),

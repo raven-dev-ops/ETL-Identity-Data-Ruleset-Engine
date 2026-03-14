@@ -1,7 +1,7 @@
 # Delivery Contracts
 
 The runtime now supports a versioned downstream publication contract for
-golden records and the source-to-golden crosswalk from persisted SQLite
+golden records and the source-to-golden crosswalk from persisted SQL
 state.
 
 The contract can be published directly with `publish-delivery` or

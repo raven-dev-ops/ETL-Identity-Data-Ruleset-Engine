@@ -1,13 +1,13 @@
 # Recovery Runbooks
 
 This runbook defines the supported backup, restore, and replay model
-for persisted SQLite-backed runs.
+for persisted SQL-backed runs.
 
 ## Recovery Model
 
 Persisted run state is split across two layers:
 
-- the SQLite state database, which stores run registry rows, normalized
+- the persisted state store, which stores run registry rows, normalized
   rows, candidate decisions, clusters, golden records, crosswalk rows,
   review cases, export history, and audit events
 - the manifest plus landed source snapshot referenced by a manifest-
@@ -16,7 +16,7 @@ Persisted run state is split across two layers:
 That distinction matters operationally:
 
 - `report`, `publish-run`, and `export-job-run` can rebuild downstream
-  outputs from the restored SQLite database alone
+  outputs from the restored persisted state store alone
 - `replay-run` requires the stored `manifest_path` to exist again, and
   the landed files referenced by that manifest must also be available
 

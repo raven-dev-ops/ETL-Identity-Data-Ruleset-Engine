@@ -23,7 +23,8 @@ It defines:
 - `environments.<name>.service_auth`
 
 Relative paths are resolved from the directory that contains the runtime
-environment file.
+environment file. `environments.<name>.state_db` supports either a
+local SQLite path or a PostgreSQL SQLAlchemy URL.
 
 ## Variable Resolution
 

@@ -1,7 +1,7 @@
 # Service API
 
-The runtime now ships an authenticated operator API over persisted
-SQLite state.
+The runtime now ships an authenticated operator API over persisted SQL
+state.
 
 ## Local Run
 
@@ -50,8 +50,8 @@ than committed into repo config.
 ## Endpoint Surface
 
 - `GET /healthz`
-  - Returns liveness-style process health plus the resolved SQLite path
-    and API version.
+  - Returns liveness-style process health plus the resolved state-store
+    reference and API version.
 - `GET /readyz`
   - Returns readiness-style status, latest run summary, and audit-event
     totals from the persisted store.
@@ -94,8 +94,8 @@ the required role return `403`. Unsupported replay operations such as
 non-manifest source runs return `409`.
 
 Privileged review-decision and replay actions also now persist audit
-events in SQLite, and the service emits structured JSON request logs to
-`stderr` for operational collection.
+events in the configured state store, and the service emits structured
+JSON request logs to `stderr` for operational collection.
 
 ## Compatibility
 

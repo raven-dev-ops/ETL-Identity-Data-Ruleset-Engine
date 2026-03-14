@@ -8,7 +8,7 @@ golden records, and reporting artifacts.
 ## Public Scope Boundaries
 
 - The current runtime supports synthetic generation plus manifest-driven
-  local and object-storage-compatible landed batches. Persisted SQLite
+  local and object-storage-compatible landed batches. Persisted SQL
   state is now supported, and an authenticated operator service API now
   exposes persisted run, golden, crosswalk, and review-case lookups
   plus operator-only review-decision and replay actions. A container
@@ -19,7 +19,7 @@ golden records, and reporting artifacts.
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
 - The supported manual-review model now includes persisted review-case
-  state when SQLite persistence is enabled. The CSV queue remains the
+  state when persisted-state support is enabled. The CSV queue remains the
   portable file artifact, and approved or rejected review decisions now
   apply deterministically to later cluster and golden rebuilds.
 
@@ -49,33 +49,34 @@ golden records, and reporting artifacts.
 7. `report`
    - Builds markdown and JSON quality summaries from normalized records
      plus match, cluster, golden, and review-queue artifacts, or reloads
-     a completed persisted run from SQLite
+     a completed persisted run from the configured state store
    - Writes under `data/exceptions/`
 8. `run-all`
    - Executes the end-to-end prototype path in one command
    - Either generates synthetic inputs or uses a validated production
      batch manifest
-   - Can optionally persist completed run state into SQLite
+   - Can optionally persist completed run state into the configured
+     state store
    - Supports manifest-driven incremental refresh when paired with
      `--state-db --refresh-mode incremental`
 9. `publish-delivery`
-   - Reads a completed persisted run from SQLite
+   - Reads a completed persisted run from the configured state store
    - Publishes immutable downstream snapshots for golden records and the
      source-to-golden crosswalk
    - Updates an atomic `current.json` consumer pointer under the
      versioned delivery-contract root
 10. `serve-api`
-   - Reads persisted SQLite state through a local HTTP service
+   - Reads persisted SQL state through a local HTTP service
    - Exposes authenticated run status, golden-record lookup,
      source-to-golden crosswalk lookup, and review-case retrieval
    - Supports operator-only review decision and replay actions
    - Exposes authenticated `healthz`, `readyz`, and `/api/v1/metrics`
      endpoints for service and batch observability
 11. `export-job-run`
-   - Reads a completed persisted run from SQLite
+   - Reads a completed persisted run from the configured state store
    - Materializes a named warehouse or data-product export under the
      configured output root
-   - Records auditable export execution and reuse in SQLite
+   - Records auditable export execution and reuse in the state store
 12. `benchmark-run`
    - Executes the real persisted `run-all` path against a named
      large-batch fixture
@@ -111,7 +112,7 @@ The production batch manifest contract is documented separately in
 
 ## Persistent State
 
-The runtime now supports optional SQLite-backed persistence for:
+The runtime now supports optional SQL-backed persistence for:
 
 - run registry metadata
 - normalized source rows
@@ -123,7 +124,8 @@ The runtime now supports optional SQLite-backed persistence for:
 - manual-review queue rows
 - audit events
 
-`run-all --state-db ...` persists a completed run into SQLite, and
+`run-all --state-db ...` persists a completed run into the configured
+state store, and
 `report --state-db ... --run-id ...` can reload that state to reproduce
 the reporting slice from the database instead of the filesystem. The
 state schema is documented in [persistent-state.md](persistent-state.md).
@@ -144,7 +146,7 @@ golden/crosswalk snapshot from any completed persisted run without
 needing the original working-directory files.
 `export-job-run --state-db ... --job-name ...` can then materialize the
 same delivery contract through named warehouse or data-product export
-jobs while recording auditable export-run metadata in SQLite.
+jobs while recording auditable export-run metadata in the state store.
 `serve-api --state-db ...` can expose the same persisted state through
 an authenticated operator API for local and CI integration testing, and
 the shared observability baseline now also persists privileged audit
@@ -182,7 +184,8 @@ The current manual-review model now has two surfaces:
 - `review-queue` writes `data/review_queue/manual_review_queue.csv`
 - fresh queue rows still initialize `queue_status` to `pending`
 - when persisted state is enabled, the same cases are also stored in
-  SQLite with lifecycle status, assignee, timestamps, and notes
+  the state store with lifecycle status, assignee, timestamps, and
+  notes
 - operators can inspect and update persisted cases through
   `review-case-list` and `review-case-update`
 - service consumers can retrieve persisted cases through `serve-api`

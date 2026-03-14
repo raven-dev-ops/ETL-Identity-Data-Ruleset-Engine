@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import inspect
 
 
 revision = "20260314_0002"
@@ -13,8 +14,7 @@ depends_on = None
 
 def _ensure_column(column_name: str, column_type: str) -> None:
     bind = op.get_bind()
-    rows = bind.exec_driver_sql("PRAGMA table_info(review_cases)").fetchall()
-    existing_columns = {str(row[1]) for row in rows}
+    existing_columns = {str(column["name"]) for column in inspect(bind).get_columns("review_cases")}
     if column_name not in existing_columns:
         bind.exec_driver_sql(f"ALTER TABLE review_cases ADD COLUMN {column_name} {column_type}")
 

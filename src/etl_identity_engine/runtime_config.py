@@ -10,6 +10,7 @@ import re
 
 import yaml
 from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_NAME, DELIVERY_CONTRACT_VERSION
+from etl_identity_engine.storage.state_store_target import is_state_store_url, resolve_state_store_target
 
 
 SUPPORTED_BLOCKING_FIELDS = frozenset({"last_initial", "last_name", "dob", "birth_year"})
@@ -97,7 +98,7 @@ class PipelineConfig:
 class RuntimeEnvironmentConfig:
     name: str
     config_dir: Path
-    state_db: Path | None
+    state_db: Path | str | None
     secrets: dict[str, str]
     service_auth: ServiceAuthConfig | None
 
@@ -396,13 +397,18 @@ def load_runtime_environment(
         config_dir = (config_path.parent / config_dir).resolve()
 
     raw_state_db = selected.get("state_db")
-    state_db: Path | None
+    state_db: Path | str | None
     if raw_state_db in (None, ""):
         state_db = None
     elif isinstance(raw_state_db, str) and raw_state_db.strip():
-        state_db = Path(raw_state_db.strip())
-        if not state_db.is_absolute():
-            state_db = (config_path.parent / state_db).resolve()
+        configured_state_db = raw_state_db.strip()
+        if is_state_store_url(configured_state_db):
+            state_db = resolve_state_store_target(configured_state_db).raw_value
+        else:
+            resolved_state_db_path = Path(configured_state_db)
+            if not resolved_state_db_path.is_absolute():
+                resolved_state_db_path = (config_path.parent / resolved_state_db_path).resolve()
+            state_db = resolve_state_store_target(resolved_state_db_path).file_path
     else:
         raise _config_error(
             config_path,

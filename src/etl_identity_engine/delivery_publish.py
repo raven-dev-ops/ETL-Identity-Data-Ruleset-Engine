@@ -21,6 +21,7 @@ from etl_identity_engine.output_contracts import (
     GOLDEN_HEADERS,
 )
 from etl_identity_engine.storage.sqlite_store import PersistedRunBundle
+from etl_identity_engine.storage.state_store_target import state_store_display_name
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def _sha256_file(path: Path) -> str:
 def _build_delivery_manifest(
     *,
     bundle: PersistedRunBundle,
-    state_db_path: Path,
+    state_db_path: str | Path,
     snapshot_id: str,
     contract_version: str,
     published_at_utc: str,
@@ -91,7 +92,7 @@ def _build_delivery_manifest(
         "snapshot_id": snapshot_id,
         "published_at_utc": published_at_utc,
         "run_id": bundle.run.run_id,
-        "state_db": str(state_db_path.name),
+        "state_db": state_store_display_name(state_db_path),
         "source_run": {
             "run_id": bundle.run.run_id,
             "run_key": bundle.run.run_key,
@@ -132,7 +133,7 @@ def _existing_snapshot_is_compatible(
 def publish_delivery_snapshot(
     *,
     bundle: PersistedRunBundle,
-    state_db_path: Path,
+    state_db_path: str | Path,
     output_root: Path,
     contract_version: str = DELIVERY_CONTRACT_VERSION,
     published_at_utc: str | None = None,

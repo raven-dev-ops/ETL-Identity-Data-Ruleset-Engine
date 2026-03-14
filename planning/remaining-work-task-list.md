@@ -18,11 +18,14 @@ of truth for tracked work; this file is the short maintainer view.
   `v0.7.0`, `v0.8.0`, and `v0.9.0`.
 - GitHub sync is complete for the new backlog cycle with open epics
   `#81`, `#82`, and `#83`.
+- GitHub issue `#84` is complete: persisted state now supports
+  PostgreSQL DSNs alongside SQLite paths, and the state-store migration
+  and runtime surface has PostgreSQL dialect coverage.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
-  - Open GitHub issues: `#84`, `#85`, `#86`, `#87`
+  - Open GitHub issues: `#85`, `#86`, `#87`
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: `#88`, `#89`, `#90`, `#91`
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
@@ -30,7 +33,7 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Gaps Now Explicitly Tracked
 
-- [ ] PostgreSQL-backed persisted state
+- [x] PostgreSQL-backed persisted state
 - [ ] Immutable replay bundles for manifests and landed inputs
 - [ ] Replay independent of original landing paths
 - [ ] Checkpointed resume for failed persisted runs
@@ -45,5 +48,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#84`: PostgreSQL state-store backend and dialect test
-  coverage.
+- Start issue `#85`: Archive manifest and landed-input snapshots as
+  immutable replay bundles.

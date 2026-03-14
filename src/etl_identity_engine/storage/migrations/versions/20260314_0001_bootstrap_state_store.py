@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import inspect
 
 from etl_identity_engine.output_contracts import (
     CROSSWALK_HEADERS,
@@ -78,8 +79,7 @@ def _create_artifact_table(table_name: str, schema: tuple[tuple[str, str], ...])
 
 def _ensure_pipeline_runs_columns() -> None:
     bind = op.get_bind()
-    rows = bind.exec_driver_sql("PRAGMA table_info(pipeline_runs)").fetchall()
-    existing_columns = {str(row[1]) for row in rows}
+    existing_columns = {str(column["name"]) for column in inspect(bind).get_columns("pipeline_runs")}
     required_columns = {
         "run_key": "TEXT",
         "attempt_number": "INTEGER",

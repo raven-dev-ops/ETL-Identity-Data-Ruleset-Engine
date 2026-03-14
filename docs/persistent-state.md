@@ -1,7 +1,13 @@
 # Persistent State
 
-The runtime now supports optional SQLite-backed persistence for
-completed pipeline runs.
+The runtime now supports optional SQL-backed persistence for completed
+pipeline runs.
+
+Supported `--state-db` targets:
+
+- local SQLite paths such as `data/state/pipeline_state.sqlite`
+- PostgreSQL SQLAlchemy URLs such as
+  `postgresql://etl_user:secret@db.internal:5432/identity_state`
 
 ## Current Scope
 
@@ -14,7 +20,7 @@ python -m etl_identity_engine.cli run-all \
 ```
 
 When enabled, the runtime writes one completed run record plus the core
-pipeline artifacts into SQLite.
+pipeline artifacts into the configured state store.
 
 You can then reload a persisted run into the reporting stage:
 
@@ -25,7 +31,8 @@ python -m etl_identity_engine.cli report \
   --output data/exceptions/run_report.md
 ```
 
-You can bootstrap or inspect the SQLite schema through the runtime CLI:
+You can bootstrap or inspect the persisted schema through the runtime
+CLI:
 
 ```bash
 python -m etl_identity_engine.cli state-db-upgrade \
@@ -247,7 +254,8 @@ Completed persisted runs can now be published under the versioned
 
 The publish path:
 
-- reads golden and crosswalk rows from SQLite rather than the working
+- reads golden and crosswalk rows from the persisted state store rather
+  than the working
   directory
 - writes an immutable snapshot directory for the selected `run_id`
 - updates `current.json` atomically so downstream consumers can follow a
@@ -360,7 +368,7 @@ The supported recovery model is now documented in
 Operators should treat the minimum recoverable backup set for
 manifest-driven persisted runs as:
 
-- the SQLite state DB
+- the persisted state store
 - the manifest file referenced by the completed run
 - the landed input snapshot referenced by that manifest
 - any custom runtime config snapshot used for that run
@@ -368,7 +376,7 @@ manifest-driven persisted runs as:
 That distinction is important because:
 
 - `report`, `publish-run`, and downstream export jobs can rebuild from a
-  restored SQLite DB alone
+  restored persisted state store alone
 - `replay-run` requires the stored `manifest_path` plus the landed input
   snapshot to exist again
 

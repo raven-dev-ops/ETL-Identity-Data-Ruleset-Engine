@@ -1,4 +1,4 @@
-"""Alembic environment for the SQLite pipeline store."""
+"""Alembic environment for persisted SQL state stores."""
 
 from __future__ import annotations
 

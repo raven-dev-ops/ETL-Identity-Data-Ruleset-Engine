@@ -1,1 +1,1 @@
-"""Alembic revision package for the SQLite pipeline store."""
+"""Alembic revision package for persisted SQL state stores."""

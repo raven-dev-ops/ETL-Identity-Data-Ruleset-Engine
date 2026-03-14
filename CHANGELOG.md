@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added PostgreSQL-backed persisted-state support alongside SQLite,
+  normalized state-store URL handling, and PostgreSQL dialect coverage
+  for the migration/runtime path.
+
 ## [0.6.0] - 2026-03-14
 
 ### Added

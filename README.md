@@ -134,7 +134,8 @@ is included in the repository.
 - The runtime now supports two input modes: synthetic generation for
   safe experimentation and manifest-driven landed batches for
   production-style evaluation. Local filesystem and object-storage-
-  compatible landing zones are supported. Persisted SQLite state,
+  compatible landing zones are supported. Persisted SQL state via
+  SQLite paths or PostgreSQL URLs,
   manifest-driven incremental refresh, a container image, a single-host
   compose deployment baseline, named benchmark fixtures with capacity
   targets, and an authenticated operator service API are now available.
@@ -148,7 +149,8 @@ is included in the repository.
 - The supported manual-review operating model for the current `0.x` line
   now has two layers: the CSV queue artifact remains the portable file
   handoff, and persisted runs can also track review-case status,
-  assignee, timestamps, and notes in SQLite. Approved and rejected
+  assignee, timestamps, and notes in the configured state store.
+  Approved and rejected
   review decisions now carry forward into later persisted reruns and can
   override heuristic cluster and golden outcomes.
 
@@ -295,7 +297,7 @@ support durable review-case state through `review-case-list` and
 to later persisted reruns, forcing merge or non-merge outcomes before
 cluster and golden rebuilds.
 
-Persisted SQLite state can also now be served through an authenticated
+Persisted SQL state can also now be served through an authenticated
 operator API with `serve-api`. That surface exposes run status, golden
 record lookups, source-to-golden crosswalk lookups, and persisted
 review-case retrieval for downstream systems and operators, and it now
@@ -303,7 +305,7 @@ supports operator-only review decision and replay actions behind
 separate API-key roles. It also now exposes authenticated `healthz`,
 `readyz`, and `/api/v1/metrics` endpoints, while privileged CLI and
 service actions emit structured JSON logs and persist audit events in
-SQLite. The service contract is documented in
+the configured state store. The service contract is documented in
 [docs/service-api.md](docs/service-api.md), and the current operations
 baseline is documented in
 [docs/operations-observability.md](docs/operations-observability.md).

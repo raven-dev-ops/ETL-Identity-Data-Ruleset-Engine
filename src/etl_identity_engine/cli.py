@@ -74,20 +74,21 @@ from etl_identity_engine.runtime_config import (
 )
 from etl_identity_engine.service_api import create_service_app
 from etl_identity_engine.storage.migration_runner import (
-    current_sqlite_store_revision,
+    current_state_store_revision,
     head_revision,
-    upgrade_sqlite_store,
+    upgrade_state_store,
 )
 from etl_identity_engine.storage.sqlite_store import (
     EXPORT_RUN_STATUSES,
     ExportJobRunRecord,
+    PipelineStateStore,
     PersistedReviewCase,
     PersistRunMetadata,
     PipelineRunRecord,
-    SQLitePipelineStore,
     build_export_key,
     build_run_key,
 )
+from etl_identity_engine.storage.state_store_target import state_store_display_name, state_store_reference_name
 from etl_identity_engine.survivorship.rules_engine import build_golden_records
 
 
@@ -148,10 +149,10 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
     args.environment = runtime_environment.name
 
 
-def _require_state_db(args: argparse.Namespace) -> Path:
+def _require_state_db(args: argparse.Namespace) -> str:
     if not args.state_db:
         raise ValueError("This command requires --state-db or a runtime environment with state_db configured")
-    return Path(args.state_db)
+    return str(args.state_db)
 
 
 def _config_fingerprint(config: PipelineConfig) -> str:
@@ -378,7 +379,7 @@ def _collect_report_context_from_store(
     if args.matches or args.clusters or args.golden_file or args.review_queue:
         raise ValueError("report cannot combine persisted-state reload with file override flags")
 
-    store = SQLitePipelineStore(Path(args.state_db))
+    store = PipelineStateStore(args.state_db)
     bundle = store.load_run_bundle(args.run_id)
     decision_counts = Counter(str(row.get("decision", "")) for row in bundle.candidate_pairs)
     cluster_count = len(
@@ -389,7 +390,7 @@ def _collect_report_context_from_store(
         }
     )
     return (
-        f"state-db://{Path(args.state_db).name}?run_id={args.run_id}",
+        f"state-db://{state_store_reference_name(args.state_db)}?run_id={args.run_id}",
         bundle.normalized_rows,
         dict(decision_counts),
         len(bundle.candidate_pairs),
@@ -950,21 +951,23 @@ def _cmd_golden(args: argparse.Namespace) -> None:
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
-    upgrade_sqlite_store(state_db, revision=args.revision)
-    current_revision = current_sqlite_store_revision(state_db) or "uninitialized"
-    print(f"state db upgraded: {state_db} (revision={current_revision})")
+    upgrade_state_store(state_db, revision=args.revision)
+    current_revision = current_state_store_revision(state_db) or "uninitialized"
+    print(f"state db upgraded: {state_store_display_name(state_db)} (revision={current_revision})")
 
 
 def _cmd_state_db_current(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
-    current_revision = current_sqlite_store_revision(state_db) or "uninitialized"
+    current_revision = current_state_store_revision(state_db) or "uninitialized"
     print(f"state db revision: {current_revision} (head={head_revision()})")
 
 
-def _resolve_review_case_run_id(args: argparse.Namespace, store: SQLitePipelineStore) -> str:
+def _resolve_review_case_run_id(args: argparse.Namespace, store: PipelineStateStore) -> str:
     run_id = args.run_id or store.latest_completed_run_id_with_review_cases()
     if run_id is None:
-        raise FileNotFoundError(f"No completed persisted review-case runs found in {_require_state_db(args)}")
+        raise FileNotFoundError(
+            f"No completed persisted review-case runs found in {state_store_display_name(_require_state_db(args))}"
+        )
     return run_id
 
 
@@ -1046,7 +1049,7 @@ def _serialize_export_run_record(record: ExportJobRunRecord) -> dict[str, object
 
 
 def _record_cli_audit_event(
-    store: SQLitePipelineStore,
+    store: PipelineStateStore,
     *,
     action: str,
     resource_type: str,
@@ -1067,10 +1070,12 @@ def _record_cli_audit_event(
     )
 
 
-def _resolve_completed_run_id(args: argparse.Namespace, store: SQLitePipelineStore) -> str:
+def _resolve_completed_run_id(args: argparse.Namespace, store: PipelineStateStore) -> str:
     run_id = args.run_id or store.latest_completed_run_id()
     if run_id is None:
-        raise FileNotFoundError(f"No completed persisted runs found in {_require_state_db(args)}")
+        raise FileNotFoundError(
+            f"No completed persisted runs found in {state_store_display_name(_require_state_db(args))}"
+        )
     return run_id
 
 
@@ -1093,7 +1098,7 @@ def _resolve_export_job(args: argparse.Namespace) -> ExportJobConfig:
 
 def _cmd_review_case_list(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     run_id = _resolve_review_case_run_id(args, store)
     cases = store.list_review_cases(
         run_id=run_id,
@@ -1105,7 +1110,7 @@ def _cmd_review_case_list(args: argparse.Namespace) -> None:
 
 def _cmd_review_case_update(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     run_id = _resolve_review_case_run_id(args, store)
     updated = store.update_review_case(
         run_id=run_id,
@@ -1120,7 +1125,7 @@ def _cmd_review_case_update(args: argparse.Namespace) -> None:
 def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     try:
         result = apply_review_decision_operation(
             store=store,
@@ -1186,7 +1191,7 @@ def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
         json.dumps(
             {
                 "action": result.action,
-                "state_db": str(state_db.resolve()),
+                "state_db": state_store_display_name(state_db),
                 "case": _serialize_review_case(result.case),
             },
             indent=2,
@@ -1198,10 +1203,10 @@ def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
 def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     run_id = args.run_id or store.latest_completed_run_id()
     if run_id is None:
-        raise FileNotFoundError(f"No completed persisted runs found in {state_db}")
+        raise FileNotFoundError(f"No completed persisted runs found in {state_store_display_name(state_db)}")
 
     bundle = store.load_run_bundle(run_id)
     contract_root = Path(args.output_dir) / DELIVERY_CONTRACT_NAME / args.contract_version
@@ -1243,7 +1248,7 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
 def _cmd_publish_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     run_id = _resolve_completed_run_id(args, store)
     contract_root = Path(args.output_dir) / DELIVERY_CONTRACT_NAME / args.contract_version
     snapshot_dir = contract_root / "snapshots" / run_id
@@ -1308,7 +1313,7 @@ def _cmd_export_job_list(args: argparse.Namespace) -> None:
 def _cmd_export_job_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     source_run_id = _resolve_completed_run_id(args, store)
     source_run = store.load_run_record(source_run_id)
     if source_run.status != "completed":
@@ -1441,7 +1446,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
 
 def _cmd_export_job_history(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     records = store.list_export_runs(
         job_name=args.job_name,
         source_run_id=args.source_run_id,
@@ -1459,7 +1464,7 @@ def _cmd_export_job_history(args: argparse.Namespace) -> None:
 def _cmd_replay_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
-    store = SQLitePipelineStore(state_db)
+    store = PipelineStateStore(state_db)
     try:
         result = replay_run_operation(
             store=store,
@@ -1600,7 +1605,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     if manifest_path:
         manifest_batch_id = peek_manifest_batch_id(Path(manifest_path))
 
-    state_store = SQLitePipelineStore(Path(args.state_db)) if args.state_db else None
+    state_store = PipelineStateStore(args.state_db) if args.state_db else None
     run_started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     run_key_args = _resolve_run_key_args(args, batch_id=manifest_batch_id)
     run_key = build_run_key(**run_key_args)
@@ -1625,7 +1630,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         batch_id=manifest_batch_id or "",
         refresh_mode=args.refresh_mode,
         run_key=run_key,
-        state_db=args.state_db or "",
+        state_db=state_store_display_name(args.state_db) if args.state_db else "",
     )
 
     if state_store is not None:
@@ -1652,7 +1657,10 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 run_key=run_key,
                 duration_seconds=seconds_since(started),
             )
-            print(f"reused persisted completed run: {Path(args.state_db)} (run_id={bundle.run.run_id})")
+            print(
+                f"reused persisted completed run: {state_store_display_name(args.state_db)} "
+                f"(run_id={bundle.run.run_id})"
+            )
             print("pipeline run complete")
             return
         run_id = start_decision.run_id
@@ -2013,7 +2021,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 json.dumps(summary, indent=2, sort_keys=True),
                 encoding="utf-8",
             )
-            print(f"persisted run state: {Path(args.state_db)} (run_id={run_id})")
+            print(f"persisted run state: {state_store_display_name(args.state_db)} (run_id={run_id})")
         emit_structured_log(
             "pipeline_run_completed",
             component="cli",
@@ -2073,7 +2081,7 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
     benchmark_root.mkdir(parents=True, exist_ok=True)
 
     run_artifact_root = benchmark_root / "run_artifacts"
-    state_db = Path(args.state_db) if args.state_db else benchmark_root / "state" / "pipeline_state.sqlite"
+    state_db = args.state_db if args.state_db else benchmark_root / "state" / "pipeline_state.sqlite"
     benchmark_summary_path = benchmark_root / "benchmark_summary.json"
     benchmark_report_path = benchmark_root / "benchmark_report.md"
 
@@ -2084,7 +2092,7 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
         fixture=fixture.name,
         deployment_target=deployment_name,
         output_dir=benchmark_root,
-        state_db=state_db,
+        state_db=state_store_display_name(state_db),
     )
 
     run_all_argv = [
@@ -2256,7 +2264,7 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument(
         "--state-db",
         default=None,
-        help="Path to a persisted SQLite state database for reloading a completed run.",
+        help="Path or SQLAlchemy URL for a persisted state store when reloading a completed run.",
     )
     report_parser.add_argument(
         "--run-id",
@@ -2287,7 +2295,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     state_db_upgrade_parser = subparsers.add_parser(
         "state-db-upgrade",
-        help="Upgrade a persisted SQLite state database to the latest Alembic revision.",
+        help="Upgrade a persisted state store to the latest Alembic revision.",
     )
     state_db_upgrade_parser.add_argument("--environment", default=None)
     state_db_upgrade_parser.add_argument("--runtime-config", default=None)
@@ -2297,7 +2305,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     state_db_current_parser = subparsers.add_parser(
         "state-db-current",
-        help="Show the current Alembic revision for a persisted SQLite state database.",
+        help="Show the current Alembic revision for a persisted state store.",
     )
     state_db_current_parser.add_argument("--environment", default=None)
     state_db_current_parser.add_argument("--runtime-config", default=None)
@@ -2508,7 +2516,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve_api_parser = subparsers.add_parser(
         "serve-api",
-        help="Serve the operator API over a persisted SQLite state database.",
+        help="Serve the operator API over a persisted SQL state store.",
     )
     serve_api_parser.add_argument("--environment", default=None)
     serve_api_parser.add_argument("--runtime-config", default=None)
@@ -2536,7 +2544,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_run_parser.add_argument(
         "--state-db",
         default=None,
-        help="Optional SQLite state path override for the benchmark run.",
+        help="Optional persisted state-store path or SQLAlchemy URL override for the benchmark run.",
     )
     benchmark_run_parser.add_argument("--environment", default=None)
     benchmark_run_parser.add_argument("--runtime-config", default=None)
@@ -2573,7 +2581,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument(
         "--state-db",
         default=None,
-        help="Path to a SQLite database where completed run state should be persisted.",
+        help="Path or SQLAlchemy URL for the persisted state store where completed runs should be recorded.",
     )
     run_all_parser.add_argument(
         "--manifest",
