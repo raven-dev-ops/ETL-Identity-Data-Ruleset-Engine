@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 - Landing-zone adapter support for object-storage-compatible manifest
   inputs through `fsspec` URIs, with end-to-end coverage using
   `memory://` batches.
+- Optional SQLite-backed persistence for completed runs and core
+  pipeline artifacts, plus a persisted-state reload path for `report`.
 
 ### Changed
 

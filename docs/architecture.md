@@ -42,12 +42,14 @@ golden records, and reporting artifacts.
    - Writes `data/golden/golden_person_records.csv`
 7. `report`
    - Builds markdown and JSON quality summaries from normalized records
-     plus match, cluster, golden, and review-queue artifacts
+     plus match, cluster, golden, and review-queue artifacts, or reloads
+     a completed persisted run from SQLite
    - Writes under `data/exceptions/`
 8. `run-all`
    - Executes the end-to-end prototype path in one command
    - Either generates synthetic inputs or uses a validated production
      batch manifest
+   - Can optionally persist completed run state into SQLite
 
 ## Config Surfaces
 
@@ -64,6 +66,24 @@ or threshold semantics are invalid.
 
 The production batch manifest contract is documented separately in
 [production-batch-manifest.md](production-batch-manifest.md).
+
+## Persistent State
+
+The runtime now supports optional SQLite-backed persistence for:
+
+- run registry metadata
+- normalized source rows
+- candidate pairs
+- blocking metrics
+- entity clusters
+- golden records
+- source-to-golden crosswalk rows
+- manual-review queue rows
+
+`run-all --state-db ...` persists a completed run into SQLite, and
+`report --state-db ... --run-id ...` can reload that state to reproduce
+the reporting slice from the database instead of the filesystem. The
+state schema is documented in [persistent-state.md](persistent-state.md).
 
 ## Output Layout
 

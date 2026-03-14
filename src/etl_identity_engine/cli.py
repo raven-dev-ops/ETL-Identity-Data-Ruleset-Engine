@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -36,6 +37,11 @@ from etl_identity_engine.quality.exceptions import (
     extract_exception_rows,
 )
 from etl_identity_engine.runtime_config import PipelineConfig, load_pipeline_config
+from etl_identity_engine.storage.sqlite_store import (
+    PersistRunMetadata,
+    SQLitePipelineStore,
+    build_run_id,
+)
 from etl_identity_engine.survivorship.rules_engine import build_golden_records
 
 
@@ -254,9 +260,41 @@ def _resolve_cluster_command_inputs(args: argparse.Namespace) -> tuple[list[dict
     return rows, match_rows
 
 
+def _collect_report_context_from_store(
+    args: argparse.Namespace,
+) -> tuple[str, list[dict[str, str]], dict[str, int], int, int, int, int]:
+    if not args.state_db or not args.run_id:
+        raise ValueError("report requires both --state-db and --run-id for persisted-state reload")
+    if args.matches or args.clusters or args.golden_file or args.review_queue:
+        raise ValueError("report cannot combine persisted-state reload with file override flags")
+
+    store = SQLitePipelineStore(Path(args.state_db))
+    bundle = store.load_run_bundle(args.run_id)
+    decision_counts = Counter(str(row.get("decision", "")) for row in bundle.candidate_pairs)
+    cluster_count = len(
+        {
+            str(row.get("cluster_id", "")).strip()
+            for row in bundle.cluster_rows
+            if str(row.get("cluster_id", "")).strip()
+        }
+    )
+    return (
+        f"state-db://{Path(args.state_db).name}?run_id={args.run_id}",
+        bundle.normalized_rows,
+        dict(decision_counts),
+        len(bundle.candidate_pairs),
+        cluster_count,
+        len(bundle.golden_rows),
+        len(bundle.review_rows),
+    )
+
+
 def _collect_report_context(
     args: argparse.Namespace,
-) -> tuple[Path, list[dict[str, str]], dict[str, int], int, int, int, int]:
+) -> tuple[Path | str, list[dict[str, str]], dict[str, int], int, int, int, int]:
+    if args.state_db or args.run_id:
+        return _collect_report_context_from_store(args)
+
     input_file = Path(args.input)
     normalized_rows = read_dict_rows(input_file)
     match_rows = _resolve_match_rows(input_file, args.matches)
@@ -525,7 +563,7 @@ def _write_crosswalk_output(
 
 def _write_quality_outputs(
     output_file: Path,
-    input_file: Path,
+    input_file: Path | str,
     rows: list[dict[str, str]],
     *,
     candidate_pair_count: int = 0,
@@ -552,10 +590,13 @@ def _write_quality_outputs(
         review_queue_count=review_queue_count,
     )
 
-    try:
-        display_input_path = os.path.relpath(input_file, output_file.parent).replace("\\", "/")
-    except ValueError:
-        display_input_path = str(input_file).replace("\\", "/")
+    if isinstance(input_file, Path):
+        try:
+            display_input_path = os.path.relpath(input_file, output_file.parent).replace("\\", "/")
+        except ValueError:
+            display_input_path = str(input_file).replace("\\", "/")
+    else:
+        display_input_path = input_file
 
     write_markdown(output_file, build_run_report_markdown(display_input_path, summary))
 
@@ -650,6 +691,9 @@ def _cmd_report(args: argparse.Namespace) -> None:
 def _cmd_run_all(args: argparse.Namespace) -> None:
     base = Path(args.base_dir)
     config = _load_config(args.config_dir)
+    state_store = SQLitePipelineStore(Path(args.state_db)) if args.state_db else None
+    run_started = datetime.now(timezone.utc)
+    run_id = build_run_id(run_started)
     normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
     matches_file = base / "data" / "matches" / "candidate_scores.csv"
     clusters_file = base / "data" / "matches" / "entity_clusters.csv"
@@ -659,8 +703,13 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     report_file = base / "data" / "exceptions" / "run_report.md"
 
     manifest_path = getattr(args, "manifest", None)
+    resolved_manifest: ResolvedBatchManifest | None = None
+    input_mode = "manifest" if manifest_path else "synthetic"
+    batch_id: str | None = None
+    formats_value: str | None = None
     if manifest_path:
         resolved_manifest = _resolve_manifest_inputs(manifest_path)
+        batch_id = resolved_manifest.manifest.batch_id
         print(
             f"validated batch manifest: {resolved_manifest.manifest_path} "
             f"(batch_id={resolved_manifest.manifest.batch_id})"
@@ -674,6 +723,8 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         )
     else:
         formats = _parse_formats(args.formats)
+        formats_value = ",".join(formats)
+        batch_id = f"synthetic:{args.profile}:{args.seed}"
         synthetic_dir = base / "data" / "synthetic_sources"
         generate_synthetic_sources(
             output_dir=synthetic_dir,
@@ -687,14 +738,14 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
             config,
         )
-    match_rows, _ = _write_match_output(matches_file, normalized_rows, config)
+    match_rows, blocking_metrics_rows = _write_match_output(matches_file, normalized_rows, config)
     clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
     review_rows = _write_manual_review_output(review_queue_file, match_rows)
     golden_rows = _write_golden_output(golden_file, clustered_rows, config)
     _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
 
     decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
-    _write_quality_outputs(
+    summary = _write_quality_outputs(
         report_file,
         normalized_file,
         normalized_rows,
@@ -704,6 +755,33 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         golden_record_count=len(golden_rows),
         review_queue_count=len(review_rows),
     )
+    crosswalk_rows = _build_crosswalk_rows(clustered_rows, golden_rows)
+    if state_store is not None:
+        state_store.persist_run(
+            metadata=PersistRunMetadata(
+                run_id=run_id,
+                batch_id=batch_id,
+                input_mode=input_mode,
+                manifest_path=str(resolved_manifest.manifest_path) if resolved_manifest else None,
+                base_dir=str(base.resolve()),
+                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+                profile=None if manifest_path else args.profile,
+                seed=None if manifest_path else args.seed,
+                formats=formats_value,
+                started_at_utc=run_started.isoformat().replace("+00:00", "Z"),
+                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                status="completed",
+            ),
+            normalized_rows=normalized_rows,
+            match_rows=match_rows,
+            blocking_metrics_rows=blocking_metrics_rows,
+            cluster_rows=read_dict_rows(clusters_file),
+            golden_rows=golden_rows,
+            crosswalk_rows=crosswalk_rows,
+            review_rows=review_rows,
+            summary=summary,
+        )
+        print(f"persisted run state: {Path(args.state_db)} (run_id={run_id})")
     print("pipeline run complete")
 
 
@@ -796,6 +874,16 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
     report_parser.add_argument("--output", default="data/exceptions/run_report.md")
     report_parser.add_argument(
+        "--state-db",
+        default=None,
+        help="Path to a persisted SQLite state database for reloading a completed run.",
+    )
+    report_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to reload from --state-db.",
+    )
+    report_parser.add_argument(
         "--matches",
         default=None,
         help="Path to candidate_scores.csv. Defaults relative to --input.",
@@ -823,6 +911,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--seed", default=42, type=int)
     run_all_parser.add_argument("--duplicate-rate", default=None, type=float)
     run_all_parser.add_argument("--formats", default="csv,parquet")
+    run_all_parser.add_argument(
+        "--state-db",
+        default=None,
+        help="Path to a SQLite database where completed run state should be persisted.",
+    )
     run_all_parser.add_argument(
         "--manifest",
         default=None,
