@@ -9,10 +9,10 @@ Define and track the repository structure for implementing the ETL Identity Data
 
 ## Current Status
 
-`M1` through `M6` are implemented in-repo, `v0.1.0` shipped, and the
-`v0.1.2` follow-up patch release is now published. The next planning
-cycle should start only when net-new scope exists beyond the completed
-release and hardening work.
+`M1` through `M6` are implemented in-repo, the `v0.1.x` prototype line
+has been hardened and published through `v0.1.4`, and a new
+production-readiness planning cycle is now tracked in the active
+backlog.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -133,10 +133,9 @@ The current public line is now explicitly scoped around:
 
 ## Post-Release Focus
 
-- maintain tracker and backlog hygiene until new scope is ready to be
-  opened
-- keep release tooling and runbooks aligned with the published `v0.1.2`
-  behavior
-- treat any new product or workflow changes as a fresh backlog cycle
-  rather than implicit continuation of the completed hardening work
+- execute the new production-readiness backlog cycle tracked in
+  `planning/active-github-issues-backlog.md`
+- move from synthetic-only file orchestration toward real batch
+  ingestion, persisted state, and service interfaces
+- harden the runtime for production deployment, security, and operations
 
