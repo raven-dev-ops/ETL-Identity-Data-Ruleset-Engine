@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 
@@ -60,3 +61,14 @@ def test_ci_support_matrix_includes_python_312_and_macos() -> None:
     assert "compat-macos-312" in workflow_text
     assert 'python-version: "3.12"' in workflow_text
     assert "runs-on: macos-latest" in workflow_text
+
+
+def test_package_version_matches_pyproject_version() -> None:
+    pyproject_text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = tomllib.loads(pyproject_text)
+    init_text = (REPO_ROOT / "src" / "etl_identity_engine" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+
+    project_version = pyproject["project"]["version"]
+    assert f'__version__ = "{project_version}"' in init_text

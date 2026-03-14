@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Synced the package `__version__` metadata with `pyproject.toml` and
+  added a regression test so future releases cannot drift between the
+  installed package version and project metadata.
+- Refreshed the active planning summaries so the repository now records
+  the published `v0.1.2` state instead of a pending follow-up
+  patch-release candidate.
+
 ## [0.1.2] - 2026-03-13
 
 ### Added
