@@ -32,6 +32,14 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
             row[1]
             for row in connection.execute("PRAGMA table_info(audit_events)").fetchall()
         }
+        pipeline_run_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(pipeline_runs)").fetchall()
+        }
+        run_checkpoint_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(run_checkpoints)").fetchall()
+        }
     assert set(PIPELINE_STATE_TABLES) <= table_names
     assert {
         "assigned_to",
@@ -48,6 +56,15 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
         "status",
         "details_json",
     } <= audit_event_columns
+    assert "resumed_from_run_id" in pipeline_run_columns
+    assert {
+        "run_key",
+        "attempt_number",
+        "stage_name",
+        "stage_order",
+        "checkpointed_at_utc",
+        "payload_json",
+    } <= run_checkpoint_columns
 
 
 def test_state_db_upgrade_command_can_use_runtime_environment_defaults(

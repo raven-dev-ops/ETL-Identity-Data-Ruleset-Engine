@@ -34,6 +34,19 @@ from etl_identity_engine.storage.state_store_target import resolve_state_store_t
 RUN_STATUSES = frozenset({"running", "completed", "failed"})
 EXPORT_RUN_STATUSES = frozenset({"running", "completed", "failed"})
 AUDIT_EVENT_STATUSES = frozenset({"succeeded", "failed", "noop", "reused"})
+RUN_CHECKPOINT_STAGES = (
+    "normalize",
+    "match",
+    "cluster",
+    "review_queue",
+    "golden",
+    "crosswalk",
+    "report",
+)
+RUN_CHECKPOINT_STAGE_ORDER = {
+    stage_name: index
+    for index, stage_name in enumerate(RUN_CHECKPOINT_STAGES, start=1)
+}
 ARTIFACT_TABLE_NAMES = (
     "normalized_source_records",
     "candidate_pairs",
@@ -67,6 +80,7 @@ class PipelineRunRecord:
     golden_record_count: int
     review_queue_count: int
     failure_detail: str | None
+    resumed_from_run_id: str | None
     summary: dict[str, object]
 
 
@@ -108,6 +122,32 @@ class RunStartDecision:
     run_key: str
     attempt_number: int
     started_at_utc: str
+    resume_from_run_id: str | None = None
+    resume_checkpoint_stage: str | None = None
+    resume_checkpointed_at_utc: str | None = None
+
+
+@dataclass(frozen=True)
+class RunCheckpointRecord:
+    checkpoint_id: str
+    run_id: str
+    run_key: str
+    attempt_number: int
+    stage_name: str
+    stage_order: int
+    checkpointed_at_utc: str
+    total_duration_seconds: float
+    record_counts: dict[str, int]
+    phase_metrics: dict[str, dict[str, float | int]]
+    normalized_rows: list[dict[str, str]]
+    match_rows: list[dict[str, str]]
+    blocking_metrics_rows: list[dict[str, str]]
+    cluster_rows: list[dict[str, str]]
+    golden_rows: list[dict[str, str]]
+    crosswalk_rows: list[dict[str, str]]
+    review_rows: list[dict[str, str]]
+    active_review_rows: list[dict[str, str]]
+    summary: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -239,7 +279,7 @@ ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
     "review_cases": (("review_id",), ("queue_status",), ("assigned_to",), ("left_id",), ("right_id",)),
 }
 
-PIPELINE_STATE_TABLES = ("pipeline_runs", "export_job_runs", "audit_events", *ARTIFACT_TABLE_NAMES)
+PIPELINE_STATE_TABLES = ("pipeline_runs", "run_checkpoints", "export_job_runs", "audit_events", *ARTIFACT_TABLE_NAMES)
 
 
 def build_run_id(now: datetime | None = None) -> str:
@@ -255,6 +295,11 @@ def build_export_run_id(now: datetime | None = None) -> str:
 def build_audit_event_id(now: datetime | None = None) -> str:
     timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
     return f"AUD-{timestamp}-{uuid4().hex[:8].upper()}"
+
+
+def build_checkpoint_id(now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    return f"CHK-{timestamp}-{uuid4().hex[:8].upper()}"
 
 
 def build_run_key(
@@ -365,6 +410,31 @@ def _row_to_audit_event(row: Mapping[str, object]) -> AuditEventRecord:
     )
 
 
+def _row_to_run_checkpoint(row: Mapping[str, object]) -> RunCheckpointRecord:
+    payload = json.loads(str(row["payload_json"] or "{}"))
+    return RunCheckpointRecord(
+        checkpoint_id=str(row["checkpoint_id"]),
+        run_id=str(row["run_id"]),
+        run_key=str(row["run_key"]),
+        attempt_number=int(row["attempt_number"] or 0),
+        stage_name=str(row["stage_name"]),
+        stage_order=int(row["stage_order"] or 0),
+        checkpointed_at_utc=str(row["checkpointed_at_utc"]),
+        total_duration_seconds=float(row["total_duration_seconds"] or 0.0),
+        record_counts=json.loads(str(row["record_counts_json"] or "{}")),
+        phase_metrics=json.loads(str(row["phase_metrics_json"] or "{}")),
+        normalized_rows=payload.get("normalized_rows", []),
+        match_rows=payload.get("match_rows", []),
+        blocking_metrics_rows=payload.get("blocking_metrics_rows", []),
+        cluster_rows=payload.get("cluster_rows", []),
+        golden_rows=payload.get("golden_rows", []),
+        crosswalk_rows=payload.get("crosswalk_rows", []),
+        review_rows=payload.get("review_rows", []),
+        active_review_rows=payload.get("active_review_rows", []),
+        summary=payload.get("summary", {}),
+    )
+
+
 class SQLitePipelineStore:
     def __init__(self, db_path: str | Path):
         self.target = resolve_state_store_target(db_path)
@@ -403,7 +473,7 @@ class SQLitePipelineStore:
     def _clear_existing_run(self, connection: Connection, run_id: str) -> None:
         for table_name in ARTIFACT_TABLE_NAMES:
             connection.execute(text(f"DELETE FROM {table_name} WHERE run_id = :run_id"), {"run_id": run_id})
-        
+
     def begin_run(
         self,
         *,
@@ -439,6 +509,26 @@ class SQLitePipelineStore:
                     started_at_utc=started_at_utc,
                 )
 
+            resumable_checkpoint = self._fetchone(
+                connection,
+                """
+                SELECT run_checkpoints.run_id,
+                       run_checkpoints.stage_name,
+                       run_checkpoints.checkpointed_at_utc
+                FROM run_checkpoints
+                JOIN pipeline_runs
+                  ON pipeline_runs.run_id = run_checkpoints.run_id
+                WHERE pipeline_runs.run_key = :run_key
+                  AND pipeline_runs.status = 'failed'
+                ORDER BY pipeline_runs.attempt_number DESC,
+                         run_checkpoints.stage_order DESC,
+                         run_checkpoints.checkpointed_at_utc DESC,
+                         run_checkpoints.checkpoint_id DESC
+                LIMIT 1
+                """,
+                {"run_key": run_key},
+            )
+
             attempt_row = self._fetchone(
                 connection,
                 "SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt FROM pipeline_runs WHERE run_key = :run_key",
@@ -446,6 +536,9 @@ class SQLitePipelineStore:
             )
             attempt_number = int(attempt_row["max_attempt"] or 0) + 1
             run_id = build_run_id(datetime.fromisoformat(started_at_utc.replace("Z", "+00:00")))
+            resumed_from_run_id = (
+                None if resumable_checkpoint is None else str(resumable_checkpoint["run_id"])
+            )
             connection.execute(
                 text(
                     """
@@ -461,6 +554,7 @@ class SQLitePipelineStore:
                         profile,
                         seed,
                         formats,
+                        resumed_from_run_id,
                         status,
                         started_at_utc,
                         finished_at_utc,
@@ -483,6 +577,7 @@ class SQLitePipelineStore:
                         :profile,
                         :seed,
                         :formats,
+                        :resumed_from_run_id,
                         'running',
                         :started_at_utc,
                         '',
@@ -508,16 +603,24 @@ class SQLitePipelineStore:
                     "profile": profile,
                     "seed": seed,
                     "formats": formats,
+                    "resumed_from_run_id": resumed_from_run_id,
                     "started_at_utc": started_at_utc,
                 },
             )
 
         return RunStartDecision(
-            action="start_new",
+            action="resume_failed" if resumable_checkpoint is not None else "start_new",
             run_id=run_id,
             run_key=run_key,
             attempt_number=attempt_number,
             started_at_utc=started_at_utc,
+            resume_from_run_id=None if resumable_checkpoint is None else str(resumable_checkpoint["run_id"]),
+            resume_checkpoint_stage=None
+            if resumable_checkpoint is None
+            else str(resumable_checkpoint["stage_name"]),
+            resume_checkpointed_at_utc=None
+            if resumable_checkpoint is None
+            else str(resumable_checkpoint["checkpointed_at_utc"]),
         )
 
     def begin_export_run(
@@ -713,6 +816,114 @@ class SQLitePipelineStore:
             ],
         )
 
+    def persist_run_checkpoint(
+        self,
+        *,
+        run_id: str,
+        run_key: str,
+        attempt_number: int,
+        stage_name: str,
+        checkpointed_at_utc: str,
+        total_duration_seconds: float,
+        phase_metrics: dict[str, dict[str, float | int]],
+        normalized_rows: list[dict[str, str]],
+        match_rows: list[dict[str, str | float]],
+        blocking_metrics_rows: list[dict[str, str | int]],
+        cluster_rows: list[dict[str, str]],
+        golden_rows: list[dict[str, str]],
+        crosswalk_rows: list[dict[str, str]],
+        review_rows: list[dict[str, str | float]],
+        active_review_rows: list[dict[str, str | float]],
+        summary: dict[str, object],
+    ) -> RunCheckpointRecord:
+        if stage_name not in RUN_CHECKPOINT_STAGE_ORDER:
+            raise ValueError(
+                f"Unsupported run checkpoint stage {stage_name!r}; expected one of {sorted(RUN_CHECKPOINT_STAGE_ORDER)}"
+            )
+
+        stage_order = RUN_CHECKPOINT_STAGE_ORDER[stage_name]
+        checkpoint_id = build_checkpoint_id(
+            datetime.fromisoformat(checkpointed_at_utc.replace("Z", "+00:00"))
+        )
+        payload = {
+            "normalized_rows": normalized_rows,
+            "match_rows": match_rows,
+            "blocking_metrics_rows": blocking_metrics_rows,
+            "cluster_rows": cluster_rows,
+            "golden_rows": golden_rows,
+            "crosswalk_rows": crosswalk_rows,
+            "review_rows": review_rows,
+            "active_review_rows": active_review_rows,
+            "summary": summary,
+        }
+        record_counts = {
+            "normalized_rows": len(normalized_rows),
+            "match_rows": len(match_rows),
+            "blocking_metrics_rows": len(blocking_metrics_rows),
+            "cluster_rows": len(cluster_rows),
+            "golden_rows": len(golden_rows),
+            "crosswalk_rows": len(crosswalk_rows),
+            "review_rows": len(review_rows),
+            "active_review_rows": len(active_review_rows),
+        }
+
+        with self.engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM run_checkpoints
+                    WHERE run_id = :run_id AND stage_order >= :stage_order
+                    """
+                ),
+                {"run_id": run_id, "stage_order": stage_order},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO run_checkpoints (
+                        checkpoint_id,
+                        run_id,
+                        run_key,
+                        attempt_number,
+                        stage_name,
+                        stage_order,
+                        checkpointed_at_utc,
+                        total_duration_seconds,
+                        record_counts_json,
+                        phase_metrics_json,
+                        payload_json
+                    ) VALUES (
+                        :checkpoint_id,
+                        :run_id,
+                        :run_key,
+                        :attempt_number,
+                        :stage_name,
+                        :stage_order,
+                        :checkpointed_at_utc,
+                        :total_duration_seconds,
+                        :record_counts_json,
+                        :phase_metrics_json,
+                        :payload_json
+                    )
+                    """
+                ),
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "run_id": run_id,
+                    "run_key": run_key,
+                    "attempt_number": attempt_number,
+                    "stage_name": stage_name,
+                    "stage_order": stage_order,
+                    "checkpointed_at_utc": checkpointed_at_utc,
+                    "total_duration_seconds": round(total_duration_seconds, 6),
+                    "record_counts_json": json.dumps(record_counts, sort_keys=True),
+                    "phase_metrics_json": json.dumps(phase_metrics, sort_keys=True),
+                    "payload_json": json.dumps(payload, sort_keys=True),
+                },
+            )
+
+        return self.load_run_checkpoint(run_id=run_id, stage_name=stage_name)
+
     def persist_run(
         self,
         *,
@@ -745,6 +956,7 @@ class SQLitePipelineStore:
                         profile = :profile,
                         seed = :seed,
                         formats = :formats,
+                        resumed_from_run_id = :resumed_from_run_id,
                         status = :status,
                         started_at_utc = :started_at_utc,
                         finished_at_utc = :finished_at_utc,
@@ -770,6 +982,7 @@ class SQLitePipelineStore:
                     "profile": metadata.profile,
                     "seed": metadata.seed,
                     "formats": metadata.formats,
+                    "resumed_from_run_id": summary.get("resume", {}).get("resumed_from_run_id", ""),
                     "status": metadata.status,
                     "started_at_utc": metadata.started_at_utc,
                     "finished_at_utc": metadata.finished_at_utc,
@@ -834,7 +1047,9 @@ class SQLitePipelineStore:
         run_id: str,
         finished_at_utc: str,
         failure_detail: str,
+        summary: dict[str, object] | None = None,
     ) -> None:
+        resolved_summary = summary or {}
         with self.engine.begin() as connection:
             connection.execute(
                 text(
@@ -843,7 +1058,12 @@ class SQLitePipelineStore:
                     SET status = 'failed',
                         finished_at_utc = :finished_at_utc,
                         failure_detail = :failure_detail,
-                        summary_json = '{}'
+                        total_records = :total_records,
+                        candidate_pair_count = :candidate_pair_count,
+                        cluster_count = :cluster_count,
+                        golden_record_count = :golden_record_count,
+                        review_queue_count = :review_queue_count,
+                        summary_json = :summary_json
                     WHERE run_id = :run_id
                     """
                 ),
@@ -851,6 +1071,12 @@ class SQLitePipelineStore:
                     "run_id": run_id,
                     "finished_at_utc": finished_at_utc,
                     "failure_detail": failure_detail,
+                    "total_records": int(resolved_summary.get("total_records", 0)),
+                    "candidate_pair_count": int(resolved_summary.get("candidate_pair_count", 0)),
+                    "cluster_count": int(resolved_summary.get("cluster_count", 0)),
+                    "golden_record_count": int(resolved_summary.get("golden_record_count", 0)),
+                    "review_queue_count": int(resolved_summary.get("review_queue_count", 0)),
+                    "summary_json": json.dumps(resolved_summary, sort_keys=True),
                 },
             )
 
@@ -913,6 +1139,68 @@ class SQLitePipelineStore:
                     "failure_detail": failure_detail,
                 },
             )
+
+    def load_run_checkpoint(self, *, run_id: str, stage_name: str) -> RunCheckpointRecord:
+        if stage_name not in RUN_CHECKPOINT_STAGE_ORDER:
+            raise ValueError(
+                f"Unsupported run checkpoint stage {stage_name!r}; expected one of {sorted(RUN_CHECKPOINT_STAGE_ORDER)}"
+            )
+
+        with self.engine.connect() as connection:
+            row = self._fetchone(
+                connection,
+                """
+                SELECT *
+                FROM run_checkpoints
+                WHERE run_id = :run_id AND stage_name = :stage_name
+                """,
+                {"run_id": run_id, "stage_name": stage_name},
+            )
+        if row is None:
+            raise FileNotFoundError(
+                f"Persisted run checkpoint not found: run_id={run_id} stage_name={stage_name}"
+            )
+        return _row_to_run_checkpoint(row)
+
+    def load_latest_run_checkpoint(self, run_id: str) -> RunCheckpointRecord | None:
+        with self.engine.connect() as connection:
+            row = self._fetchone(
+                connection,
+                """
+                SELECT *
+                FROM run_checkpoints
+                WHERE run_id = :run_id
+                ORDER BY stage_order DESC, checkpointed_at_utc DESC, checkpoint_id DESC
+                LIMIT 1
+                """,
+                {"run_id": run_id},
+            )
+        if row is None:
+            return None
+        return _row_to_run_checkpoint(row)
+
+    def latest_resume_checkpoint_for_run_key(self, run_key: str) -> RunCheckpointRecord | None:
+        with self.engine.connect() as connection:
+            row = self._fetchone(
+                connection,
+                """
+                SELECT run_checkpoints.*
+                FROM run_checkpoints
+                JOIN pipeline_runs
+                  ON pipeline_runs.run_id = run_checkpoints.run_id
+                WHERE pipeline_runs.run_key = :run_key
+                  AND pipeline_runs.status = 'failed'
+                ORDER BY pipeline_runs.attempt_number DESC,
+                         run_checkpoints.stage_order DESC,
+                         run_checkpoints.checkpointed_at_utc DESC,
+                         run_checkpoints.checkpoint_id DESC
+                LIMIT 1
+                """,
+                {"run_key": run_key},
+            )
+        if row is None:
+            return None
+        return _row_to_run_checkpoint(row)
 
     def latest_run_id(self) -> str | None:
         with self.engine.connect() as connection:
@@ -1052,6 +1340,9 @@ class SQLitePipelineStore:
             golden_record_count=int(row["golden_record_count"]),
             review_queue_count=int(row["review_queue_count"]),
             failure_detail=None if row["failure_detail"] in (None, "") else str(row["failure_detail"]),
+            resumed_from_run_id=None
+            if row["resumed_from_run_id"] in (None, "")
+            else str(row["resumed_from_run_id"]),
             summary=json.loads(str(row["summary_json"] or "{}")),
         )
 

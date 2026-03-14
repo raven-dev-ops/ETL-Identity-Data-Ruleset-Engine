@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 - Added direct replay-from-bundle support so `replay-run` no longer
   depends on the original manifest and landing paths once a verified
   archived bundle exists.
+- Added durable run checkpoints plus failed-run resume support so
+  persisted reruns can continue from the latest completed stage instead
+  of restarting the entire pipeline.
 
 ## [0.6.0] - 2026-03-14
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import etl_identity_engine.cli as cli_module
 from etl_identity_engine.cli import main
 from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
 from etl_identity_engine.storage.sqlite_store import (
@@ -326,6 +327,142 @@ def test_run_all_reuses_completed_run_without_duplicating_persisted_state(tmp_pa
     assert run_rows[0]["status"] == "completed"
     assert (base_dir / "data" / "normalized" / "normalized_person_records.csv").exists()
     assert (base_dir / "data" / "exceptions" / "run_report.md").exists()
+
+
+def test_run_all_resumes_failed_manifest_run_from_latest_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+    landing_dir = tmp_path / "landing"
+    manifest_path = _write_manifest(
+        tmp_path / "manifest.yml",
+        batch_id="resume-checkpoint-001",
+        source_a_path="agency_a.csv",
+        source_b_path="agency_b.parquet",
+    )
+    _write_csv_rows(
+        landing_dir / "agency_a.csv",
+        [
+            _person_row(
+                source_record_id="A-1",
+                person_entity_id="P-1",
+                source_system="source_a",
+                first_name="John",
+                last_name="Smith",
+                dob="1985-03-12",
+                address="123 Main St",
+                phone="5551111111",
+            )
+        ],
+    )
+    _write_parquet_rows(
+        landing_dir / "agency_b.parquet",
+        [
+            _person_row(
+                source_record_id="B-1",
+                person_entity_id="P-2",
+                source_system="source_b",
+                first_name="Jon",
+                last_name="Smith",
+                dob="1985-03-12",
+                address="123 Main St",
+                phone="5551111111",
+            )
+        ],
+    )
+
+    normalize_calls = 0
+    match_calls = 0
+    original_normalize = cli_module._write_normalized_output
+    original_match = cli_module._write_match_output
+    original_quality = cli_module._write_quality_outputs
+
+    def instrumented_normalize(*args, **kwargs):
+        nonlocal normalize_calls
+        normalize_calls += 1
+        return original_normalize(*args, **kwargs)
+
+    def instrumented_match(*args, **kwargs):
+        nonlocal match_calls
+        match_calls += 1
+        return original_match(*args, **kwargs)
+
+    quality_calls = 0
+
+    def fail_once_quality(*args, **kwargs):
+        nonlocal quality_calls
+        quality_calls += 1
+        if quality_calls == 1:
+            raise RuntimeError("injected report-stage failure")
+        return original_quality(*args, **kwargs)
+
+    monkeypatch.setattr(cli_module, "_write_normalized_output", instrumented_normalize)
+    monkeypatch.setattr(cli_module, "_write_match_output", instrumented_match)
+    monkeypatch.setattr(cli_module, "_write_quality_outputs", fail_once_quality)
+
+    with pytest.raises(RuntimeError, match="injected report-stage failure"):
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "full",
+            ]
+        )
+
+    store = SQLitePipelineStore(db_path)
+    failed_run_rows = _read_pipeline_runs(db_path)
+    assert len(failed_run_rows) == 1
+    failed_run_id = str(failed_run_rows[0]["run_id"])
+    failed_run = store.load_run_record(failed_run_id)
+    failed_checkpoint = store.load_latest_run_checkpoint(failed_run_id)
+
+    assert failed_run.status == "failed"
+    assert failed_run.attempt_number == 1
+    assert failed_run.summary["resume"]["resume_supported"] is True
+    assert failed_run.summary["resume"]["available_checkpoint_stage"] == "crosswalk"
+    assert failed_checkpoint is not None
+    assert failed_checkpoint.stage_name == "crosswalk"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "full",
+            ]
+        )
+        == 0
+    )
+
+    completed_run_rows = _read_pipeline_runs(db_path)
+    assert len(completed_run_rows) == 2
+    completed_run = store.latest_completed_run_for_run_key(failed_run.run_key)
+    assert completed_run is not None
+    assert completed_run.attempt_number == 2
+    assert completed_run.resumed_from_run_id == failed_run_id
+    assert completed_run.summary["resume"]["resumed"] is True
+    assert completed_run.summary["resume"]["resumed_from_run_id"] == failed_run_id
+    assert completed_run.summary["resume"]["resumed_from_stage"] == "crosswalk"
+
+    assert normalize_calls == 1
+    assert match_calls == 1
+    assert quality_calls == 2
+    assert (base_dir / "data" / "exceptions" / "run_report.md").exists()
+    assert (base_dir / "data" / "golden" / "source_to_golden_crosswalk.csv").exists()
 
 
 def test_persisted_review_case_workflow_supports_assignment_and_lifecycle_transitions(

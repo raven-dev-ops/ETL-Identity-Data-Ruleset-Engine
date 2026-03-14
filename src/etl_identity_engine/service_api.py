@@ -115,6 +115,7 @@ class RunStatusResponse(BaseModel):
     golden_record_count: int
     review_queue_count: int
     failure_detail: str | None
+    resumed_from_run_id: str | None
     summary: dict[str, Any] = Field(default_factory=dict)
 
 

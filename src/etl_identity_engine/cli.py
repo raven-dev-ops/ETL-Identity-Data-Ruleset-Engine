@@ -95,6 +95,8 @@ from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
     PersistRunMetadata,
     PipelineRunRecord,
+    RunCheckpointRecord,
+    RUN_CHECKPOINT_STAGE_ORDER,
     build_export_key,
     build_run_key,
 )
@@ -410,7 +412,7 @@ def _collect_report_context_from_store(
         len(filter_active_review_queue_rows(bundle.review_rows)),
         {
             key: bundle.run.summary[key]
-            for key in ("refresh", "run_context", "performance")
+            for key in ("refresh", "resume", "run_context", "performance")
             if key in bundle.run.summary
         },
     )
@@ -464,7 +466,7 @@ def _collect_report_context(
         existing_summary = json.loads(summary_file.read_text(encoding="utf-8"))
         summary_updates = {
             key: existing_summary[key]
-            for key in ("refresh", "run_context", "performance")
+            for key in ("refresh", "resume", "run_context", "performance")
             if key in existing_summary
         }
     return (
@@ -833,6 +835,120 @@ def _build_phase_metric(
     }
 
 
+def _deep_copy_phase_metrics(
+    phase_metrics: dict[str, dict[str, float | int]],
+) -> dict[str, dict[str, float | int]]:
+    return {
+        phase_name: dict(metrics)
+        for phase_name, metrics in phase_metrics.items()
+    }
+
+
+def _build_cluster_output_rows(clustered_rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "cluster_id": row.get("cluster_id", ""),
+            "source_record_id": row.get("source_record_id", ""),
+            "source_system": row.get("source_system", ""),
+            "person_entity_id": row.get("person_entity_id", ""),
+        }
+        for row in sorted(clustered_rows, key=lambda row: row.get("source_record_id", ""))
+    ]
+
+
+def _restore_checkpoint_outputs(
+    *,
+    normalized_file: Path,
+    matches_file: Path,
+    clusters_file: Path,
+    golden_file: Path,
+    crosswalk_file: Path,
+    review_queue_file: Path,
+    checkpoint: RunCheckpointRecord,
+) -> None:
+    if checkpoint.normalized_rows:
+        write_csv_dicts(normalized_file, checkpoint.normalized_rows, fieldnames=NORMALIZED_HEADERS)
+        print(f"normalized output restored from checkpoint: {normalized_file}")
+    if checkpoint.match_rows or checkpoint.blocking_metrics_rows:
+        _write_precomputed_match_outputs(
+            matches_file,
+            checkpoint.match_rows,
+            checkpoint.blocking_metrics_rows,
+        )
+    if checkpoint.cluster_rows:
+        _write_precomputed_cluster_output(
+            clusters_file,
+            _build_cluster_output_rows(checkpoint.cluster_rows),
+        )
+    if checkpoint.review_rows:
+        _write_precomputed_review_queue_output(review_queue_file, checkpoint.review_rows)
+    if checkpoint.golden_rows:
+        _write_precomputed_golden_output(golden_file, checkpoint.golden_rows)
+    if checkpoint.crosswalk_rows:
+        _write_precomputed_crosswalk_output(crosswalk_file, checkpoint.crosswalk_rows)
+
+
+def _cluster_count(clustered_rows: list[dict[str, str]]) -> int:
+    return len({row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")})
+
+
+def _decision_counts(match_rows: list[dict[str, str | float]]) -> dict[str, int]:
+    counts = Counter(str(row.get("decision", "")) for row in match_rows)
+    return {
+        "auto_merge": counts.get("auto_merge", 0),
+        "manual_review": counts.get("manual_review", 0),
+        "no_match": counts.get("no_match", 0),
+    }
+
+
+def _build_resume_summary(
+    *,
+    resumed_from_run_id: str | None,
+    resumed_from_stage: str | None,
+    available_checkpoint_run_id: str | None,
+    available_checkpoint_stage: str | None,
+) -> dict[str, object]:
+    return {
+        "resumed": bool(resumed_from_run_id and resumed_from_stage),
+        "resumed_from_run_id": resumed_from_run_id or "",
+        "resumed_from_stage": resumed_from_stage or "",
+        "resume_supported": bool(available_checkpoint_stage),
+        "available_checkpoint_run_id": available_checkpoint_run_id or "",
+        "available_checkpoint_stage": available_checkpoint_stage or "",
+    }
+
+
+def _build_pipeline_summary(
+    *,
+    normalized_rows: list[dict[str, str]],
+    match_rows: list[dict[str, str | float]],
+    clustered_rows: list[dict[str, str]],
+    golden_rows: list[dict[str, str]],
+    active_review_rows: list[dict[str, str | float]],
+    run_context: dict[str, object],
+    refresh_summary: dict[str, object],
+    resume_summary: dict[str, object],
+    phase_metrics: dict[str, dict[str, float | int]],
+    total_duration_seconds: float,
+) -> dict[str, object]:
+    summary = build_run_summary(
+        normalized_rows,
+        candidate_pair_count=len(match_rows),
+        decision_counts=_decision_counts(match_rows),
+        cluster_count=_cluster_count(clustered_rows),
+        golden_record_count=len(golden_rows),
+        review_queue_count=len(active_review_rows),
+    )
+    summary["run_context"] = run_context
+    summary["refresh"] = refresh_summary
+    summary["resume"] = resume_summary
+    summary["performance"] = {
+        "total_duration_seconds": round(total_duration_seconds, 6),
+        "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
+    }
+    return summary
+
+
 def _resolve_run_key_args(
     args: argparse.Namespace,
     *,
@@ -1022,6 +1138,7 @@ def _serialize_run_record(record: PipelineRunRecord) -> dict[str, object]:
         "golden_record_count": record.golden_record_count,
         "review_queue_count": record.review_queue_count,
         "failure_detail": record.failure_detail,
+        "resumed_from_run_id": record.resumed_from_run_id,
         "summary": record.summary,
     }
 
@@ -1723,6 +1840,12 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     run_key = build_run_key(**run_key_args)
     run_id: str | None = None
     attempt_number = 0
+    resume_checkpoint: RunCheckpointRecord | None = None
+    resumed_from_run_id: str | None = None
+    resumed_from_stage: str | None = None
+    latest_checkpoint_run_id: str | None = None
+    latest_checkpoint_stage: str | None = None
+    checkpoint_duration_baseline = 0.0
     normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
     matches_file = base / "data" / "matches" / "candidate_scores.csv"
     clusters_file = base / "data" / "matches" / "entity_clusters.csv"
@@ -1777,6 +1900,27 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             return
         run_id = start_decision.run_id
         attempt_number = start_decision.attempt_number
+        resumed_from_run_id = start_decision.resume_from_run_id
+        resumed_from_stage = start_decision.resume_checkpoint_stage
+        if resumed_from_run_id and resumed_from_stage:
+            resume_checkpoint = state_store.load_run_checkpoint(
+                run_id=resumed_from_run_id,
+                stage_name=resumed_from_stage,
+            )
+            latest_checkpoint_run_id = resume_checkpoint.run_id
+            latest_checkpoint_stage = resume_checkpoint.stage_name
+            checkpoint_duration_baseline = resume_checkpoint.total_duration_seconds
+            phase_metrics = _deep_copy_phase_metrics(resume_checkpoint.phase_metrics)
+            emit_structured_log(
+                "pipeline_run_resuming",
+                component="cli",
+                command="run-all",
+                run_id=run_id,
+                run_key=run_key,
+                resume_from_run_id=resumed_from_run_id,
+                resume_from_stage=resumed_from_stage,
+                resume_checkpointed_at_utc=start_decision.resume_checkpointed_at_utc or "",
+            )
         emit_structured_log(
             "pipeline_run_started",
             component="cli",
@@ -1786,17 +1930,66 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             attempt_number=attempt_number,
             input_mode=run_key_args["input_mode"],
             refresh_mode=args.refresh_mode,
+            resume_from_run_id=resumed_from_run_id or "",
+            resume_from_stage=resumed_from_stage or "",
         )
+
+    input_mode = "manifest" if manifest_path else "synthetic"
+    normalized_rows: list[dict[str, str]] = []
+    match_rows: list[dict[str, str | float]] = []
+    blocking_metrics_rows: list[dict[str, str | int]] = []
+    clustered_rows: list[dict[str, str]] = []
+    golden_rows: list[dict[str, str]] = []
+    crosswalk_rows: list[dict[str, str]] = []
+    review_rows: list[dict[str, str | float]] = []
+    active_review_rows: list[dict[str, str | float]] = []
+    run_context: dict[str, object] = {
+        "input_mode": input_mode,
+        "batch_id": manifest_batch_id or "",
+        "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else "",
+        "replay_source_run_id": getattr(args, "replay_source_run_id", None) or "",
+        "config_fingerprint": "",
+        "refresh_mode": args.refresh_mode,
+        "profile": None if manifest_path else args.profile,
+        "seed": None if manifest_path else args.seed,
+        "person_count": None,
+        "formats": None,
+    }
+    refresh_summary: dict[str, object] = {
+        "mode": args.refresh_mode,
+        "fallback_to_full": args.refresh_mode != "incremental",
+        "predecessor_run_id": None,
+        "affected_record_count": 0,
+        "reused_record_count": 0,
+        "inserted_record_count": 0,
+        "changed_record_count": 0,
+        "removed_record_count": 0,
+        "recalculated_candidate_pair_count": 0,
+        "reused_candidate_pair_count": 0,
+        "recalculated_cluster_count": 0,
+        "reused_cluster_count": 0,
+    }
 
     try:
         config = _load_config(args.config_dir, args.environment)
         resolved_manifest: ResolvedBatchManifest | None = None
         generation_result = None
-        input_mode = "manifest" if manifest_path else "synthetic"
         batch_id: str | None = None
         formats_value: str | None = None
         generated_person_count: int | None = None
         config_fingerprint = _config_fingerprint(config)
+        run_context: dict[str, object] = {
+            "input_mode": input_mode,
+            "batch_id": manifest_batch_id or "",
+            "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else "",
+            "replay_source_run_id": getattr(args, "replay_source_run_id", None) or "",
+            "config_fingerprint": config_fingerprint,
+            "refresh_mode": args.refresh_mode,
+            "profile": None if manifest_path else args.profile,
+            "seed": None if manifest_path else args.seed,
+            "person_count": None,
+            "formats": None,
+        }
         refresh_summary: dict[str, object] = {
             "mode": args.refresh_mode,
             "fallback_to_full": args.refresh_mode != "incremental",
@@ -1811,66 +2004,180 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             "recalculated_cluster_count": 0,
             "reused_cluster_count": 0,
         }
-        if manifest_path:
-            normalize_started = time.perf_counter()
-            resolved_manifest = _resolve_manifest_inputs(manifest_path)
-            manifest_rows = resolved_manifest.all_rows()
-            batch_id = resolved_manifest.manifest.batch_id
+        normalized_rows: list[dict[str, str]] = []
+        match_rows: list[dict[str, str | float]] = []
+        blocking_metrics_rows: list[dict[str, str | int]] = []
+        clustered_rows: list[dict[str, str]] = []
+        golden_rows: list[dict[str, str]] = []
+        crosswalk_rows: list[dict[str, str]] = []
+        review_rows: list[dict[str, str | float]] = []
+        active_review_rows: list[dict[str, str | float]] = []
+        resume_stage_order = 0
+
+        if resume_checkpoint is not None:
+            resume_stage_order = RUN_CHECKPOINT_STAGE_ORDER[resume_checkpoint.stage_name]
+            checkpoint_run_context = resume_checkpoint.summary.get("run_context", {})
+            if isinstance(checkpoint_run_context, dict):
+                checkpoint_person_count = checkpoint_run_context.get("person_count")
+                if checkpoint_person_count not in (None, ""):
+                    generated_person_count = int(checkpoint_person_count)
+                checkpoint_formats = checkpoint_run_context.get("formats")
+                if checkpoint_formats not in (None, ""):
+                    formats_value = str(checkpoint_formats)
+            checkpoint_refresh = resume_checkpoint.summary.get("refresh", {})
+            if isinstance(checkpoint_refresh, dict):
+                refresh_summary.update(checkpoint_refresh)
+            _restore_checkpoint_outputs(
+                normalized_file=normalized_file,
+                matches_file=matches_file,
+                clusters_file=clusters_file,
+                golden_file=golden_file,
+                crosswalk_file=crosswalk_file,
+                review_queue_file=review_queue_file,
+                checkpoint=resume_checkpoint,
+            )
+            normalized_rows = [dict(row) for row in resume_checkpoint.normalized_rows]
+            match_rows = [dict(row) for row in resume_checkpoint.match_rows]
+            blocking_metrics_rows = [dict(row) for row in resume_checkpoint.blocking_metrics_rows]
+            clustered_rows = [dict(row) for row in resume_checkpoint.cluster_rows]
+            golden_rows = [dict(row) for row in resume_checkpoint.golden_rows]
+            crosswalk_rows = [dict(row) for row in resume_checkpoint.crosswalk_rows]
+            review_rows = [dict(row) for row in resume_checkpoint.review_rows]
+            active_review_rows = [dict(row) for row in resume_checkpoint.active_review_rows]
             print(
-                f"validated batch manifest: {resolved_manifest.manifest_path} "
-                f"(batch_id={resolved_manifest.manifest.batch_id})"
+                f"resuming persisted run from checkpoint: {resume_checkpoint.stage_name} "
+                f"(source_run_id={resume_checkpoint.run_id})"
             )
-            for path in resolved_manifest.input_paths:
-                print(f" - {path}")
-            normalized_rows = _write_normalized_output(
-                normalized_file,
-                manifest_rows,
-                config,
-            )
-            phase_metrics["normalize"] = _build_phase_metric(
-                seconds_since(normalize_started),
-                input_record_count=len(manifest_rows),
-                output_record_count=len(normalized_rows),
-            )
+
+        if manifest_path:
+            batch_id = manifest_batch_id
+            if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["match"]:
+                resolved_manifest = _resolve_manifest_inputs(manifest_path)
+                print(
+                    f"validated batch manifest: {resolved_manifest.manifest_path} "
+                    f"(batch_id={resolved_manifest.manifest.batch_id})"
+                )
+                for path in resolved_manifest.input_paths:
+                    print(f" - {path}")
+            if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["normalize"]:
+                assert resolved_manifest is not None
+                normalize_started = time.perf_counter()
+                manifest_rows = resolved_manifest.all_rows()
+                batch_id = resolved_manifest.manifest.batch_id
+                normalized_rows = _write_normalized_output(
+                    normalized_file,
+                    manifest_rows,
+                    config,
+                )
+                phase_metrics["normalize"] = _build_phase_metric(
+                    seconds_since(normalize_started),
+                    input_record_count=len(manifest_rows),
+                    output_record_count=len(normalized_rows),
+                )
         else:
             formats = _parse_formats(args.formats)
-            formats_value = ",".join(formats)
+            formats_value = formats_value or ",".join(formats)
             synthetic_dir = base / "data" / "synthetic_sources"
-            generate_started = time.perf_counter()
-            generation_result = generate_synthetic_sources(
-                output_dir=synthetic_dir,
-                profile=args.profile,
-                seed=args.seed,
-                duplicate_rate=args.duplicate_rate,
-                formats=formats,
-                person_count_override=args.person_count,
-            )
-            generated_person_count = int(generation_result.summary["person_entity_count"])
+            if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["normalize"]:
+                generate_started = time.perf_counter()
+                generation_result = generate_synthetic_sources(
+                    output_dir=synthetic_dir,
+                    profile=args.profile,
+                    seed=args.seed,
+                    duplicate_rate=args.duplicate_rate,
+                    formats=formats,
+                    person_count_override=args.person_count,
+                )
+                generated_person_count = int(generation_result.summary["person_entity_count"])
+                phase_metrics["generate"] = _build_phase_metric(
+                    seconds_since(generate_started),
+                    output_record_count=int(generation_result.summary["source_a_record_count"])
+                    + int(generation_result.summary["source_b_record_count"]),
+                )
+                normalize_input_rows = _read_rows(
+                    _resolve_generated_person_input_paths(synthetic_dir, formats=formats)
+                )
+                normalize_started = time.perf_counter()
+                normalized_rows = _write_normalized_output(
+                    normalized_file,
+                    normalize_input_rows,
+                    config,
+                )
+                phase_metrics["normalize"] = _build_phase_metric(
+                    seconds_since(normalize_started),
+                    input_record_count=len(normalize_input_rows),
+                    output_record_count=len(normalized_rows),
+                )
+            elif generated_person_count is None:
+                generated_person_count = len(
+                    {
+                        row.get("person_entity_id", "")
+                        for row in normalized_rows
+                        if row.get("person_entity_id")
+                    }
+                )
             batch_id = f"synthetic:{args.profile}:{args.seed}"
-            if args.person_count is not None:
+            if args.person_count is not None and generated_person_count is not None:
                 batch_id = f"{batch_id}:{generated_person_count}"
-            phase_metrics["generate"] = _build_phase_metric(
-                seconds_since(generate_started),
-                output_record_count=int(generation_result.summary["source_a_record_count"])
-                + int(generation_result.summary["source_b_record_count"]),
+
+        run_context["batch_id"] = batch_id or ""
+        run_context["person_count"] = generated_person_count
+        run_context["formats"] = formats_value
+
+        def persist_checkpoint(stage_name: str) -> None:
+            nonlocal latest_checkpoint_run_id
+            nonlocal latest_checkpoint_stage
+            if state_store is None or run_id is None:
+                return
+            checkpoint_summary = _build_pipeline_summary(
+                normalized_rows=normalized_rows,
+                match_rows=match_rows,
+                clustered_rows=clustered_rows,
+                golden_rows=golden_rows,
+                active_review_rows=active_review_rows,
+                run_context=run_context,
+                refresh_summary=refresh_summary,
+                resume_summary=_build_resume_summary(
+                    resumed_from_run_id=resumed_from_run_id,
+                    resumed_from_stage=resumed_from_stage,
+                    available_checkpoint_run_id=run_id,
+                    available_checkpoint_stage=stage_name,
+                ),
+                phase_metrics=phase_metrics,
+                total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
             )
-            normalize_input_rows = _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats))
-            normalize_started = time.perf_counter()
-            normalized_rows = _write_normalized_output(
-                normalized_file,
-                normalize_input_rows,
-                config,
+            state_store.persist_run_checkpoint(
+                run_id=run_id,
+                run_key=run_key,
+                attempt_number=attempt_number,
+                stage_name=stage_name,
+                checkpointed_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
+                phase_metrics=_deep_copy_phase_metrics(phase_metrics),
+                normalized_rows=normalized_rows,
+                match_rows=match_rows,
+                blocking_metrics_rows=blocking_metrics_rows,
+                cluster_rows=clustered_rows,
+                golden_rows=golden_rows,
+                crosswalk_rows=crosswalk_rows,
+                review_rows=review_rows,
+                active_review_rows=active_review_rows,
+                summary=checkpoint_summary,
             )
-            phase_metrics["normalize"] = _build_phase_metric(
-                seconds_since(normalize_started),
-                input_record_count=len(normalize_input_rows),
-                output_record_count=len(normalized_rows),
-            )
+            latest_checkpoint_run_id = run_id
+            latest_checkpoint_stage = stage_name
+
+        if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["normalize"]:
+            persist_checkpoint("normalize")
 
         review_source_bundle = None
         review_overrides: dict[tuple[str, str], str] = {}
         forced_review_pairs: set[tuple[str, str]] = set()
-        if state_store is not None and resolved_manifest is not None:
+        if (
+            state_store is not None
+            and resolved_manifest is not None
+            and resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["match"]
+        ):
             replay_source_run_id = getattr(args, "replay_source_run_id", None)
             if replay_source_run_id:
                 review_source_run = state_store.load_run_record(replay_source_run_id)
@@ -1903,6 +2210,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             args.refresh_mode == "incremental"
             and state_store is not None
             and resolved_manifest is not None
+            and resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["match"]
         ):
             previous_run = review_source_bundle.run if review_source_bundle is not None else None
             if previous_run is not None:
@@ -1919,7 +2227,6 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     match_rows = incremental_result.match_rows
                     blocking_metrics_rows = incremental_result.blocking_metrics_rows
                     clustered_rows = incremental_result.clustered_rows
-                    cluster_output_rows = incremental_result.cluster_output_rows
                     golden_rows = incremental_result.golden_rows
                     crosswalk_rows = incremental_result.crosswalk_rows
                     active_review_rows = incremental_result.active_review_rows
@@ -1934,11 +2241,14 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                         candidate_pair_count=len(match_rows),
                     )
                     cluster_started = time.perf_counter()
-                    _write_precomputed_cluster_output(clusters_file, cluster_output_rows)
+                    _write_precomputed_cluster_output(
+                        clusters_file,
+                        _build_cluster_output_rows(clustered_rows),
+                    )
                     phase_metrics["cluster"] = _build_phase_metric(
                         seconds_since(cluster_started),
                         input_record_count=len(normalized_rows),
-                        output_record_count=len(cluster_output_rows),
+                        output_record_count=len(clustered_rows),
                     )
                     review_queue_started = time.perf_counter()
                     _write_precomputed_review_queue_output(review_queue_file, active_review_rows)
@@ -1982,96 +2292,156 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 refresh_summary["fallback_to_full"] = True
                 print("incremental refresh fell back to full rebuild: no prior completed manifest run found")
 
-        if args.refresh_mode != "incremental" or previous_bundle is None or refresh_summary.get("fallback_to_full", False):
-            match_started = time.perf_counter()
-            match_rows, blocking_metrics_rows = _write_match_output(
-                matches_file,
-                normalized_rows,
-                config,
-                forced_pairs=forced_review_pairs,
-                review_overrides=review_overrides,
-            )
-            phase_metrics["match"] = _build_phase_metric(
-                seconds_since(match_started),
-                input_record_count=len(normalized_rows),
-                output_record_count=len(match_rows),
-                candidate_pair_count=len(match_rows),
-            )
-            cluster_started = time.perf_counter()
-            clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
-            phase_metrics["cluster"] = _build_phase_metric(
-                seconds_since(cluster_started),
-                input_record_count=len(normalized_rows),
-                output_record_count=len(clustered_rows),
-            )
-            review_queue_started = time.perf_counter()
-            active_review_rows, review_rows = _write_manual_review_output(
-                review_queue_file,
-                match_rows,
-                previous_review_rows=review_source_bundle.review_rows if review_source_bundle is not None else None,
-            )
-            phase_metrics["review_queue"] = _build_phase_metric(
-                seconds_since(review_queue_started),
-                input_record_count=len(match_rows),
-                output_record_count=len(active_review_rows),
-            )
-            golden_started = time.perf_counter()
-            golden_rows = _write_golden_output(golden_file, clustered_rows, config)
-            phase_metrics["golden"] = _build_phase_metric(
-                seconds_since(golden_started),
-                input_record_count=len(clustered_rows),
-                output_record_count=len(golden_rows),
-            )
-            crosswalk_started = time.perf_counter()
-            crosswalk_rows = _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
-            phase_metrics["crosswalk"] = _build_phase_metric(
-                seconds_since(crosswalk_started),
-                input_record_count=len(clustered_rows),
-                output_record_count=len(crosswalk_rows),
-            )
-            if args.refresh_mode == "full":
-                refresh_summary["fallback_to_full"] = False
-                refresh_summary["reused_record_count"] = 0
-                refresh_summary["affected_record_count"] = len(normalized_rows)
-                refresh_summary["recalculated_candidate_pair_count"] = len(match_rows)
-                refresh_summary["recalculated_cluster_count"] = len(
-                    {row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}
+        if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["match"]:
+            if (
+                args.refresh_mode == "incremental"
+                and previous_bundle is not None
+                and not bool(refresh_summary.get("fallback_to_full", False))
+            ):
+                match_started = time.perf_counter()
+                _write_precomputed_match_outputs(matches_file, match_rows, blocking_metrics_rows)
+                phase_metrics["match"] = _build_phase_metric(
+                    seconds_since(match_started),
+                    input_record_count=len(normalized_rows),
+                    output_record_count=len(match_rows),
+                    candidate_pair_count=len(match_rows),
                 )
-            else:
-                refresh_summary["affected_record_count"] = len(normalized_rows)
-                refresh_summary["recalculated_candidate_pair_count"] = len(match_rows)
-                refresh_summary["recalculated_cluster_count"] = len(
-                    {row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}
-                )
-                refresh_summary["reused_record_count"] = 0
-        else:
-            crosswalk_rows = incremental_result.crosswalk_rows
+                persist_checkpoint("match")
 
-        decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
+                cluster_started = time.perf_counter()
+                _write_precomputed_cluster_output(
+                    clusters_file,
+                    _build_cluster_output_rows(clustered_rows),
+                )
+                phase_metrics["cluster"] = _build_phase_metric(
+                    seconds_since(cluster_started),
+                    input_record_count=len(normalized_rows),
+                    output_record_count=len(clustered_rows),
+                )
+                persist_checkpoint("cluster")
+
+                review_queue_started = time.perf_counter()
+                _write_precomputed_review_queue_output(review_queue_file, review_rows)
+                phase_metrics["review_queue"] = _build_phase_metric(
+                    seconds_since(review_queue_started),
+                    input_record_count=len(match_rows),
+                    output_record_count=len(active_review_rows),
+                )
+                persist_checkpoint("review_queue")
+
+                golden_started = time.perf_counter()
+                _write_precomputed_golden_output(golden_file, golden_rows)
+                phase_metrics["golden"] = _build_phase_metric(
+                    seconds_since(golden_started),
+                    input_record_count=len(clustered_rows),
+                    output_record_count=len(golden_rows),
+                )
+                persist_checkpoint("golden")
+
+                crosswalk_started = time.perf_counter()
+                _write_precomputed_crosswalk_output(crosswalk_file, crosswalk_rows)
+                phase_metrics["crosswalk"] = _build_phase_metric(
+                    seconds_since(crosswalk_started),
+                    input_record_count=len(clustered_rows),
+                    output_record_count=len(crosswalk_rows),
+                )
+                persist_checkpoint("crosswalk")
+            else:
+                match_started = time.perf_counter()
+                match_rows, blocking_metrics_rows = _write_match_output(
+                    matches_file,
+                    normalized_rows,
+                    config,
+                    forced_pairs=forced_review_pairs,
+                    review_overrides=review_overrides,
+                )
+                phase_metrics["match"] = _build_phase_metric(
+                    seconds_since(match_started),
+                    input_record_count=len(normalized_rows),
+                    output_record_count=len(match_rows),
+                    candidate_pair_count=len(match_rows),
+                )
+                persist_checkpoint("match")
+
+                cluster_started = time.perf_counter()
+                clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
+                phase_metrics["cluster"] = _build_phase_metric(
+                    seconds_since(cluster_started),
+                    input_record_count=len(normalized_rows),
+                    output_record_count=len(clustered_rows),
+                )
+                persist_checkpoint("cluster")
+
+                review_queue_started = time.perf_counter()
+                active_review_rows, review_rows = _write_manual_review_output(
+                    review_queue_file,
+                    match_rows,
+                    previous_review_rows=review_source_bundle.review_rows if review_source_bundle is not None else None,
+                )
+                phase_metrics["review_queue"] = _build_phase_metric(
+                    seconds_since(review_queue_started),
+                    input_record_count=len(match_rows),
+                    output_record_count=len(active_review_rows),
+                )
+                persist_checkpoint("review_queue")
+
+                golden_started = time.perf_counter()
+                golden_rows = _write_golden_output(golden_file, clustered_rows, config)
+                phase_metrics["golden"] = _build_phase_metric(
+                    seconds_since(golden_started),
+                    input_record_count=len(clustered_rows),
+                    output_record_count=len(golden_rows),
+                )
+                persist_checkpoint("golden")
+
+                crosswalk_started = time.perf_counter()
+                crosswalk_rows = _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
+                phase_metrics["crosswalk"] = _build_phase_metric(
+                    seconds_since(crosswalk_started),
+                    input_record_count=len(clustered_rows),
+                    output_record_count=len(crosswalk_rows),
+                )
+                persist_checkpoint("crosswalk")
+
+                if args.refresh_mode == "full":
+                    refresh_summary["fallback_to_full"] = False
+                    refresh_summary["reused_record_count"] = 0
+                    refresh_summary["affected_record_count"] = len(normalized_rows)
+                    refresh_summary["recalculated_candidate_pair_count"] = len(match_rows)
+                    refresh_summary["recalculated_cluster_count"] = _cluster_count(clustered_rows)
+                else:
+                    refresh_summary["affected_record_count"] = len(normalized_rows)
+                    refresh_summary["recalculated_candidate_pair_count"] = len(match_rows)
+                    refresh_summary["recalculated_cluster_count"] = _cluster_count(clustered_rows)
+                    refresh_summary["reused_record_count"] = 0
+
+        resume_summary = _build_resume_summary(
+            resumed_from_run_id=resumed_from_run_id,
+            resumed_from_stage=resumed_from_stage,
+            available_checkpoint_run_id=latest_checkpoint_run_id,
+            available_checkpoint_stage=latest_checkpoint_stage,
+        )
         report_started = time.perf_counter()
         summary = _write_quality_outputs(
             report_file,
             normalized_file,
             normalized_rows,
             candidate_pair_count=len(match_rows),
-            decision_counts=dict(decision_counts),
-            cluster_count=len({row.get("cluster_id", "") for row in clustered_rows if row.get("cluster_id")}),
+            decision_counts=_decision_counts(match_rows),
+            cluster_count=_cluster_count(clustered_rows),
             golden_record_count=len(golden_rows),
             review_queue_count=len(active_review_rows),
             summary_updates={
-                "run_context": {
-                    "input_mode": input_mode,
-                    "batch_id": batch_id or "",
-                    "manifest_path": str(resolved_manifest.manifest_path) if resolved_manifest else "",
-                    "replay_source_run_id": getattr(args, "replay_source_run_id", None) or "",
-                    "config_fingerprint": config_fingerprint,
-                    "refresh_mode": args.refresh_mode,
-                    "profile": None if manifest_path else args.profile,
-                    "seed": None if manifest_path else args.seed,
-                    "person_count": generated_person_count,
-                    "formats": formats_value,
-                },
+                "run_context": run_context,
                 "refresh": refresh_summary,
+                "resume": resume_summary,
+                "performance": {
+                    "total_duration_seconds": round(
+                        checkpoint_duration_baseline + seconds_since(started),
+                        6,
+                    ),
+                    "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
+                },
             },
         )
         phase_metrics["report"] = _build_phase_metric(
@@ -2080,14 +2450,15 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             output_record_count=1,
         )
         summary["performance"] = {
-            "total_duration_seconds": round(seconds_since(started), 6),
-            "phase_metrics": phase_metrics,
+            "total_duration_seconds": round(checkpoint_duration_baseline + seconds_since(started), 6),
+            "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
         }
         _write_run_summary_artifacts(
             report_file=report_file,
             normalized_file=normalized_file,
             summary=summary,
         )
+        persist_checkpoint("report")
         if state_store is not None and run_id is not None:
             persist_started = time.perf_counter()
             state_store.persist_run(
@@ -2097,7 +2468,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     attempt_number=attempt_number,
                     batch_id=batch_id,
                     input_mode=input_mode,
-                    manifest_path=str(resolved_manifest.manifest_path) if resolved_manifest else None,
+                    manifest_path=str(Path(manifest_path).resolve()) if manifest_path else None,
                     base_dir=str(base.resolve()),
                     config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
                     profile=None if manifest_path else args.profile,
@@ -2122,8 +2493,8 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 output_record_count=1,
             )
             summary["performance"] = {
-                "total_duration_seconds": round(seconds_since(started), 6),
-                "phase_metrics": phase_metrics,
+                "total_duration_seconds": round(checkpoint_duration_baseline + seconds_since(started), 6),
+                "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
             }
             state_store.update_run_summary(run_id=run_id, summary=summary)
             _write_run_summary_artifacts(
@@ -2131,7 +2502,9 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 normalized_file=normalized_file,
                 summary=summary,
             )
-            if resolved_manifest is not None:
+            if manifest_path:
+                if resolved_manifest is None:
+                    resolved_manifest = _resolve_manifest_inputs(manifest_path)
                 archive_started = time.perf_counter()
                 bundle_root = replay_bundle_root_for_run(base_dir=base, run_id=run_id)
                 try:
@@ -2189,8 +2562,8 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     output_record_count=1,
                 )
                 summary["performance"] = {
-                    "total_duration_seconds": round(seconds_since(started), 6),
-                    "phase_metrics": phase_metrics,
+                    "total_duration_seconds": round(checkpoint_duration_baseline + seconds_since(started), 6),
+                    "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
                 }
                 state_store.update_run_summary(run_id=run_id, summary=summary)
                 _write_run_summary_artifacts(
@@ -2216,10 +2589,45 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         print("pipeline run complete")
     except Exception as exc:
         if state_store is not None and run_id is not None:
+            failure_summary = None
+            if normalized_rows:
+                failure_summary = _build_pipeline_summary(
+                    normalized_rows=normalized_rows,
+                    match_rows=match_rows,
+                    clustered_rows=clustered_rows,
+                    golden_rows=golden_rows,
+                    active_review_rows=active_review_rows,
+                    run_context=run_context,
+                    refresh_summary=refresh_summary,
+                    resume_summary=_build_resume_summary(
+                        resumed_from_run_id=resumed_from_run_id,
+                        resumed_from_stage=resumed_from_stage,
+                        available_checkpoint_run_id=latest_checkpoint_run_id,
+                        available_checkpoint_stage=latest_checkpoint_stage,
+                    ),
+                    phase_metrics=phase_metrics,
+                    total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
+                )
+            elif latest_checkpoint_run_id and latest_checkpoint_stage:
+                checkpoint_summary = state_store.load_run_checkpoint(
+                    run_id=latest_checkpoint_run_id,
+                    stage_name=latest_checkpoint_stage,
+                ).summary
+                if isinstance(checkpoint_summary, dict):
+                    failure_summary = dict(checkpoint_summary)
+                    failure_summary["resume"] = _build_resume_summary(
+                        resumed_from_run_id=resumed_from_run_id,
+                        resumed_from_stage=resumed_from_stage,
+                        available_checkpoint_run_id=latest_checkpoint_run_id,
+                        available_checkpoint_stage=latest_checkpoint_stage,
+                    )
+            if failure_summary is not None:
+                failure_summary["failure"] = {"detail": str(exc)}
             state_store.mark_run_failed(
                 run_id=run_id,
                 finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 failure_detail=str(exc),
+                summary=failure_summary,
             )
         emit_structured_log(
             "pipeline_run_failed",

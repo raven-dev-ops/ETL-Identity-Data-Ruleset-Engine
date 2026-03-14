@@ -97,6 +97,7 @@ python -m etl_identity_engine.cli publish-run \
 The current schema includes:
 
 - `pipeline_runs`
+- `run_checkpoints`
 - `normalized_source_records`
 - `candidate_pairs`
 - `blocking_metrics`
@@ -122,6 +123,7 @@ The current schema includes:
 - `profile`
 - `seed`
 - `formats`
+- `resumed_from_run_id`
 - `status`
 - `started_at_utc`
 - `finished_at_utc`
@@ -159,16 +161,46 @@ completed run already exists:
 - file artifacts are restored from persisted state into the requested
   `base_dir`
 
-## Failed-Run Restart Model
+## Failed-Run Resume Model
 
-The current restart model is a clean restart, not an in-place resume.
+Failed persisted runs now resume from durable stage checkpoints instead
+of always rerunning the entire batch.
 
-If the latest attempt for a given `run_key` failed:
+The documented checkpoint stages are:
+
+- `normalize`
+- `match`
+- `cluster`
+- `review_queue`
+- `golden`
+- `crosswalk`
+- `report`
+
+Each checkpoint stores:
+
+- the source `run_id` and `run_key`
+- the stage name plus stage order
+- checkpoint timestamp
+- cumulative phase metrics and duration
+- the staged rows needed to continue the pipeline
+- a partial run summary snapshot for auditability
+
+If the latest resumable attempt for a given `run_key` failed:
 
 - rerunning the same persisted invocation starts a new attempt
+- the new attempt records `resumed_from_run_id`
+- the runtime restores the most advanced durable checkpoint and
+  continues from there
 - the failed attempt remains in the registry for auditability
 - the next successful attempt completes under the same `run_key` with a
   higher `attempt_number`
+
+The persisted `summary.resume` block records:
+
+- whether the completed or failed attempt resumed from a prior run
+- the source run and stage used for resume
+- the latest checkpoint available for the current attempt
+- whether a later retry can resume again
 
 ## Replay Bundles
 

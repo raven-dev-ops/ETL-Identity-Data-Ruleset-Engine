@@ -103,7 +103,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 96) Add checkpointed resume for failed persisted runs
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.7.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
 - Depends on: #93

@@ -29,11 +29,15 @@ of truth for tracked work; this file is the short maintainer view.
   from verified archived replay bundles without restoring the original
   manifest and landing paths, and persisted run metadata records direct
   bundle replayability.
+- GitHub issue `#87` is complete: persisted runs now write durable
+  stage checkpoints, failed attempts record resumable summary state, and
+  reruns resume from the latest checkpoint instead of redoing earlier
+  completed stages.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
-  - Open GitHub issues: `#87`
+  - Open GitHub issues: none
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: `#88`, `#89`, `#90`, `#91`
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
@@ -44,7 +48,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] PostgreSQL-backed persisted state
 - [x] Immutable replay bundles for manifests and landed inputs
 - [x] Replay independent of original landing paths
-- [ ] Checkpointed resume for failed persisted runs
+- [x] Checkpointed resume for failed persisted runs
 - [ ] OIDC or JWT service authentication
 - [ ] Fine-grained RBAC and actor identity propagation
 - [ ] HTTP publish and export triggers
@@ -56,4 +60,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#87`: Add checkpointed resume for failed persisted runs.
+- Start issue `#88`: Add OIDC or JWT service authentication for
+  enterprise identity providers.
