@@ -147,7 +147,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 68) Implement persisted manual-review case workflow
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.5.0`
 - Labels: `type:feature`, `area:workflow`, `priority:p0`
 - Depends on: #63
@@ -350,11 +350,11 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#68`
+- Open child issues represented in this local active catalog: `#69`
   through `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
-  - `v0.5.0` with epic `#59` plus child issues `#68` through `#73`
+  - `v0.5.0` with epic `#59` plus child issues `#69` through `#73`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
@@ -387,3 +387,7 @@ Snapshot date: 2026-03-13
   published under the versioned `golden_crosswalk_snapshot/v1`
   downstream contract with immutable snapshot directories and an atomic
   `current.json` consumer pointer.
+- Issue `#68` is complete in-repo: persisted review cases now track
+  status, assignee, notes, timestamps, and lifecycle transitions, and
+  the runtime exposes JSON-based inspection/update commands over the
+  SQLite state store.

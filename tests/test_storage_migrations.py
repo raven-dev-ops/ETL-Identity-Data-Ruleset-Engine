@@ -24,7 +24,18 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
         }
+        review_case_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(review_cases)").fetchall()
+        }
     assert set(PIPELINE_STATE_TABLES) <= table_names
+    assert {
+        "assigned_to",
+        "operator_notes",
+        "created_at_utc",
+        "updated_at_utc",
+        "resolved_at_utc",
+    } <= review_case_columns
 
 
 def test_state_db_upgrade_command_can_use_runtime_environment_defaults(

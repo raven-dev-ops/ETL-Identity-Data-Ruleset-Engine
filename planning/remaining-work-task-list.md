@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#68` through `#80`.
+  open child issues `#69` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -36,6 +36,9 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#67` is complete: completed persisted runs can now be
   published under a versioned golden/crosswalk delivery contract with
   immutable snapshots and an atomic consumer pointer.
+- Issue `#68` is complete: persisted review cases now support assignee,
+  notes, timestamps, and the `pending` / `approved` / `rejected` /
+  `deferred` lifecycle through SQLite-backed workflow commands.
 
 ## Open Task Groups
 
@@ -43,7 +46,7 @@ truth for tracked work; this file is the short maintainer view.
   - Open issues: none. `v0.4.0` implementation work is complete in the
     active backlog catalog.
 - [ ] `v0.5.0` Review workflow and service surface
-  - Open issues: `#68` through `#73` in the active backlog catalog.
+  - Open issues: `#69` through `#73` in the active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
   - Open issues: `#74` through `#80` in the active backlog catalog.
 
@@ -56,7 +59,8 @@ truth for tracked work; this file is the short maintainer view.
 - [x] Idempotent orchestration and replay-safe run lifecycle handling
 - [x] Migration tooling and environment-specific runtime configuration
 - [x] Incremental processing across runs
-- [ ] Persisted manual-review workflow and decision application
+- [x] Persisted manual-review workflow
+- [ ] Decision application into cluster and golden rebuilds
 - [ ] Service and operator interfaces for run status, review, and golden
   lookups
 - [x] Downstream publication contracts for warehouse and data-product
@@ -67,4 +71,4 @@ truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#68`.
+  then `v0.6.0`, starting with issue `#69`.

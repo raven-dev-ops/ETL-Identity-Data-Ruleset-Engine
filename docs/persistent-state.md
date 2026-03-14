@@ -158,6 +158,37 @@ Each artifact table stores:
 `row_index` preserves deterministic output order so persisted rows can be
 reloaded in the same sequence as the file artifacts.
 
+## Review Case Workflow
+
+Persisted `review_cases` now track more than the initial queue CSV
+fields. The current lifecycle fields are:
+
+- `queue_status`
+- `assigned_to`
+- `operator_notes`
+- `created_at_utc`
+- `updated_at_utc`
+- `resolved_at_utc`
+
+The runtime currently exposes that workflow through:
+
+```bash
+python -m etl_identity_engine.cli review-case-list \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345
+
+python -m etl_identity_engine.cli review-case-update \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345 \
+  --review-id REV-00001 \
+  --status approved \
+  --assigned-to analyst.one \
+  --notes "Approved after verification"
+```
+
+The lifecycle contract itself is documented in
+[review-workflow.md](review-workflow.md).
+
 ## Delivery Publication
 
 Completed persisted runs can now be published under the versioned
@@ -177,11 +208,13 @@ The consumer-facing contract is documented in
 ## Current Boundary
 
 This issue adds durable relational persistence, a basic run registry,
-first-class schema migrations, a first incremental refresh path, and a
-versioned downstream publication contract, not full orchestration.
+first-class schema migrations, a first incremental refresh path, a
+persisted review-case lifecycle, and a versioned downstream publication
+contract, not full orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints
+- review-decision application into cluster or golden rebuilds
 - service APIs over the persisted store
 
 Those remain tracked follow-on work in the active backlog.

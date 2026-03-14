@@ -278,6 +278,165 @@ def test_run_all_reuses_completed_run_without_duplicating_persisted_state(tmp_pa
     assert (base_dir / "data" / "exceptions" / "run_report.md").exists()
 
 
+def test_persisted_review_case_workflow_supports_assignment_and_lifecycle_transitions(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    run_id = store.latest_completed_run_id_with_review_cases()
+    assert run_id is not None
+    capsys.readouterr()
+
+    initial_cases = store.list_review_cases(run_id=run_id)
+    assert initial_cases
+    case = initial_cases[0]
+    assert case.queue_status == "pending"
+    assert case.assigned_to == ""
+    assert case.operator_notes == ""
+    assert case.created_at_utc
+    assert case.updated_at_utc == case.created_at_utc
+    assert case.resolved_at_utc == ""
+
+    assert (
+        main(
+            [
+                "review-case-update",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--review-id",
+                case.review_id,
+                "--assigned-to",
+                "analyst.one",
+                "--notes",
+                "Need source verification",
+                "--status",
+                "deferred",
+            ]
+        )
+        == 0
+    )
+    updated_payload = json.loads(capsys.readouterr().out)
+    assert updated_payload["queue_status"] == "deferred"
+    assert updated_payload["assigned_to"] == "analyst.one"
+    assert updated_payload["operator_notes"] == "Need source verification"
+    assert updated_payload["resolved_at_utc"] == ""
+
+    assert (
+        main(
+            [
+                "review-case-update",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--review-id",
+                case.review_id,
+                "--status",
+                "approved",
+                "--notes",
+                "Approved after verification",
+            ]
+        )
+        == 0
+    )
+    approved_payload = json.loads(capsys.readouterr().out)
+    assert approved_payload["queue_status"] == "approved"
+    assert approved_payload["assigned_to"] == "analyst.one"
+    assert approved_payload["operator_notes"] == "Approved after verification"
+    assert approved_payload["resolved_at_utc"]
+
+    approved_case = store.load_review_case(run_id=run_id, review_id=case.review_id)
+    assert approved_case.queue_status == "approved"
+    assert approved_case.assigned_to == "analyst.one"
+    assert approved_case.operator_notes == "Approved after verification"
+    assert approved_case.resolved_at_utc
+
+    assert (
+        main(
+            [
+                "review-case-list",
+                "--state-db",
+                str(db_path),
+                "--status",
+                "approved",
+            ]
+        )
+        == 0
+    )
+    listed_payload = json.loads(capsys.readouterr().out)
+    assert any(item["review_id"] == case.review_id for item in listed_payload)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Review case cannot transition from 'approved' to 'deferred'",
+    ):
+        main(
+            [
+                "review-case-update",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--review-id",
+                case.review_id,
+                "--status",
+                "deferred",
+            ]
+        )
+
+    for child in (base_dir / "data").iterdir():
+        if child.is_dir():
+            for nested in child.rglob("*"):
+                if nested.is_file():
+                    nested.unlink()
+            for nested in sorted(child.rglob("*"), reverse=True):
+                if nested.is_dir():
+                    nested.rmdir()
+            child.rmdir()
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+    restored_review_rows = _read_csv_rows(base_dir / "data" / "review_queue" / "manual_review_queue.csv")
+    restored_case = next(row for row in restored_review_rows if row["review_id"] == case.review_id)
+    assert restored_case["queue_status"] == "approved"
+
+
 def test_run_all_records_failed_attempt_and_allows_clean_restart(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "pipeline_state.sqlite"
     base_dir = tmp_path / "run"

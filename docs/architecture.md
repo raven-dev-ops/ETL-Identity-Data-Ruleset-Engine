@@ -14,8 +14,10 @@ golden records, and reporting artifacts.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
-- The supported manual-review model remains the CSV handoff documented
-  below rather than a persisted in-app workflow.
+- The supported manual-review model now includes persisted review-case
+  state when SQLite persistence is enabled. The CSV queue remains the
+  portable file artifact, but decision application into cluster and
+  golden rebuilds is still tracked follow-on work.
 
 ## Runtime Stages
 
@@ -132,18 +134,18 @@ The current end-to-end path writes:
 
 ## Manual Review Operating Model
 
-The supported manual-review model for the current `0.1.x` line remains a
-file-based CSV handoff:
+The current manual-review model now has two surfaces:
 
 - `review-queue` writes `data/review_queue/manual_review_queue.csv`
-- `queue_status` is initialized to `pending`
-- reviewers are expected to consume that artifact outside the runtime
-  rather than through a persisted in-app workflow
+- fresh queue rows still initialize `queue_status` to `pending`
+- when persisted state is enabled, the same cases are also stored in
+  SQLite with lifecycle status, assignee, timestamps, and notes
+- operators can inspect and update persisted cases through
+  `review-case-list` and `review-case-update`
 
-A persisted review workflow is intentionally out of scope for the
-current supported runtime surface. Any future expansion beyond the CSV
-handoff should be introduced as a new tracked backlog item instead of as
-an implicit behavior change.
+Applying approved or rejected decisions back into cluster and golden
+rebuilds is intentionally not part of the current issue scope. That
+remains tracked follow-on work rather than an implicit behavior change.
 
 ## Support Matrix
 

@@ -28,6 +28,9 @@ All notable changes to this project will be documented in this file.
 - Versioned downstream delivery publication for persisted golden and
   crosswalk outputs, including immutable snapshot directories and an
   atomic `current.json` pointer for consumers.
+- Persisted manual-review case workflow support with durable assignee,
+  notes, timestamps, lifecycle status, and CLI inspection/update
+  commands.
 
 ### Changed
 
@@ -44,6 +47,9 @@ All notable changes to this project will be documented in this file.
 - The runtime now exposes `publish-delivery` so downstream ETL consumers
   can read stable golden/crosswalk snapshots from persisted state
   instead of the prototype working directory.
+- Persisted review-case rows now survive run reuse and expose the
+  `pending`, `approved`, `rejected`, and `deferred` lifecycle states
+  through SQLite-backed workflow commands.
 
 ## [0.1.4] - 2026-03-13
 

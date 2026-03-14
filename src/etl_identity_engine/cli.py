@@ -40,6 +40,7 @@ from etl_identity_engine.output_contracts import (
     MATCH_SCORE_HEADERS,
     NORMALIZED_HEADERS,
 )
+from etl_identity_engine.review_cases import REVIEW_CASE_STATUSES
 from etl_identity_engine.quality.exceptions import (
     build_run_report_markdown,
     build_run_summary,
@@ -56,6 +57,7 @@ from etl_identity_engine.storage.migration_runner import (
     upgrade_sqlite_store,
 )
 from etl_identity_engine.storage.sqlite_store import (
+    PersistedReviewCase,
     PersistRunMetadata,
     SQLitePipelineStore,
     build_run_key,
@@ -91,7 +93,14 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
 
     state_db_should_default = False
     command = getattr(args, "command", None)
-    if command in {"state-db-upgrade", "state-db-current", "publish-delivery", "run-all"}:
+    if command in {
+        "state-db-upgrade",
+        "state-db-current",
+        "review-case-list",
+        "review-case-update",
+        "publish-delivery",
+        "run-all",
+    }:
         state_db_should_default = True
     if command == "report" and getattr(args, "run_id", None):
         state_db_should_default = True
@@ -877,6 +886,57 @@ def _cmd_state_db_current(args: argparse.Namespace) -> None:
     print(f"state db revision: {current_revision} (head={head_revision()})")
 
 
+def _resolve_review_case_run_id(args: argparse.Namespace, store: SQLitePipelineStore) -> str:
+    run_id = args.run_id or store.latest_completed_run_id_with_review_cases()
+    if run_id is None:
+        raise FileNotFoundError(f"No completed persisted review-case runs found in {_require_state_db(args)}")
+    return run_id
+
+
+def _serialize_review_case(case: PersistedReviewCase) -> dict[str, object]:
+    return {
+        "run_id": case.run_id,
+        "review_id": case.review_id,
+        "left_id": case.left_id,
+        "right_id": case.right_id,
+        "score": case.score,
+        "reason_codes": case.reason_codes,
+        "top_contributing_match_signals": case.top_contributing_match_signals,
+        "queue_status": case.queue_status,
+        "assigned_to": case.assigned_to,
+        "operator_notes": case.operator_notes,
+        "created_at_utc": case.created_at_utc,
+        "updated_at_utc": case.updated_at_utc,
+        "resolved_at_utc": case.resolved_at_utc,
+    }
+
+
+def _cmd_review_case_list(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    run_id = _resolve_review_case_run_id(args, store)
+    cases = store.list_review_cases(
+        run_id=run_id,
+        queue_status=args.status,
+        assigned_to=args.assigned_to,
+    )
+    print(json.dumps([_serialize_review_case(case) for case in cases], indent=2, sort_keys=True))
+
+
+def _cmd_review_case_update(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    run_id = _resolve_review_case_run_id(args, store)
+    updated = store.update_review_case(
+        run_id=run_id,
+        review_id=args.review_id,
+        queue_status=args.status,
+        assigned_to=args.assigned_to,
+        operator_notes=args.notes,
+    )
+    print(json.dumps(_serialize_review_case(updated), indent=2, sort_keys=True))
+
+
 def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
@@ -1307,6 +1367,62 @@ def build_parser() -> argparse.ArgumentParser:
     state_db_current_parser.add_argument("--runtime-config", default=None)
     state_db_current_parser.add_argument("--state-db", default=None)
     state_db_current_parser.set_defaults(func=_cmd_state_db_current)
+
+    review_case_list_parser = subparsers.add_parser(
+        "review-case-list",
+        help="List persisted manual-review cases for a completed run.",
+    )
+    review_case_list_parser.add_argument("--environment", default=None)
+    review_case_list_parser.add_argument("--runtime-config", default=None)
+    review_case_list_parser.add_argument("--state-db", default=None)
+    review_case_list_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to inspect. Defaults to the latest completed run with review cases.",
+    )
+    review_case_list_parser.add_argument(
+        "--status",
+        default=None,
+        choices=REVIEW_CASE_STATUSES,
+        help="Optional lifecycle status filter.",
+    )
+    review_case_list_parser.add_argument(
+        "--assigned-to",
+        default=None,
+        help="Optional assignee filter.",
+    )
+    review_case_list_parser.set_defaults(func=_cmd_review_case_list)
+
+    review_case_update_parser = subparsers.add_parser(
+        "review-case-update",
+        help="Update persisted manual-review case status, assignee, or notes.",
+    )
+    review_case_update_parser.add_argument("--environment", default=None)
+    review_case_update_parser.add_argument("--runtime-config", default=None)
+    review_case_update_parser.add_argument("--state-db", default=None)
+    review_case_update_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to update. Defaults to the latest completed run with review cases.",
+    )
+    review_case_update_parser.add_argument("--review-id", required=True)
+    review_case_update_parser.add_argument(
+        "--status",
+        default=None,
+        choices=REVIEW_CASE_STATUSES,
+        help="Optional lifecycle status transition.",
+    )
+    review_case_update_parser.add_argument(
+        "--assigned-to",
+        default=None,
+        help="Optional assignee value. Use an empty string to clear it.",
+    )
+    review_case_update_parser.add_argument(
+        "--notes",
+        default=None,
+        help="Optional operator notes value. Use an empty string to clear it.",
+    )
+    review_case_update_parser.set_defaults(func=_cmd_review_case_update)
 
     publish_delivery_parser = subparsers.add_parser(
         "publish-delivery",

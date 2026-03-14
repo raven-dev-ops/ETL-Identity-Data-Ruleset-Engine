@@ -142,8 +142,10 @@ is included in the repository.
   and phonetic signals. ML-assisted scoring is intentionally out of
   scope for the supported public line.
 - The supported manual-review operating model for the current `0.x` line
-  is a CSV handoff via `data/review_queue/manual_review_queue.csv`.
-  Persisted in-app review workflow state is out of scope.
+  now has two layers: the CSV queue artifact remains the portable file
+  handoff, and persisted runs can also track review-case status,
+  assignee, timestamps, and notes in SQLite. Applying those decisions
+  back into cluster and golden rebuilds remains follow-on work.
 
 ## Future Enhancements
 
@@ -169,6 +171,7 @@ is included in the repository.
 - [Production Batch Manifest](docs/production-batch-manifest.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Persistent State](docs/persistent-state.md)
+- [Review Workflow](docs/review-workflow.md)
 - [Runtime Environments](docs/runtime-environments.md)
 - [Matching and Thresholds](docs/matching-and-thresholds.md)
 - [Survivorship](docs/survivorship.md)
@@ -267,9 +270,11 @@ in `data/exceptions/run_summary.json`.
 Completed persisted runs can then be published into immutable golden and
 crosswalk snapshots with `publish-delivery`.
 
-The current manual-review operating model is a CSV handoff via
-`data/review_queue/manual_review_queue.csv`; the project does not yet
-implement a persisted review workflow.
+The current manual-review operating model keeps the file handoff via
+`data/review_queue/manual_review_queue.csv`, and persisted runs now also
+support durable review-case state through `review-case-list` and
+`review-case-update`. Applying those decisions back into cluster and
+golden rebuilds is not implemented yet.
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

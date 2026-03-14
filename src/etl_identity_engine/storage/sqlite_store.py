@@ -10,6 +10,11 @@ from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
+from etl_identity_engine.review_cases import (
+    REVIEW_CASE_STATUSES,
+    validate_review_case_status,
+    validate_review_case_transition,
+)
 from etl_identity_engine.storage.migration_runner import upgrade_sqlite_store
 from etl_identity_engine.output_contracts import (
     BLOCKING_METRICS_HEADERS,
@@ -99,6 +104,23 @@ class RunStartDecision:
     started_at_utc: str
 
 
+@dataclass(frozen=True)
+class PersistedReviewCase:
+    run_id: str
+    review_id: str
+    left_id: str
+    right_id: str
+    score: float
+    reason_codes: str
+    top_contributing_match_signals: str
+    queue_status: str
+    assigned_to: str
+    operator_notes: str
+    created_at_utc: str
+    updated_at_utc: str
+    resolved_at_utc: str
+
+
 ARTIFACT_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
     "normalized_source_records": tuple((column, "TEXT") for column in NORMALIZED_HEADERS),
     "candidate_pairs": (
@@ -128,6 +150,11 @@ ARTIFACT_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
         ("reason_codes", "TEXT"),
         ("top_contributing_match_signals", "TEXT"),
         ("queue_status", "TEXT"),
+        ("assigned_to", "TEXT"),
+        ("operator_notes", "TEXT"),
+        ("created_at_utc", "TEXT"),
+        ("updated_at_utc", "TEXT"),
+        ("resolved_at_utc", "TEXT"),
     ),
 }
 
@@ -148,7 +175,7 @@ ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
     "entity_clusters": (("cluster_id",), ("source_record_id",), ("person_entity_id",)),
     "golden_records": (("golden_id",), ("cluster_id",), ("person_entity_id",)),
     "source_to_golden_crosswalk": (("source_record_id",), ("golden_id",), ("cluster_id",)),
-    "review_cases": (("review_id",), ("queue_status",), ("left_id",), ("right_id",)),
+    "review_cases": (("review_id",), ("queue_status",), ("assigned_to",), ("left_id",), ("right_id",)),
 }
 
 PIPELINE_STATE_TABLES = ("pipeline_runs", *ARTIFACT_TABLE_NAMES)
@@ -208,6 +235,27 @@ def _row_to_strings(row: sqlite3.Row, headers: tuple[str, ...]) -> dict[str, str
         value = row[header]
         resolved[header] = "" if value is None else str(value)
     return resolved
+
+
+def _row_to_review_case(row: sqlite3.Row) -> PersistedReviewCase:
+    score = row["score"]
+    return PersistedReviewCase(
+        run_id=str(row["run_id"]),
+        review_id=str(row["review_id"]),
+        left_id=str(row["left_id"]),
+        right_id=str(row["right_id"]),
+        score=float(score or 0.0),
+        reason_codes="" if row["reason_codes"] is None else str(row["reason_codes"]),
+        top_contributing_match_signals=""
+        if row["top_contributing_match_signals"] is None
+        else str(row["top_contributing_match_signals"]),
+        queue_status="" if row["queue_status"] is None else str(row["queue_status"]),
+        assigned_to="" if row["assigned_to"] is None else str(row["assigned_to"]),
+        operator_notes="" if row["operator_notes"] is None else str(row["operator_notes"]),
+        created_at_utc="" if row["created_at_utc"] is None else str(row["created_at_utc"]),
+        updated_at_utc="" if row["updated_at_utc"] is None else str(row["updated_at_utc"]),
+        resolved_at_utc="" if row["resolved_at_utc"] is None else str(row["resolved_at_utc"]),
+    )
 
 
 class SQLitePipelineStore:
@@ -332,6 +380,54 @@ class SQLitePipelineStore:
             ],
         )
 
+    def _persist_review_case_rows(
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+        rows: list[dict[str, str | float]],
+        *,
+        created_at_utc: str,
+    ) -> None:
+        connection.executemany(
+            """
+            INSERT INTO review_cases (
+                run_id,
+                row_index,
+                review_id,
+                left_id,
+                right_id,
+                score,
+                reason_codes,
+                top_contributing_match_signals,
+                queue_status,
+                assigned_to,
+                operator_notes,
+                created_at_utc,
+                updated_at_utc,
+                resolved_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    run_id,
+                    index,
+                    row.get("review_id", ""),
+                    row.get("left_id", ""),
+                    row.get("right_id", ""),
+                    row.get("score", ""),
+                    row.get("reason_codes", ""),
+                    row.get("top_contributing_match_signals", ""),
+                    validate_review_case_status(str(row.get("queue_status", "pending") or "pending")),
+                    "",
+                    "",
+                    created_at_utc,
+                    created_at_utc,
+                    "",
+                )
+                for index, row in enumerate(rows)
+            ],
+        )
+
     def persist_run(
         self,
         *,
@@ -405,7 +501,12 @@ class SQLitePipelineStore:
             self._persist_artifact_rows(connection, "entity_clusters", metadata.run_id, cluster_rows)
             self._persist_artifact_rows(connection, "golden_records", metadata.run_id, golden_rows)
             self._persist_artifact_rows(connection, "source_to_golden_crosswalk", metadata.run_id, crosswalk_rows)
-            self._persist_artifact_rows(connection, "review_cases", metadata.run_id, review_rows)
+            self._persist_review_case_rows(
+                connection,
+                metadata.run_id,
+                review_rows,
+                created_at_utc=metadata.finished_at_utc,
+            )
             connection.commit()
 
     def mark_run_failed(
@@ -449,6 +550,26 @@ class SQLitePipelineStore:
                 FROM pipeline_runs
                 WHERE status = 'completed'
                 ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return None if row is None else str(row["run_id"])
+
+    def latest_completed_run_id_with_review_cases(self) -> str | None:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT pipeline_runs.run_id
+                FROM pipeline_runs
+                WHERE pipeline_runs.status = 'completed'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM review_cases
+                      WHERE review_cases.run_id = pipeline_runs.run_id
+                  )
+                ORDER BY pipeline_runs.finished_at_utc DESC,
+                         pipeline_runs.started_at_utc DESC,
+                         pipeline_runs.run_id DESC
                 LIMIT 1
                 """
             ).fetchone()
@@ -537,3 +658,100 @@ class SQLitePipelineStore:
             crosswalk_rows=self._load_artifact_rows("source_to_golden_crosswalk", run_id),
             review_rows=self._load_artifact_rows("review_cases", run_id),
         )
+
+    def list_review_cases(
+        self,
+        *,
+        run_id: str,
+        queue_status: str | None = None,
+        assigned_to: str | None = None,
+    ) -> list[PersistedReviewCase]:
+        filters: list[str] = ["run_id = ?"]
+        parameters: list[str] = [run_id]
+        if queue_status is not None:
+            filters.append("queue_status = ?")
+            parameters.append(validate_review_case_status(queue_status))
+        if assigned_to is not None:
+            filters.append("assigned_to = ?")
+            parameters.append(assigned_to.strip())
+        where_clause = " AND ".join(filters)
+        with _connect(self.db_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT run_id, review_id, left_id, right_id, score, reason_codes,
+                       top_contributing_match_signals, queue_status, assigned_to,
+                       operator_notes, created_at_utc, updated_at_utc, resolved_at_utc
+                FROM review_cases
+                WHERE {where_clause}
+                ORDER BY row_index ASC
+                """,
+                parameters,
+            ).fetchall()
+        return [_row_to_review_case(row) for row in rows]
+
+    def load_review_case(self, *, run_id: str, review_id: str) -> PersistedReviewCase:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT run_id, review_id, left_id, right_id, score, reason_codes,
+                       top_contributing_match_signals, queue_status, assigned_to,
+                       operator_notes, created_at_utc, updated_at_utc, resolved_at_utc
+                FROM review_cases
+                WHERE run_id = ? AND review_id = ?
+                """,
+                (run_id, review_id),
+            ).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"Persisted review case not found: run_id={run_id} review_id={review_id}")
+        return _row_to_review_case(row)
+
+    def update_review_case(
+        self,
+        *,
+        run_id: str,
+        review_id: str,
+        queue_status: str | None = None,
+        assigned_to: str | None = None,
+        operator_notes: str | None = None,
+        updated_at_utc: str | None = None,
+    ) -> PersistedReviewCase:
+        existing = self.load_review_case(run_id=run_id, review_id=review_id)
+        timestamp = updated_at_utc or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        next_status = existing.queue_status
+        if queue_status is not None:
+            next_status = validate_review_case_transition(existing.queue_status, queue_status)
+
+        next_assigned_to = existing.assigned_to if assigned_to is None else assigned_to.strip()
+        next_operator_notes = existing.operator_notes if operator_notes is None else operator_notes.strip()
+        next_resolved_at = existing.resolved_at_utc
+        if next_status in REVIEW_CASE_STATUSES and next_status in {"approved", "rejected"}:
+            next_resolved_at = existing.resolved_at_utc or timestamp
+        elif next_status in {"pending", "deferred"}:
+            next_resolved_at = ""
+
+        with _connect(self.db_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE review_cases
+                SET queue_status = ?,
+                    assigned_to = ?,
+                    operator_notes = ?,
+                    updated_at_utc = ?,
+                    resolved_at_utc = ?
+                WHERE run_id = ? AND review_id = ?
+                """,
+                (
+                    next_status,
+                    next_assigned_to,
+                    next_operator_notes,
+                    timestamp,
+                    next_resolved_at,
+                    run_id,
+                    review_id,
+                ),
+            )
+            connection.commit()
+        if cursor.rowcount == 0:
+            raise FileNotFoundError(f"Persisted review case not found: run_id={run_id} review_id={review_id}")
+        return self.load_review_case(run_id=run_id, review_id=review_id)
