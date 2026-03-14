@@ -124,13 +124,9 @@ Snapshot date: 2026-03-13
 - Milestone `v0.1.1` was closed on 2026-03-13 after the `v0.1.1` release closeout completed.
 - Milestones `v0.2.0` and `v0.3.0` were both closed on 2026-03-13 after
   the tracked issue set completed.
-- Additional hardening landed after backlog closure on 2026-03-13:
-  lightweight phonetic-name scoring and direct CI validation of the
-  packaged release-sample command.
-- A later 2026-03-13 scope-resolution pass formalized the public
-  synthetic-only boundary, kept matching and manual review on the
-  deterministic public path, added Python `3.12` and macOS compatibility
-  validation, and introduced Python-native local validation entrypoints
-  without reopening the backlog.
+- Additional hardening shipped in `v0.1.2` on 2026-03-13 without
+  reopening the backlog: lightweight phonetic-name scoring,
+  deterministic release packaging, Python-native local validation
+  entrypoints, and Python `3.12` plus macOS compatibility validation.
 - Refresh or replace this file before the next backlog sync when new
   work is ready to be tracked.

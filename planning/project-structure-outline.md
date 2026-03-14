@@ -28,12 +28,14 @@ ETL-Identity-Data-Ruleset-Engine/
   .github/
     ISSUE_TEMPLATE/
       bug.yml
+      chore.yml
       config.yml
       docs.yml
       epic.yml
       feature.yml
     workflows/
       ci.yml
+      issue-metadata.yml
       lint.yml
     PULL_REQUEST_TEMPLATE.md
   config/
@@ -77,6 +79,7 @@ ETL-Identity-Data-Ruleset-Engine/
     run_pipeline.ps1
     run_pipeline.py
     run_pipeline.sh
+    verify_github_issue_metadata.py
   src/
     etl_identity_engine/
       cli.py
