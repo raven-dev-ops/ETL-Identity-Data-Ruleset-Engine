@@ -836,6 +836,57 @@ environments:
     )
 
 
+def test_load_runtime_environment_supports_cjis_runtime_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: cjis
+environments:
+  cjis:
+    config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}
+    state_db: ${ETL_IDENTITY_STATE_DB}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY}
+    service_auth:
+      mode: jwt
+      header_name: Authorization
+      issuer: ${ETL_IDENTITY_SERVICE_JWT_ISSUER}
+      audience: ${ETL_IDENTITY_SERVICE_JWT_AUDIENCE}
+      algorithms:
+        - RS256
+      jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
+      reader_roles:
+        - etl-identity-reader
+      operator_roles:
+        - etl-identity-operator
+""",
+    )
+    monkeypatch.setenv("ETL_IDENTITY_STATE_DB", "postgresql+psycopg://etl_identity:secret@db.internal:5432/identity_state")
+    monkeypatch.setenv("ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY", "secret-key")
+    monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_ISSUER", "https://issuer.example.gov")
+    monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_AUDIENCE", "etl-identity-api")
+    monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM", "/runtime/secrets/jwt-public.pem")
+
+    environment = load_runtime_environment("cjis", runtime_config)
+
+    assert environment.name == "cjis"
+    assert environment.state_db == "postgresql+psycopg://etl_identity:secret@db.internal:5432/identity_state"
+    assert environment.secrets == {
+        "object_storage_access_key": "access-key",
+        "object_storage_secret_key": "secret-key",
+    }
+    assert environment.service_auth is not None
+    assert environment.service_auth.mode == "jwt"
+    assert environment.service_auth.algorithms == ("RS256",)
+    assert environment.service_auth.jwt_public_key_pem == "/runtime/secrets/jwt-public.pem"
+
+
 def test_load_runtime_environment_rejects_invalid_jwt_service_auth_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

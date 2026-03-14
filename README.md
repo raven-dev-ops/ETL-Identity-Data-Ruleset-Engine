@@ -191,6 +191,7 @@ is included in the repository.
 - [Compatibility Policy](docs/compatibility-policy.md)
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
+- [CJIS Deployment Baseline](docs/cjis-deployment-baseline.md)
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)

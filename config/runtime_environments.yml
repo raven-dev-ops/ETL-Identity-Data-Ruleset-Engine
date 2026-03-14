@@ -108,3 +108,43 @@ environments:
         - review_cases:read
         - review_cases:write
         - exports:run
+  cjis:
+    description: CJIS-aligned deployment baseline sourced from deployment environment variables.
+    config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}
+    state_db: ${ETL_IDENTITY_STATE_DB}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY}
+    service_auth:
+      mode: jwt
+      header_name: Authorization
+      issuer: ${ETL_IDENTITY_SERVICE_JWT_ISSUER}
+      audience: ${ETL_IDENTITY_SERVICE_JWT_AUDIENCE}
+      algorithms:
+        - RS256
+      jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
+      role_claim: roles
+      scope_claim: scope
+      subject_claim: sub
+      reader_roles:
+        - etl-identity-reader
+      operator_roles:
+        - etl-identity-operator
+      reader_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+      operator_scopes:
+        - service:health
+        - service:metrics
+        - runs:read
+        - runs:replay
+        - runs:publish
+        - golden:read
+        - crosswalk:read
+        - review_cases:read
+        - review_cases:write
+        - exports:run

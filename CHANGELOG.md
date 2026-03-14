@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added a dedicated `cjis` runtime environment, a `deploy/cjis.env.example`
+  deployment surface, a `cjis_preflight_check.py` script, and new CJIS
+  deployment/standards docs so the repo now has a concrete repo-side
+  baseline for CJIS-aligned production rollouts.
+
 ## [0.9.0] - 2026-03-14
 
 - Added a concrete synthetic CAD/RMS public-safety demo stage and

@@ -36,6 +36,16 @@ def test_container_env_example_documents_required_values() -> None:
     assert "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY=" in env_text
 
 
+def test_cjis_env_example_documents_required_values() -> None:
+    env_text = (REPO_ROOT / "deploy" / "cjis.env.example").read_text(encoding="utf-8")
+
+    assert "ETL_IDENTITY_STATE_DB=" in env_text
+    assert "ETL_IDENTITY_SERVICE_JWT_ISSUER=" in env_text
+    assert "ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM=" in env_text
+    assert "ETL_IDENTITY_TLS_CERT_PATH=" in env_text
+    assert "ETL_IDENTITY_CJIS_MFA_ENFORCED=1" in env_text
+
+
 def test_container_smoke_script_targets_compose_topology() -> None:
     script_text = (REPO_ROOT / "scripts" / "container_smoke_test.py").read_text(encoding="utf-8")
 
@@ -136,6 +146,18 @@ def test_kubernetes_cluster_runtime_environment_exists() -> None:
     assert cluster["service_auth"]["mode"] == "api_key"
     assert cluster["service_auth"]["reader_api_key"] == "${ETL_IDENTITY_SERVICE_READER_API_KEY}"
     assert cluster["service_auth"]["operator_api_key"] == "${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}"
+
+
+def test_cjis_runtime_environment_exists() -> None:
+    runtime_config = yaml.safe_load(
+        (REPO_ROOT / "config" / "runtime_environments.yml").read_text(encoding="utf-8")
+    )
+
+    cjis = runtime_config["environments"]["cjis"]
+    assert cjis["state_db"] == "${ETL_IDENTITY_STATE_DB}"
+    assert cjis["service_auth"]["mode"] == "jwt"
+    assert cjis["service_auth"]["algorithms"] == ["RS256"]
+    assert cjis["service_auth"]["jwt_public_key_pem"] == "${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}"
 
 
 def test_kubernetes_smoke_script_targets_postgresql_backed_cluster_topology() -> None:

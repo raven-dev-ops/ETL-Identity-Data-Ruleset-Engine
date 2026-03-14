@@ -26,6 +26,7 @@ in-repo.
 ```text
 ETL-Identity-Data-Ruleset-Engine/
   deploy/
+    cjis.env.example
     compose.yaml
     container.env.example
     kubernetes/
@@ -62,6 +63,7 @@ ETL-Identity-Data-Ruleset-Engine/
     benchmarking-and-capacity.md
     compatibility-policy.md
     container-deployment.md
+    cjis-deployment-baseline.md
     event-stream-ingestion.md
     kubernetes-deployment.md
     data-model.md
@@ -101,6 +103,7 @@ ETL-Identity-Data-Ruleset-Engine/
     kubernetes_manifest_smoke.py
     package_release_sample.py
     package_public_safety_demo.py
+    cjis_preflight_check.py
     persisted_state_recovery_smoke.py
     release_hardening_check.py
     run_checks.py

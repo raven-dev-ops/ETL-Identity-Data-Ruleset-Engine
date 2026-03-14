@@ -29,3 +29,7 @@ If private reporting is unavailable, open an issue with minimal details and requ
 For the supported production deployment boundary, including operator
 responsibilities, audit expectations, and rollback ownership, see
 [docs/production-operating-model.md](docs/production-operating-model.md).
+
+For the stricter repo-side CJIS deployment baseline, including the
+preflight and required environment surface, see
+[docs/cjis-deployment-baseline.md](docs/cjis-deployment-baseline.md).

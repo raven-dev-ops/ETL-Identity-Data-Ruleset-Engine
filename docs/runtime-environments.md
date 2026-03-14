@@ -6,9 +6,11 @@ editing committed YAML files in place.
 
 The default catalog now also includes a `container` environment for the
 single-host deployment baseline shipped in
-[container-deployment.md](container-deployment.md), plus a `cluster`
+[container-deployment.md](container-deployment.md), a `cluster`
 environment for the PostgreSQL-backed Kubernetes baseline in
-[kubernetes-deployment.md](kubernetes-deployment.md).
+[kubernetes-deployment.md](kubernetes-deployment.md), and a `cjis`
+environment for the stricter JWT + PostgreSQL deployment baseline
+documented in [cjis-deployment-baseline.md](cjis-deployment-baseline.md).
 
 ## Environment File
 
@@ -97,6 +99,11 @@ The default production environment now uses JWT bearer auth with:
 If `mode: api_key` is configured and both API-key values resolve to
 blank strings, service auth is treated as unconfigured. `serve-api`
 then fails fast until the deployment environment provides both values.
+
+The `cjis` environment is stricter than `prod` in one important way: it
+pins JWT validation to `RS256`, requires deployment-supplied object
+storage secrets, and is intended to be paired with the dedicated CJIS
+preflight rather than a looser general production check.
 
 The `container` environment is different from `prod` in one important
 way: it provides default placeholder object-storage secret values so the
