@@ -10,6 +10,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
+import time
 from typing import Sequence
 
 from etl_identity_engine.delivery_publish import publish_delivery_snapshot
@@ -29,6 +30,7 @@ from etl_identity_engine.normalize.addresses import normalize_address
 from etl_identity_engine.normalize.dates import normalize_date
 from etl_identity_engine.normalize.names import normalize_name
 from etl_identity_engine.normalize.phones import normalize_phone
+from etl_identity_engine.observability import emit_structured_log, seconds_since
 from etl_identity_engine.operator_actions import (
     apply_review_decision_operation,
     replay_run_operation,
@@ -1012,6 +1014,28 @@ def _serialize_export_run_record(record: ExportJobRunRecord) -> dict[str, object
     }
 
 
+def _record_cli_audit_event(
+    store: SQLitePipelineStore,
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    status: str,
+    run_id: str | None = None,
+    details: dict[str, object] | None = None,
+) -> None:
+    store.record_audit_event(
+        actor_type="cli",
+        actor_id="operator",
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        run_id=run_id,
+        status=status,
+        details=details or {},
+    )
+
+
 def _resolve_completed_run_id(args: argparse.Namespace, store: SQLitePipelineStore) -> str:
     run_id = args.run_id or store.latest_completed_run_id()
     if run_id is None:
@@ -1063,15 +1087,68 @@ def _cmd_review_case_update(args: argparse.Namespace) -> None:
 
 
 def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
-    result = apply_review_decision_operation(
-        store=store,
-        run_id=args.run_id,
-        review_id=args.review_id,
-        decision=args.decision,
-        assigned_to=args.assigned_to,
-        notes=args.notes,
+    try:
+        result = apply_review_decision_operation(
+            store=store,
+            run_id=args.run_id,
+            review_id=args.review_id,
+            decision=args.decision,
+            assigned_to=args.assigned_to,
+            notes=args.notes,
+        )
+    except Exception as exc:
+        _record_cli_audit_event(
+            store,
+            action="apply_review_decision",
+            resource_type="review_case",
+            resource_id=args.review_id,
+            run_id=args.run_id,
+            status="failed",
+            details={
+                "decision": args.decision,
+                "assigned_to": args.assigned_to or "",
+                "notes": args.notes or "",
+                "error": str(exc),
+            },
+        )
+        emit_structured_log(
+            "review_decision_failed",
+            component="cli",
+            command="apply-review-decision",
+            review_id=args.review_id,
+            run_id=args.run_id or "",
+            duration_seconds=seconds_since(started),
+            error=str(exc),
+            level="ERROR",
+        )
+        raise
+
+    _record_cli_audit_event(
+        store,
+        action="apply_review_decision",
+        resource_type="review_case",
+        resource_id=result.case.review_id,
+        run_id=result.case.run_id,
+        status="noop" if result.action == "noop" else "succeeded",
+        details={
+            "decision": result.case.queue_status,
+            "assigned_to": result.case.assigned_to,
+            "operator_notes": result.case.operator_notes,
+            "action": result.action,
+        },
+    )
+    emit_structured_log(
+        "review_decision_applied",
+        component="cli",
+        command="apply-review-decision",
+        run_id=result.case.run_id,
+        review_id=result.case.review_id,
+        action=result.action,
+        queue_status=result.case.queue_status,
+        duration_seconds=seconds_since(started),
     )
 
     print(
@@ -1088,6 +1165,7 @@ def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
 
 
 def _cmd_publish_delivery(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
     run_id = args.run_id or store.latest_completed_run_id()
@@ -1095,17 +1173,44 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"No completed persisted runs found in {state_db}")
 
     bundle = store.load_run_bundle(run_id)
+    contract_root = Path(args.output_dir) / DELIVERY_CONTRACT_NAME / args.contract_version
+    snapshot_dir = contract_root / "snapshots" / run_id
+    snapshot_existed = snapshot_dir.exists()
     published = publish_delivery_snapshot(
         bundle=bundle,
         state_db_path=state_db,
         output_root=Path(args.output_dir),
         contract_version=args.contract_version,
     )
+    _record_cli_audit_event(
+        store,
+        action="publish_delivery",
+        resource_type="pipeline_run",
+        resource_id=run_id,
+        run_id=run_id,
+        status="reused" if snapshot_existed else "succeeded",
+        details={
+            "contract_version": args.contract_version,
+            "snapshot_dir": str(published.snapshot_dir),
+            "current_pointer_path": str(published.current_pointer_path),
+        },
+    )
+    emit_structured_log(
+        "delivery_snapshot_published",
+        component="cli",
+        command="publish-delivery",
+        run_id=run_id,
+        action="reused_snapshot" if snapshot_existed else "published",
+        contract_version=args.contract_version,
+        snapshot_dir=published.snapshot_dir,
+        duration_seconds=seconds_since(started),
+    )
     print(f"delivery snapshot published: {published.snapshot_dir}")
     print(f"delivery pointer updated: {published.current_pointer_path}")
 
 
 def _cmd_publish_run(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
     run_id = _resolve_completed_run_id(args, store)
@@ -1118,6 +1223,30 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
         state_db_path=state_db,
         output_root=Path(args.output_dir),
         contract_version=args.contract_version,
+    )
+    _record_cli_audit_event(
+        store,
+        action="publish_run",
+        resource_type="pipeline_run",
+        resource_id=run_id,
+        run_id=run_id,
+        status="reused" if snapshot_existed else "succeeded",
+        details={
+            "contract_version": args.contract_version,
+            "snapshot_dir": str(published.snapshot_dir),
+            "current_pointer_path": str(published.current_pointer_path),
+            "action": "reused_snapshot" if snapshot_existed else "published",
+        },
+    )
+    emit_structured_log(
+        "delivery_snapshot_published",
+        component="cli",
+        command="publish-run",
+        run_id=run_id,
+        action="reused_snapshot" if snapshot_existed else "published",
+        contract_version=args.contract_version,
+        snapshot_dir=published.snapshot_dir,
+        duration_seconds=seconds_since(started),
     )
     print(
         json.dumps(
@@ -1146,6 +1275,7 @@ def _cmd_export_job_list(args: argparse.Namespace) -> None:
 
 
 def _cmd_export_job_run(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
     source_run_id = _resolve_completed_run_id(args, store)
@@ -1211,7 +1341,59 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
                 finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 failure_detail=str(exc),
             )
+        _record_cli_audit_event(
+            store,
+            action="export_job_run",
+            resource_type="export_job",
+            resource_id=args.job_name,
+            run_id=source_run_id,
+            status="failed",
+            details={
+                "export_run_id": export_run_id,
+                "job_name": args.job_name,
+                "source_run_id": source_run_id,
+                "error": str(exc),
+            },
+        )
+        emit_structured_log(
+            "export_job_failed",
+            component="cli",
+            command="export-job-run",
+            job_name=args.job_name,
+            source_run_id=source_run_id,
+            export_run_id=export_run_id,
+            duration_seconds=seconds_since(started),
+            error=str(exc),
+            level="ERROR",
+        )
         raise
+
+    _record_cli_audit_event(
+        store,
+        action="export_job_run",
+        resource_type="export_job",
+        resource_id=args.job_name,
+        run_id=source_run_id,
+        status="reused" if action == "reused_completed_export" else "succeeded",
+        details={
+            "job_name": args.job_name,
+            "source_run_id": source_run_id,
+            "export_run_id": export_record.export_run_id,
+            "snapshot_dir": export_record.snapshot_dir,
+            "current_pointer_path": export_record.current_pointer_path,
+            "action": action,
+        },
+    )
+    emit_structured_log(
+        "export_job_completed",
+        component="cli",
+        command="export-job-run",
+        job_name=args.job_name,
+        source_run_id=source_run_id,
+        export_run_id=export_record.export_run_id,
+        action=action,
+        duration_seconds=seconds_since(started),
+    )
 
     print(
         json.dumps(
@@ -1244,15 +1426,67 @@ def _cmd_export_job_history(args: argparse.Namespace) -> None:
 
 
 def _cmd_replay_run(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
-    result = replay_run_operation(
-        store=store,
-        state_db=state_db,
-        source_run_id=args.run_id,
-        base_dir=Path(args.base_dir) if args.base_dir else None,
-        refresh_mode=args.refresh_mode,
-        runner=main,
+    try:
+        result = replay_run_operation(
+            store=store,
+            state_db=state_db,
+            source_run_id=args.run_id,
+            base_dir=Path(args.base_dir) if args.base_dir else None,
+            refresh_mode=args.refresh_mode,
+            runner=main,
+        )
+    except Exception as exc:
+        _record_cli_audit_event(
+            store,
+            action="replay_run",
+            resource_type="pipeline_run",
+            resource_id=args.run_id or "latest-completed-run",
+            run_id=args.run_id,
+            status="failed",
+            details={
+                "base_dir": args.base_dir or "",
+                "refresh_mode": args.refresh_mode or "",
+                "error": str(exc),
+            },
+        )
+        emit_structured_log(
+            "pipeline_run_replay_failed",
+            component="cli",
+            command="replay-run",
+            requested_run_id=args.run_id or "",
+            duration_seconds=seconds_since(started),
+            error=str(exc),
+            level="ERROR",
+        )
+        raise
+    _record_cli_audit_event(
+        store,
+        action="replay_run",
+        resource_type="pipeline_run",
+        resource_id=result.result_run.run_id,
+        run_id=result.result_run.run_id,
+        status="reused" if result.action == "reused_completed_run" else "succeeded",
+        details={
+            "requested_run_id": result.requested_run.run_id,
+            "result_run_id": result.result_run.run_id,
+            "refresh_mode": result.refresh_mode,
+            "base_dir": str(result.base_dir),
+            "replay_command": list(result.replay_command),
+            "action": result.action,
+        },
+    )
+    emit_structured_log(
+        "pipeline_run_replayed",
+        component="cli",
+        command="replay-run",
+        requested_run_id=result.requested_run.run_id,
+        result_run_id=result.result_run.run_id,
+        refresh_mode=result.refresh_mode,
+        action=result.action,
+        duration_seconds=seconds_since(started),
     )
     print(
         json.dumps(
@@ -1282,6 +1516,16 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
         raise ValueError(
             "serve-api requires a runtime environment with service_auth configured via environment-backed secrets"
         )
+    emit_structured_log(
+        "service_api_starting",
+        component="cli",
+        command="serve-api",
+        environment=runtime_environment.name,
+        state_db=state_db,
+        host=args.host,
+        port=args.port,
+        log_level=args.log_level,
+    )
     app = create_service_app(state_db, service_auth=runtime_environment.service_auth)
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
 
@@ -1312,6 +1556,7 @@ def _cmd_report(args: argparse.Namespace) -> None:
 
 
 def _cmd_run_all(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
     base = Path(args.base_dir)
     manifest_path = getattr(args, "manifest", None)
     if args.refresh_mode == "incremental":
@@ -1338,6 +1583,19 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     review_queue_file = base / "data" / "review_queue" / "manual_review_queue.csv"
     report_file = base / "data" / "exceptions" / "run_report.md"
 
+    emit_structured_log(
+        "pipeline_run_requested",
+        component="cli",
+        command="run-all",
+        base_dir=base.resolve(),
+        input_mode=run_key_args["input_mode"],
+        manifest_path=run_key_args["manifest_path"] or "",
+        batch_id=manifest_batch_id or "",
+        refresh_mode=args.refresh_mode,
+        run_key=run_key,
+        state_db=args.state_db or "",
+    )
+
     if state_store is not None:
         start_decision = state_store.begin_run(
             run_key=run_key,
@@ -1354,11 +1612,29 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         if start_decision.action == "reuse_completed":
             bundle = state_store.load_run_bundle(start_decision.run_id)
             _restore_persisted_run_outputs(base, bundle)
+            emit_structured_log(
+                "pipeline_run_reused",
+                component="cli",
+                command="run-all",
+                run_id=bundle.run.run_id,
+                run_key=run_key,
+                duration_seconds=seconds_since(started),
+            )
             print(f"reused persisted completed run: {Path(args.state_db)} (run_id={bundle.run.run_id})")
             print("pipeline run complete")
             return
         run_id = start_decision.run_id
         attempt_number = start_decision.attempt_number
+        emit_structured_log(
+            "pipeline_run_started",
+            component="cli",
+            command="run-all",
+            run_id=run_id,
+            run_key=run_key,
+            attempt_number=attempt_number,
+            input_mode=run_key_args["input_mode"],
+            refresh_mode=args.refresh_mode,
+        )
 
     try:
         config = _load_config(args.config_dir, args.environment)
@@ -1571,6 +1847,20 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 summary=summary,
             )
             print(f"persisted run state: {Path(args.state_db)} (run_id={run_id})")
+        emit_structured_log(
+            "pipeline_run_completed",
+            component="cli",
+            command="run-all",
+            run_id=run_id or "",
+            run_key=run_key,
+            input_mode=input_mode,
+            total_records=summary["total_records"],
+            candidate_pair_count=summary["candidate_pair_count"],
+            cluster_count=summary["cluster_count"],
+            golden_record_count=summary["golden_record_count"],
+            review_queue_count=summary["review_queue_count"],
+            duration_seconds=seconds_since(started),
+        )
         print("pipeline run complete")
     except Exception as exc:
         if state_store is not None and run_id is not None:
@@ -1579,6 +1869,18 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 failure_detail=str(exc),
             )
+        emit_structured_log(
+            "pipeline_run_failed",
+            component="cli",
+            command="run-all",
+            run_id=run_id or "",
+            run_key=run_key,
+            input_mode=run_key_args["input_mode"],
+            refresh_mode=args.refresh_mode,
+            duration_seconds=seconds_since(started),
+            error=str(exc),
+            level="ERROR",
+        )
         raise
 
 

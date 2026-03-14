@@ -46,6 +46,10 @@ All notable changes to this project will be documented in this file.
 - API-key authentication and role-based service authorization for
   persisted operator APIs, including operator-only review decision and
   replay actions.
+- A shared observability baseline with structured JSON logs, persisted
+  SQLite audit events for privileged actions, authenticated `readyz`
+  and `/api/v1/metrics` endpoints, and store-backed batch/service
+  operational metrics.
 
 ### Changed
 

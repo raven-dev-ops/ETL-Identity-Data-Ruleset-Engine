@@ -179,6 +179,7 @@ is included in the repository.
 - [Service API](docs/service-api.md)
 - [Runtime Environments](docs/runtime-environments.md)
 - [Matching and Thresholds](docs/matching-and-thresholds.md)
+- [Operations and Observability](docs/operations-observability.md)
 - [Survivorship](docs/survivorship.md)
 - [Evaluation and Metrics](docs/evaluation-and-metrics.md)
 - [Output Contracts](docs/output-contracts.md)
@@ -290,8 +291,13 @@ operator API with `serve-api`. That surface exposes run status, golden
 record lookups, source-to-golden crosswalk lookups, and persisted
 review-case retrieval for downstream systems and operators, and it now
 supports operator-only review decision and replay actions behind
-separate API-key roles. The service contract is documented in
-[docs/service-api.md](docs/service-api.md).
+separate API-key roles. It also now exposes authenticated `healthz`,
+`readyz`, and `/api/v1/metrics` endpoints, while privileged CLI and
+service actions emit structured JSON logs and persist audit events in
+SQLite. The service contract is documented in
+[docs/service-api.md](docs/service-api.md), and the current operations
+baseline is documented in
+[docs/operations-observability.md](docs/operations-observability.md).
 
 For operator workflows, the CLI now also exposes:
 

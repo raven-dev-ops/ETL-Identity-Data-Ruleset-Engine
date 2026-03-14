@@ -173,6 +173,19 @@ def test_service_api_exposes_run_golden_crosswalk_and_review_state(tmp_path: Pat
     health_response = client.get("/healthz", headers=reader_headers)
     assert health_response.status_code == 200
     assert health_response.json()["status"] == "ok"
+    assert health_response.json()["service_started_at_utc"]
+
+    readiness_response = client.get("/readyz", headers=reader_headers)
+    assert readiness_response.status_code == 200
+    assert readiness_response.json()["status"] == "ready"
+    assert readiness_response.json()["latest_completed_run_id"] == run_id
+
+    metrics_response = client.get("/api/v1/metrics", headers=reader_headers)
+    assert metrics_response.status_code == 200
+    assert metrics_response.json()["runs"]["completed"] == 1
+    assert metrics_response.json()["runs"]["running"] == 0
+    assert metrics_response.json()["review_cases"]["pending"] == 1
+    assert metrics_response.json()["audit_event_count"] == 0
 
     latest_run_response = client.get("/api/v1/runs/latest", headers=reader_headers)
     assert latest_run_response.status_code == 200
@@ -302,3 +315,12 @@ def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp
     assert operator_replay_response.json()["requested_run_id"] == run_id
     assert operator_replay_response.json()["result_run_id"] != run_id
     assert operator_replay_response.json()["refresh_mode"] == "incremental"
+
+    metrics_response = client.get("/api/v1/metrics", headers=reader_headers)
+    assert metrics_response.status_code == 200
+    assert metrics_response.json()["audit_event_count"] >= 2
+    assert metrics_response.json()["runs"]["completed"] >= 2
+
+    audit_events = store.list_audit_events(limit=10)
+    assert {event.action for event in audit_events} >= {"apply_review_decision", "replay_run"}
+    assert all(event.actor_type == "service_api" for event in audit_events[:2])

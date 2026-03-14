@@ -57,8 +57,10 @@ ETL-Identity-Data-Ruleset-Engine/
     evaluation-and-metrics.md
     matching-and-thresholds.md
     normalization.md
+    operations-observability.md
     output-contracts.md
     release-process.md
+    service-api.md
     standards-mapping.md
     survivorship.md
   planning/
@@ -87,7 +89,9 @@ ETL-Identity-Data-Ruleset-Engine/
       io/
       matching/
       normalize/
+      observability.py
       quality/
+      storage/
       survivorship/
   tests/
     conftest.py

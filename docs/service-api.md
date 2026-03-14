@@ -29,7 +29,8 @@ The current baseline uses API-key authentication.
 
 - Default header: `X-API-Key`
 - `reader` key:
-  - may call `GET` lookup endpoints and `GET /healthz`
+  - may call `GET` lookup endpoints plus `GET /healthz`,
+    `GET /readyz`, and `GET /api/v1/metrics`
 - `operator` key:
   - may call all `reader` endpoints
   - may also execute privileged review-decision and replay actions
@@ -45,8 +46,14 @@ than committed into repo config.
 ## Endpoint Surface
 
 - `GET /healthz`
-  - Returns process health plus the resolved SQLite path and API
-    version.
+  - Returns liveness-style process health plus the resolved SQLite path
+    and API version.
+- `GET /readyz`
+  - Returns readiness-style status, latest run summary, and audit-event
+    totals from the persisted store.
+- `GET /api/v1/metrics`
+  - Returns authenticated JSON metrics for service uptime plus
+    persisted batch, review, export, and audit counts.
 - `GET /api/v1/runs/latest`
   - Returns the latest completed persisted run.
 - `GET /api/v1/runs/{run_id}`
@@ -81,6 +88,10 @@ Missing rows return `404`. Invalid request parameters return `422`.
 Missing or invalid API keys return `401`. Authenticated callers without
 the required role return `403`. Unsupported replay operations such as
 non-manifest source runs return `409`.
+
+Privileged review-decision and replay actions also now persist audit
+events in SQLite, and the service emits structured JSON request logs to
+`stderr` for operational collection.
 
 ## Compatibility
 

@@ -29,6 +29,7 @@ from etl_identity_engine.output_contracts import (
 
 RUN_STATUSES = frozenset({"running", "completed", "failed"})
 EXPORT_RUN_STATUSES = frozenset({"running", "completed", "failed"})
+AUDIT_EVENT_STATUSES = frozenset({"succeeded", "failed", "noop", "reused"})
 ARTIFACT_TABLE_NAMES = (
     "normalized_source_records",
     "candidate_pairs",
@@ -135,6 +136,32 @@ class ExportStartDecision:
 
 
 @dataclass(frozen=True)
+class AuditEventRecord:
+    audit_event_id: str
+    occurred_at_utc: str
+    actor_type: str
+    actor_id: str
+    action: str
+    resource_type: str
+    resource_id: str
+    run_id: str | None
+    status: str
+    details: dict[str, object]
+
+
+@dataclass(frozen=True)
+class StoreOperationalMetrics:
+    run_status_counts: dict[str, int]
+    export_status_counts: dict[str, int]
+    review_case_status_counts: dict[str, int]
+    audit_event_count: int
+    latest_completed_run_id: str | None
+    latest_completed_run_finished_at_utc: str | None
+    latest_failed_run_id: str | None
+    latest_failed_run_finished_at_utc: str | None
+
+
+@dataclass(frozen=True)
 class PersistedReviewCase:
     run_id: str
     review_id: str
@@ -208,7 +235,7 @@ ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
     "review_cases": (("review_id",), ("queue_status",), ("assigned_to",), ("left_id",), ("right_id",)),
 }
 
-PIPELINE_STATE_TABLES = ("pipeline_runs", "export_job_runs", *ARTIFACT_TABLE_NAMES)
+PIPELINE_STATE_TABLES = ("pipeline_runs", "export_job_runs", "audit_events", *ARTIFACT_TABLE_NAMES)
 
 
 def build_run_id(now: datetime | None = None) -> str:
@@ -219,6 +246,11 @@ def build_run_id(now: datetime | None = None) -> str:
 def build_export_run_id(now: datetime | None = None) -> str:
     timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
     return f"EXP-{timestamp}-{uuid4().hex[:8].upper()}"
+
+
+def build_audit_event_id(now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    return f"AUD-{timestamp}-{uuid4().hex[:8].upper()}"
 
 
 def build_run_key(
@@ -313,6 +345,21 @@ def _row_to_review_case(row: sqlite3.Row) -> PersistedReviewCase:
         created_at_utc="" if row["created_at_utc"] is None else str(row["created_at_utc"]),
         updated_at_utc="" if row["updated_at_utc"] is None else str(row["updated_at_utc"]),
         resolved_at_utc="" if row["resolved_at_utc"] is None else str(row["resolved_at_utc"]),
+    )
+
+
+def _row_to_audit_event(row: sqlite3.Row) -> AuditEventRecord:
+    return AuditEventRecord(
+        audit_event_id=str(row["audit_event_id"]),
+        occurred_at_utc=str(row["occurred_at_utc"]),
+        actor_type=str(row["actor_type"]),
+        actor_id=str(row["actor_id"]),
+        action=str(row["action"]),
+        resource_type=str(row["resource_type"]),
+        resource_id=str(row["resource_id"]),
+        run_id=None if row["run_id"] in (None, "") else str(row["run_id"]),
+        status=str(row["status"]),
+        details=json.loads(str(row["details_json"] or "{}")),
     )
 
 
@@ -925,6 +972,190 @@ class SQLitePipelineStore:
                 parameters,
             ).fetchall()
         return [self._row_to_export_job_run_record(row) for row in rows]
+
+    def record_audit_event(
+        self,
+        *,
+        actor_type: str,
+        actor_id: str,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        status: str,
+        run_id: str | None = None,
+        details: dict[str, object] | None = None,
+        occurred_at_utc: str | None = None,
+    ) -> AuditEventRecord:
+        normalized_actor_type = actor_type.strip()
+        normalized_actor_id = actor_id.strip()
+        normalized_action = action.strip()
+        normalized_resource_type = resource_type.strip()
+        normalized_resource_id = resource_id.strip()
+        normalized_status = status.strip().lower()
+        if not normalized_actor_type:
+            raise ValueError("Audit events require a non-empty actor_type")
+        if not normalized_actor_id:
+            raise ValueError("Audit events require a non-empty actor_id")
+        if not normalized_action:
+            raise ValueError("Audit events require a non-empty action")
+        if not normalized_resource_type:
+            raise ValueError("Audit events require a non-empty resource_type")
+        if not normalized_resource_id:
+            raise ValueError("Audit events require a non-empty resource_id")
+        if normalized_status not in AUDIT_EVENT_STATUSES:
+            raise ValueError(
+                f"Unsupported audit event status {status!r}; expected one of {sorted(AUDIT_EVENT_STATUSES)}"
+            )
+
+        timestamp = occurred_at_utc or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        audit_event_id = build_audit_event_id(datetime.fromisoformat(timestamp.replace("Z", "+00:00")))
+        with _connect(self.db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    audit_event_id,
+                    occurred_at_utc,
+                    actor_type,
+                    actor_id,
+                    action,
+                    resource_type,
+                    resource_id,
+                    run_id,
+                    status,
+                    details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    audit_event_id,
+                    timestamp,
+                    normalized_actor_type,
+                    normalized_actor_id,
+                    normalized_action,
+                    normalized_resource_type,
+                    normalized_resource_id,
+                    run_id,
+                    normalized_status,
+                    json.dumps(details or {}, sort_keys=True),
+                ),
+            )
+            connection.commit()
+        return self.load_audit_event(audit_event_id)
+
+    def load_audit_event(self, audit_event_id: str) -> AuditEventRecord:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM audit_events WHERE audit_event_id = ?",
+                (audit_event_id,),
+            ).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"Persisted audit event not found: {audit_event_id}")
+        return _row_to_audit_event(row)
+
+    def list_audit_events(
+        self,
+        *,
+        run_id: str | None = None,
+        action: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditEventRecord]:
+        if limit <= 0:
+            raise ValueError("Audit event limit must be greater than 0")
+        filters: list[str] = ["1 = 1"]
+        parameters: list[object] = []
+        if run_id is not None:
+            filters.append("run_id = ?")
+            parameters.append(run_id)
+        if action is not None:
+            filters.append("action = ?")
+            parameters.append(action.strip())
+        if status is not None:
+            normalized_status = status.strip().lower()
+            if normalized_status not in AUDIT_EVENT_STATUSES:
+                raise ValueError(
+                    f"Unsupported audit event status {status!r}; expected one of {sorted(AUDIT_EVENT_STATUSES)}"
+                )
+            filters.append("status = ?")
+            parameters.append(normalized_status)
+        parameters.append(limit)
+        where_clause = " AND ".join(filters)
+        with _connect(self.db_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM audit_events
+                WHERE {where_clause}
+                ORDER BY occurred_at_utc DESC, audit_event_id DESC
+                LIMIT ?
+                """,
+                parameters,
+            ).fetchall()
+        return [_row_to_audit_event(row) for row in rows]
+
+    def load_operational_metrics(self) -> StoreOperationalMetrics:
+        with _connect(self.db_path) as connection:
+            run_status_counts = {status: 0 for status in RUN_STATUSES}
+            for row in connection.execute(
+                "SELECT status, COUNT(*) AS total FROM pipeline_runs GROUP BY status"
+            ).fetchall():
+                status = str(row["status"])
+                if status in run_status_counts:
+                    run_status_counts[status] = int(row["total"] or 0)
+
+            export_status_counts = {status: 0 for status in EXPORT_RUN_STATUSES}
+            for row in connection.execute(
+                "SELECT status, COUNT(*) AS total FROM export_job_runs GROUP BY status"
+            ).fetchall():
+                status = str(row["status"])
+                if status in export_status_counts:
+                    export_status_counts[status] = int(row["total"] or 0)
+
+            review_case_status_counts = {status: 0 for status in REVIEW_CASE_STATUSES}
+            for row in connection.execute(
+                "SELECT queue_status, COUNT(*) AS total FROM review_cases GROUP BY queue_status"
+            ).fetchall():
+                status = str(row["queue_status"])
+                if status in review_case_status_counts:
+                    review_case_status_counts[status] = int(row["total"] or 0)
+
+            audit_event_row = connection.execute(
+                "SELECT COUNT(*) AS total FROM audit_events"
+            ).fetchone()
+            latest_completed_row = connection.execute(
+                """
+                SELECT run_id, finished_at_utc
+                FROM pipeline_runs
+                WHERE status = 'completed'
+                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            latest_failed_row = connection.execute(
+                """
+                SELECT run_id, finished_at_utc
+                FROM pipeline_runs
+                WHERE status = 'failed'
+                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+        return StoreOperationalMetrics(
+            run_status_counts=run_status_counts,
+            export_status_counts=export_status_counts,
+            review_case_status_counts=review_case_status_counts,
+            audit_event_count=int(audit_event_row["total"] or 0),
+            latest_completed_run_id=None
+            if latest_completed_row is None
+            else str(latest_completed_row["run_id"]),
+            latest_completed_run_finished_at_utc=None
+            if latest_completed_row is None
+            else str(latest_completed_row["finished_at_utc"]),
+            latest_failed_run_id=None if latest_failed_row is None else str(latest_failed_row["run_id"]),
+            latest_failed_run_finished_at_utc=None
+            if latest_failed_row is None
+            else str(latest_failed_row["finished_at_utc"]),
+        )
 
     def _load_artifact_rows(self, table_name: str, run_id: str) -> list[dict[str, str]]:
         headers = ARTIFACT_HEADERS[table_name]

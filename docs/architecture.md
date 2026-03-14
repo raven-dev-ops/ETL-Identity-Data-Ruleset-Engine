@@ -67,6 +67,8 @@ golden records, and reporting artifacts.
    - Exposes authenticated run status, golden-record lookup,
      source-to-golden crosswalk lookup, and review-case retrieval
    - Supports operator-only review decision and replay actions
+   - Exposes authenticated `healthz`, `readyz`, and `/api/v1/metrics`
+     endpoints for service and batch observability
 11. `export-job-run`
    - Reads a completed persisted run from SQLite
    - Materializes a named warehouse or data-product export under the
@@ -109,6 +111,7 @@ The runtime now supports optional SQLite-backed persistence for:
 - golden records
 - source-to-golden crosswalk rows
 - manual-review queue rows
+- audit events
 
 `run-all --state-db ...` persists a completed run into SQLite, and
 `report --state-db ... --run-id ...` can reload that state to reproduce
@@ -132,8 +135,11 @@ needing the original working-directory files.
 `export-job-run --state-db ... --job-name ...` can then materialize the
 same delivery contract through named warehouse or data-product export
 jobs while recording auditable export-run metadata in SQLite.
-`serve-api --state-db ...` can expose the same persisted state through a
-read-only operator API for local and CI integration testing.
+`serve-api --state-db ...` can expose the same persisted state through
+an authenticated operator API for local and CI integration testing, and
+the shared observability baseline now also persists privileged audit
+events while exposing health and metrics endpoints over the service
+surface.
 
 ## Output Layout
 

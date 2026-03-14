@@ -247,7 +247,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 75) Add structured logging, metrics, health checks, and audit events
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.6.0`
 - Labels: `type:feature`, `area:operations`, `priority:p0`
 - Depends on: #64, #70
@@ -350,12 +350,12 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#75`
+- Open child issues represented in this local active catalog: `#76`
   through `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
   - `v0.5.0` with epic `#59`
-  - `v0.6.0` with epic `#60` plus child issues `#75` through `#80`
+  - `v0.6.0` with epic `#60` plus child issues `#76` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
   `planning/post-v0.1.0-github-issues-backlog.md`
@@ -412,3 +412,7 @@ Snapshot date: 2026-03-13
 - Issue `#74` is complete in-repo: the service now requires API-key
   authentication, distinguishes `reader` versus `operator` access, and
   loads service secrets through environment-backed runtime config.
+- Issue `#75` is complete in-repo: batch and service paths now emit
+  structured JSON logs, the service exposes authenticated `healthz`,
+  `readyz`, and `/api/v1/metrics` endpoints, and privileged operator
+  actions now persist audit events in SQLite.

@@ -152,6 +152,10 @@ def _json_output(capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
     return json.loads(capsys.readouterr().out)
 
 
+def _structured_log_events(stderr_text: str) -> list[dict[str, object]]:
+    return [json.loads(line) for line in stderr_text.splitlines() if line.strip()]
+
+
 def test_apply_review_decision_and_replay_run_support_operator_workflow(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -350,3 +354,83 @@ def test_replay_run_rejects_non_manifest_runs(tmp_path: Path) -> None:
                 run_id,
             ]
         )
+
+
+def test_cli_emits_structured_logs_and_persists_audit_events(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+    run_logs = _structured_log_events(capsys.readouterr().err)
+    assert {event["event"] for event in run_logs} >= {
+        "pipeline_run_requested",
+        "pipeline_run_started",
+        "pipeline_run_completed",
+    }
+
+    store = SQLitePipelineStore(db_path)
+    run_id = store.latest_completed_run_id_with_review_cases()
+    assert run_id is not None
+    review_case = store.list_review_cases(run_id=run_id)[0]
+
+    assert (
+        main(
+            [
+                "apply-review-decision",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--review-id",
+                review_case.review_id,
+                "--decision",
+                "approved",
+            ]
+        )
+        == 0
+    )
+    review_logs = _structured_log_events(capsys.readouterr().err)
+    assert any(event["event"] == "review_decision_applied" for event in review_logs)
+
+    publish_root = tmp_path / "published"
+    assert (
+        main(
+            [
+                "publish-run",
+                "--state-db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--output-dir",
+                str(publish_root),
+            ]
+        )
+        == 0
+    )
+    publish_logs = _structured_log_events(capsys.readouterr().err)
+    assert any(
+        event["event"] == "delivery_snapshot_published" and event["command"] == "publish-run"
+        for event in publish_logs
+    )
+
+    audit_events = store.list_audit_events(limit=10)
+    assert {event.action for event in audit_events} >= {"apply_review_decision", "publish_run"}
+    assert audit_events[0].actor_type == "cli"

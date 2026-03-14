@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import asdict
 from pathlib import Path
+import time
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Path as ApiPath, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from etl_identity_engine import __version__
+from etl_identity_engine.observability import emit_structured_log, seconds_since, utc_now
 from etl_identity_engine.operator_actions import (
     apply_review_decision_operation,
     replay_run_operation,
@@ -20,6 +22,7 @@ from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
     PipelineRunRecord,
     SQLitePipelineStore,
+    StoreOperationalMetrics,
 )
 
 
@@ -39,6 +42,53 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     state_db: str
     api_version: str
+    service_started_at_utc: str
+
+
+class ReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready"]
+    state_db: str
+    api_version: str
+    latest_completed_run_id: str | None
+    latest_failed_run_id: str | None
+    running_run_count: int
+    audit_event_count: int
+
+
+class RunStatusCountsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    running: int
+    completed: int
+    failed: int
+
+
+class ReviewCaseStatusCountsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pending: int
+    approved: int
+    rejected: int
+    deferred: int
+
+
+class ServiceMetricsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api_version: str
+    state_db: str
+    service_started_at_utc: str
+    service_uptime_seconds: float
+    runs: RunStatusCountsResponse
+    exports: RunStatusCountsResponse
+    review_cases: ReviewCaseStatusCountsResponse
+    audit_event_count: int
+    latest_completed_run_id: str | None
+    latest_completed_run_finished_at_utc: str | None
+    latest_failed_run_id: str | None
+    latest_failed_run_finished_at_utc: str | None
 
 
 class RunStatusResponse(BaseModel):
@@ -176,6 +226,42 @@ def _resolve_operation_conflict(error: ValueError) -> None:
     raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+def _serialize_metrics(
+    metrics: StoreOperationalMetrics,
+    *,
+    state_db: Path,
+    service_started_at_utc: str,
+    service_started_monotonic: float,
+) -> ServiceMetricsResponse:
+    return ServiceMetricsResponse(
+        api_version=__version__,
+        state_db=str(state_db.resolve()),
+        service_started_at_utc=service_started_at_utc,
+        service_uptime_seconds=seconds_since(service_started_monotonic),
+        runs=RunStatusCountsResponse(
+            running=metrics.run_status_counts["running"],
+            completed=metrics.run_status_counts["completed"],
+            failed=metrics.run_status_counts["failed"],
+        ),
+        exports=RunStatusCountsResponse(
+            running=metrics.export_status_counts["running"],
+            completed=metrics.export_status_counts["completed"],
+            failed=metrics.export_status_counts["failed"],
+        ),
+        review_cases=ReviewCaseStatusCountsResponse(
+            pending=metrics.review_case_status_counts["pending"],
+            approved=metrics.review_case_status_counts["approved"],
+            rejected=metrics.review_case_status_counts["rejected"],
+            deferred=metrics.review_case_status_counts["deferred"],
+        ),
+        audit_event_count=metrics.audit_event_count,
+        latest_completed_run_id=metrics.latest_completed_run_id,
+        latest_completed_run_finished_at_utc=metrics.latest_completed_run_finished_at_utc,
+        latest_failed_run_id=metrics.latest_failed_run_id,
+        latest_failed_run_finished_at_utc=metrics.latest_failed_run_finished_at_utc,
+    )
+
+
 def create_service_app(
     state_db_path: Path | str,
     *,
@@ -191,11 +277,41 @@ def create_service_app(
         version=__version__,
         summary="Authenticated operator and consumer service over persisted pipeline state.",
     )
+    service_started_at_utc = utc_now()
+    service_started_monotonic = time.perf_counter()
+
+    @app.middleware("http")
+    async def _structured_request_logging(request: Request, call_next):
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            emit_structured_log(
+                "service_request_failed",
+                component="service_api",
+                method=request.method,
+                path=request.url.path,
+                duration_seconds=seconds_since(started),
+                principal_role=getattr(request.state, "principal_role", "anonymous"),
+            )
+            raise
+
+        emit_structured_log(
+            "service_request_completed",
+            component="service_api",
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_seconds=seconds_since(started),
+            principal_role=getattr(request.state, "principal_role", "anonymous"),
+        )
+        return response
 
     def require_roles(*allowed_roles: ServiceRole):
         allowed = set(allowed_roles)
 
         def dependency(
+            request: Request,
             api_key: str | None = Header(default=None, alias=service_auth.header_name),
         ) -> AuthenticatedPrincipal:
             if api_key is None or not api_key.strip():
@@ -217,6 +333,7 @@ def create_service_app(
                     status_code=403,
                     detail=f"Role {principal.role!r} is not permitted for this operation",
                 )
+            request.state.principal_role = principal.role
             return principal
 
         return dependency
@@ -228,7 +345,38 @@ def create_service_app(
     def healthz(
         _principal: AuthenticatedPrincipal = Depends(read_access),
     ) -> HealthResponse:
-        return HealthResponse(status="ok", state_db=str(state_db.resolve()), api_version=__version__)
+        return HealthResponse(
+            status="ok",
+            state_db=str(state_db.resolve()),
+            api_version=__version__,
+            service_started_at_utc=service_started_at_utc,
+        )
+
+    @app.get("/readyz", response_model=ReadinessResponse, tags=["health"])
+    def readyz(
+        _principal: AuthenticatedPrincipal = Depends(read_access),
+    ) -> ReadinessResponse:
+        metrics = store.load_operational_metrics()
+        return ReadinessResponse(
+            status="ready",
+            state_db=str(state_db.resolve()),
+            api_version=__version__,
+            latest_completed_run_id=metrics.latest_completed_run_id,
+            latest_failed_run_id=metrics.latest_failed_run_id,
+            running_run_count=metrics.run_status_counts["running"],
+            audit_event_count=metrics.audit_event_count,
+        )
+
+    @app.get("/api/v1/metrics", response_model=ServiceMetricsResponse, tags=["health"])
+    def metrics(
+        _principal: AuthenticatedPrincipal = Depends(read_access),
+    ) -> ServiceMetricsResponse:
+        return _serialize_metrics(
+            store.load_operational_metrics(),
+            state_db=state_db,
+            service_started_at_utc=service_started_at_utc,
+            service_started_monotonic=service_started_monotonic,
+        )
 
     @app.get("/api/v1/runs/latest", response_model=RunStatusResponse, tags=["runs"])
     def get_latest_completed_run(
@@ -330,7 +478,7 @@ def create_service_app(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         review_id: Annotated[str, ApiPath(min_length=1, pattern=r"^REV-.+")],
         request: ReviewDecisionRequest,
-        _principal: AuthenticatedPrincipal = Depends(operator_access),
+        principal: AuthenticatedPrincipal = Depends(operator_access),
     ) -> ReviewDecisionResponse:
         try:
             result = apply_review_decision_operation(
@@ -342,7 +490,63 @@ def create_service_app(
                 notes=request.notes,
             )
         except FileNotFoundError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.role,
+                action="apply_review_decision",
+                resource_type="review_case",
+                resource_id=review_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "decision": request.decision,
+                    "assigned_to": request.assigned_to or "",
+                    "notes": request.notes or "",
+                    "error": str(error),
+                },
+            )
             _resolve_not_found(error)
+        except ValueError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.role,
+                action="apply_review_decision",
+                resource_type="review_case",
+                resource_id=review_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "decision": request.decision,
+                    "assigned_to": request.assigned_to or "",
+                    "notes": request.notes or "",
+                    "error": str(error),
+                },
+            )
+            _resolve_operation_conflict(error)
+        store.record_audit_event(
+            actor_type="service_api",
+            actor_id=principal.role,
+            action="apply_review_decision",
+            resource_type="review_case",
+            resource_id=result.case.review_id,
+            run_id=result.case.run_id,
+            status="noop" if result.action == "noop" else "succeeded",
+            details={
+                "decision": result.case.queue_status,
+                "assigned_to": result.case.assigned_to,
+                "operator_notes": result.case.operator_notes,
+                "action": result.action,
+            },
+        )
+        emit_structured_log(
+            "review_decision_applied",
+            component="service_api",
+            actor_role=principal.role,
+            run_id=result.case.run_id,
+            review_id=result.case.review_id,
+            action=result.action,
+            queue_status=result.case.queue_status,
+        )
         return ReviewDecisionResponse(action=result.action, case=_serialize_review_case(result.case))
 
     @app.post(
@@ -353,7 +557,7 @@ def create_service_app(
     def replay_run(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         request: ReplayRunRequest,
-        _principal: AuthenticatedPrincipal = Depends(operator_access),
+        principal: AuthenticatedPrincipal = Depends(operator_access),
     ) -> ReplayRunResponse:
         try:
             from etl_identity_engine.cli import main as cli_main
@@ -367,9 +571,63 @@ def create_service_app(
                 runner=cli_main,
             )
         except FileNotFoundError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.role,
+                action="replay_run",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "base_dir": request.base_dir or "",
+                    "refresh_mode": request.refresh_mode or "",
+                    "error": str(error),
+                },
+            )
             _resolve_not_found(error)
         except ValueError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.role,
+                action="replay_run",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "base_dir": request.base_dir or "",
+                    "refresh_mode": request.refresh_mode or "",
+                    "error": str(error),
+                },
+            )
             _resolve_operation_conflict(error)
+        store.record_audit_event(
+            actor_type="service_api",
+            actor_id=principal.role,
+            action="replay_run",
+            resource_type="pipeline_run",
+            resource_id=result.result_run.run_id,
+            run_id=result.result_run.run_id,
+            status="reused" if result.action == "reused_completed_run" else "succeeded",
+            details={
+                "requested_run_id": result.requested_run.run_id,
+                "result_run_id": result.result_run.run_id,
+                "refresh_mode": result.refresh_mode,
+                "base_dir": str(result.base_dir),
+                "replay_command": list(result.replay_command),
+                "action": result.action,
+            },
+        )
+        emit_structured_log(
+            "pipeline_run_replayed",
+            component="service_api",
+            actor_role=principal.role,
+            requested_run_id=result.requested_run.run_id,
+            result_run_id=result.result_run.run_id,
+            refresh_mode=result.refresh_mode,
+            action=result.action,
+        )
         return ReplayRunResponse(
             action=result.action,
             requested_run_id=result.requested_run.run_id,

@@ -5,7 +5,7 @@ consumers of the service, workflow, and downstream delivery surfaces.
 
 It applies to:
 
-- the documented read-only HTTP endpoints in [service-api.md](service-api.md)
+- the documented authenticated HTTP endpoints in [service-api.md](service-api.md)
 - the documented persisted operator workflow commands in
   [review-workflow.md](review-workflow.md)
 - the documented downstream delivery contract in
@@ -23,6 +23,8 @@ A surface is stable when it is both:
 
 The current stable surfaces are:
 
+- documented operational health endpoints in
+  [service-api.md](service-api.md)
 - documented `/api/v1/...` endpoints plus the current `reader` and
   `operator` service-role split in [service-api.md](service-api.md)
 - the `golden_crosswalk_snapshot/v1` delivery contract documented in
@@ -55,6 +57,11 @@ prototype working files directly.
 ### HTTP API
 
 The current authenticated API is versioned by path prefix under `/api/v1`.
+
+The operational health endpoints `GET /healthz` and `GET /readyz` are
+also part of the documented service surface for the current `0.x` line.
+They are not path-versioned separately, so their paths and documented
+response meaning remain stable within the current `0.x` line.
 
 Within `v1`, the runtime may:
 

@@ -54,7 +54,8 @@ python -m etl_identity_engine.cli export-job-run \
   --run-id RUN-20260314T000000Z-ABC12345
 ```
 
-You can also serve persisted state through the read-only operator API:
+You can also serve persisted state through the authenticated operator
+API:
 
 ```bash
 python -m etl_identity_engine.cli serve-api \
@@ -97,6 +98,7 @@ The current schema includes:
 - `source_to_golden_crosswalk`
 - `review_cases`
 - `export_job_runs`
+- `audit_events`
 
 ## Run Registry
 
@@ -304,16 +306,51 @@ python -m etl_identity_engine.cli export-job-history \
 The configured job catalog and downstream locations are documented in
 [export-jobs.md](export-jobs.md).
 
+## Audit Events
+
+Operator-sensitive actions now persist into the `audit_events` table.
+
+The current audited actions include:
+
+- review-decision application
+- manifest-backed replay
+- direct delivery publication
+- JSON `publish-run` publication
+- named export-job execution
+
+Each audit row stores:
+
+- `audit_event_id`
+- `occurred_at_utc`
+- `actor_type`
+- `actor_id`
+- `action`
+- `resource_type`
+- `resource_id`
+- `run_id`
+- `status`
+- `details_json`
+
 ## Service Access
 
-The persisted store now also supports a read-only service surface for:
+The persisted store now also supports an authenticated service surface
+for:
 
 - run status lookup
 - golden-record lookup
 - source-to-golden crosswalk lookup
 - review-case retrieval
 
+It also now exposes authenticated:
+
+- `GET /healthz`
+- `GET /readyz`
+- `GET /api/v1/metrics`
+
 That API contract is documented in [service-api.md](service-api.md).
+The shared logging, metrics, health, and audit-event baseline is
+documented in
+[operations-observability.md](operations-observability.md).
 
 ## Current Boundary
 
@@ -325,8 +362,6 @@ orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints
-- authenticated or write-capable service actions over the persisted
-  store
 - immutable source-data replay independent of the current manifest and
   landing-zone contents
 

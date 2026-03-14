@@ -217,6 +217,56 @@ def test_run_all_persists_and_reload_state_from_sqlite(tmp_path: Path) -> None:
     assert f"state-db://{db_path.name}?run_id={run_id}" in reloaded_report_text
 
 
+def test_store_operational_metrics_and_audit_events_reflect_persisted_batch_state(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    run_id = store.latest_completed_run_id()
+    assert run_id is not None
+
+    audit_event = store.record_audit_event(
+        actor_type="cli",
+        actor_id="operator",
+        action="publish_run",
+        resource_type="pipeline_run",
+        resource_id=run_id,
+        run_id=run_id,
+        status="succeeded",
+        details={"snapshot_dir": str(tmp_path / "published")},
+    )
+    metrics = store.load_operational_metrics()
+    listed_events = store.list_audit_events(run_id=run_id)
+
+    assert audit_event.action == "publish_run"
+    assert audit_event.run_id == run_id
+    assert audit_event.details["snapshot_dir"] == str(tmp_path / "published")
+    assert metrics.run_status_counts["completed"] == 1
+    assert metrics.run_status_counts["running"] == 0
+    assert metrics.export_status_counts["completed"] == 0
+    assert metrics.review_case_status_counts["pending"] >= 0
+    assert metrics.audit_event_count == 1
+    assert metrics.latest_completed_run_id == run_id
+    assert listed_events[0].audit_event_id == audit_event.audit_event_id
+
+
 def test_run_all_reuses_completed_run_without_duplicating_persisted_state(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "pipeline_state.sqlite"
     base_dir = tmp_path / "run"
