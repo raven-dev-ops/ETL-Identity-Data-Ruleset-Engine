@@ -51,6 +51,10 @@ of truth for tracked work; this file is the short maintainer view.
   deployment baseline for the PostgreSQL-backed topology, including
   service, PostgreSQL, migration, and batch manifests plus a CI-backed
   smoke path.
+- GitHub issue `#93` is complete: the release path now emits retained
+  container attestation, SBOM-style inventory, provenance, and
+  dependency-audit outputs, and CI enforces the container dependency
+  gate before image publication.
 
 ## Open Task Groups
 
@@ -59,7 +63,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: none
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
-  - Open GitHub issues: `#93`, `#94`, `#95`
+  - Open GitHub issues: `#94`, `#95`
 
 ## Gaps Now Explicitly Tracked
 
@@ -72,11 +76,11 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] HTTP publish and export triggers
 - [x] Paginated service list and search endpoints
 - [x] Clustered deployment manifests
-- [ ] Container signing and image-level supply-chain gates
+- [x] Container signing and image-level supply-chain gates
 - [ ] Event-driven ingestion and streaming entity refresh
 - [ ] Clustered benchmarks and distributed SLO targets
 
 ## Next Step
 
-- Start issue `#93`: Add image signing, SBOM attestation, and container
-  scanning gates.
+- Start issue `#94`: Add event-driven ingestion and streaming
+  entity-refresh mode.

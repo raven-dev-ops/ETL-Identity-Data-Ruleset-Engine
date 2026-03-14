@@ -165,6 +165,33 @@ jobs:
       - name: Run Kubernetes manifest smoke test
         run: .venv/bin/python scripts/kubernetes_manifest_smoke.py --image-tag etl-identity-engine:k8s-ci --service-port 18081
 
+  container-supply-chain:
+    name: container-supply-chain
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Bootstrap venv via documented bash path
+        env:
+          INSTALL_GH: "0"
+        run: bash ./scripts/bootstrap_venv.sh
+
+      - name: Run container supply-chain checks
+        run: .venv/bin/python scripts/container_supply_chain_check.py --output-dir dist/container-supply-chain --image-tag etl-identity-engine:supply-chain-ci
+
+      - name: Upload container supply-chain artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: container-supply-chain
+          path: dist/container-supply-chain
+          if-no-files-found: error
+
   release-hardening:
     name: release-hardening
     runs-on: ubuntu-latest

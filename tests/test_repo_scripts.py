@@ -83,6 +83,14 @@ def test_ci_includes_kubernetes_manifest_smoke_job() -> None:
     assert "python scripts/kubernetes_manifest_smoke.py" in workflow_text
 
 
+def test_ci_includes_container_supply_chain_job() -> None:
+    workflow_text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "container-supply-chain:" in workflow_text
+    assert "scripts/container_supply_chain_check.py" in workflow_text
+    assert "name: container-supply-chain" in workflow_text
+
+
 def test_package_version_matches_pyproject_version() -> None:
     pyproject_text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     pyproject = tomllib.loads(pyproject_text)

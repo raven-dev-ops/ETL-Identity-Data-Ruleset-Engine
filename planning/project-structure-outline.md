@@ -91,6 +91,7 @@ ETL-Identity-Data-Ruleset-Engine/
     bootstrap_venv.ps1
     bootstrap_venv.sh
     container_smoke_test.py
+    container_supply_chain_check.py
     create_github_backlog.py
     create_github_backlog.ps1
     kubernetes_manifest_smoke.py
@@ -166,6 +167,8 @@ The current public line is now explicitly scoped around:
 
 - keep the shipped container image plus single-host and Kubernetes
   deployment assets aligned with the documented runtime paths
+- keep release artifact and container attestation outputs aligned with
+  the documented release path
 - keep benchmark fixtures, capacity targets, and the persisted
   performance contract aligned with the supported deployment baseline
 - execute the new post-`v0.6.0` backlog cycle tracked in

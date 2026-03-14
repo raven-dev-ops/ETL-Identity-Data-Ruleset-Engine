@@ -341,6 +341,8 @@ Container build and compose deployment guidance is documented in
 Benchmark fixture definitions, regression targets, and the
 `benchmark-run` workflow are documented in
 [docs/benchmarking-and-capacity.md](docs/benchmarking-and-capacity.md).
+Container image attestation, provenance, and scan gates are documented
+in [docs/release-process.md](docs/release-process.md).
 
 For scale validation, `benchmark-run` executes the real persisted
 pipeline against a named large-batch fixture from

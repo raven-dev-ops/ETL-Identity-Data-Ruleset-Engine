@@ -17,6 +17,7 @@ ruleset because they cannot be stored fully in git:
 - Require these status checks:
   - `CI / test-linux`
   - `CI / test-windows`
+  - `CI / container-supply-chain`
   - `CI / release-hardening`
   - compatibility jobs for Python `3.12` and macOS should remain green
     even if branch protection keeps the baseline required-check list
@@ -46,6 +47,10 @@ check baseline.
   artifact-hash summary for the built release artifacts.
 - The release hardening dependency audit is green on the release
   commit.
+- The container supply-chain job produces retained image attestation,
+  SBOM-style inventory, provenance, and dependency-audit outputs for the
+  built image artifact.
+- The container dependency audit is green on the release commit.
 - The installed `etl-identity-engine` console script resolves and shows
   the expected CLI help output from the release environment.
 - A fresh packaged small-profile release sample bundle is produced
@@ -146,6 +151,34 @@ output directory does not fail because of older wheel or sdist files.
 The CI `release-hardening` job publishes the same directory as the
 `release-hardening-inventory` artifact.
 
+## Container Supply-Chain Outputs
+
+Generate the retained image attestation and scan outputs with:
+
+```bash
+python scripts/container_supply_chain_check.py --output-dir dist/container-supply-chain --image-tag etl-identity-engine:release-hardening
+```
+
+That command writes:
+
+- `container_requirements.txt`
+- `container_sbom.json`
+- `container_provenance.json`
+- `container_dependency_audit.json`
+- `container_attestation.json`
+- `container_supply_chain_summary.json`
+
+The current line uses an attestation bundle rather than registry signing
+as the default release-path control. The attestation binds the built
+image ID and tag to the emitted SBOM, provenance, and scan outputs.
+
+The dependency audit gate is enforced from the installed Python packages
+inside the built image, so a vulnerable image dependency fails the
+script and blocks publication.
+
+The CI `container-supply-chain` job publishes the same directory as the
+`container-supply-chain` artifact.
+
 ## Release Checklist
 
 - Confirm `pyproject.toml` version matches the intended tag.
@@ -166,6 +199,11 @@ The CI `release-hardening` job publishes the same directory as the
   - `python scripts/release_hardening_check.py --output-dir dist/release-hardening`
 - Review `dist/release-hardening/release_hardening_summary.json`,
   `dependency_inventory.json`, and `dependency_audit.json`.
+- Run the retained container supply-chain command:
+  - `python scripts/container_supply_chain_check.py --output-dir dist/container-supply-chain --image-tag etl-identity-engine:release-hardening`
+- Review `dist/container-supply-chain/container_supply_chain_summary.json`,
+  `container_sbom.json`, `container_provenance.json`,
+  `container_dependency_audit.json`, and `container_attestation.json`.
 - Run the backlog dry-run:
   - `python scripts/create_github_backlog.py --repo "<OWNER/REPO>" --dry-run`
   - For historical backlog validation, use `--include-closed`.

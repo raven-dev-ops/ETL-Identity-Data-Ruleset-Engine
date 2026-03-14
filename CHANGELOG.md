@@ -33,6 +33,9 @@ All notable changes to this project will be documented in this file.
   and batch execution, including shipped manifests, example secrets, a
   dedicated `cluster` runtime environment, and a Docker-backed
   Kubernetes manifest smoke test wired into CI.
+- Added retained container supply-chain outputs for the built image,
+  including an attestation bundle, SBOM-style inventory, provenance,
+  and a dependency-audit gate wired into CI.
 - Changed runtime-environment loading to resolve only the selected
   environment's secret placeholders, so compatibility and cluster
   deployments do not require unrelated environment secrets.
