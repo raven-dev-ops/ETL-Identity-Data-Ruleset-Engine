@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-03-13
+
 ### Added
 
 - Lightweight phonetic-name scoring for explainable candidate matching.
