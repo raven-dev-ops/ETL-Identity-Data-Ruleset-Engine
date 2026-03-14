@@ -131,7 +131,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 67) Publish stable downstream delivery contracts for golden and crosswalk outputs
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.4.0`
 - Labels: `type:feature`, `area:service`, `priority:p1`
 - Depends on: #63, #64
@@ -350,10 +350,10 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#67`
+- Open child issues represented in this local active catalog: `#68`
   through `#80`
 - Open milestones in GitHub for this backlog:
-  - `v0.4.0` with epic `#58` plus child issues `#67`
+  - `v0.4.0` with epic `#58`
   - `v0.5.0` with epic `#59` plus child issues `#68` through `#73`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
@@ -383,3 +383,7 @@ Snapshot date: 2026-03-13
   support incremental refresh, reusing unaffected predecessor entities
   and recalculating only the affected candidate pairs, clusters, and
   goldens when the config fingerprint remains compatible.
+- Issue `#67` is complete in-repo: completed persisted runs can now be
+  published under the versioned `golden_crosswalk_snapshot/v1`
+  downstream contract with immutable snapshot directories and an atomic
+  `current.json` consumer pointer.

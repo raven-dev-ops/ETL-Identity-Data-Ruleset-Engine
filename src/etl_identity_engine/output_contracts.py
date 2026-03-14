@@ -107,6 +107,33 @@ PIPELINE_CSV_ARTIFACT_HEADERS = {
     Path("data/exceptions/normalization_failures.csv"): EXCEPTION_HEADERS,
 }
 
+DELIVERY_CONTRACT_NAME = "golden_crosswalk_snapshot"
+DELIVERY_CONTRACT_VERSION = "v1"
+DELIVERY_ARTIFACT_HEADERS = {
+    Path("golden_person_records.csv"): GOLDEN_HEADERS,
+    Path("source_to_golden_crosswalk.csv"): CROSSWALK_HEADERS,
+}
+DELIVERY_MANIFEST_KEYS = (
+    "contract_name",
+    "contract_version",
+    "snapshot_id",
+    "published_at_utc",
+    "run_id",
+    "state_db",
+    "source_run",
+    "row_counts",
+    "artifacts",
+)
+DELIVERY_CURRENT_POINTER_KEYS = (
+    "contract_name",
+    "contract_version",
+    "snapshot_id",
+    "run_id",
+    "published_at_utc",
+    "relative_snapshot_path",
+    "relative_manifest_path",
+)
+
 PIPELINE_ARTIFACT_PATHS = tuple(
     list(PIPELINE_CSV_ARTIFACT_HEADERS)
     + [

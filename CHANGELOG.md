@@ -25,6 +25,9 @@ All notable changes to this project will be documented in this file.
 - Manifest-driven incremental refresh over persisted state, including
   predecessor reuse for unaffected entities and fallback-to-full
   behavior when no compatible predecessor is available.
+- Versioned downstream delivery publication for persisted golden and
+  crosswalk outputs, including immutable snapshot directories and an
+  atomic `current.json` pointer for consumers.
 
 ### Changed
 
@@ -38,6 +41,9 @@ All notable changes to this project will be documented in this file.
   committed YAML files in place.
 - Persisted run summaries and markdown reports now record batch context,
   refresh mode, predecessor reuse, and incremental fallback decisions.
+- The runtime now exposes `publish-delivery` so downstream ETL consumers
+  can read stable golden/crosswalk snapshots from persisted state
+  instead of the prototype working directory.
 
 ## [0.1.4] - 2026-03-13
 

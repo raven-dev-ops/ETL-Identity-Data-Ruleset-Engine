@@ -60,3 +60,18 @@ Nested contract notes:
 The markdown report begins with `# Pipeline Report` and includes summary
 sections for completeness, before/after completeness, duplicate
 reduction, missing-field counts, and exception counts.
+
+## Downstream Delivery Contract
+
+Persisted runs can now be published for downstream ETL consumers through
+the versioned `golden_crosswalk_snapshot/v1` delivery contract.
+
+That contract is separate from the prototype working-directory outputs:
+
+- it publishes immutable snapshot directories
+- it writes an atomic `current.json` pointer for consumers
+- it includes `delivery_manifest.json` with row counts, headers, and
+  `sha256` checksums for the published artifacts
+
+The consumer-facing publication layout and versioning rules are
+documented in [delivery-contracts.md](delivery-contracts.md).

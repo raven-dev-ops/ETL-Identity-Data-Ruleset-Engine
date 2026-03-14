@@ -35,6 +35,16 @@ python -m etl_identity_engine.cli state-db-current \
   --state-db data/state/pipeline_state.sqlite
 ```
 
+You can also publish a stable downstream snapshot directly from the
+persisted run:
+
+```bash
+python -m etl_identity_engine.cli publish-delivery \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345 \
+  --output-dir published/delivery
+```
+
 ## Tables
 
 The current schema includes:
@@ -148,11 +158,27 @@ Each artifact table stores:
 `row_index` preserves deterministic output order so persisted rows can be
 reloaded in the same sequence as the file artifacts.
 
+## Delivery Publication
+
+Completed persisted runs can now be published under the versioned
+`golden_crosswalk_snapshot/v1` contract.
+
+The publish path:
+
+- reads golden and crosswalk rows from SQLite rather than the working
+  directory
+- writes an immutable snapshot directory for the selected `run_id`
+- updates `current.json` atomically so downstream consumers can follow a
+  stable pointer
+
+The consumer-facing contract is documented in
+[delivery-contracts.md](delivery-contracts.md).
+
 ## Current Boundary
 
 This issue adds durable relational persistence, a basic run registry,
-and first-class schema migrations plus a first incremental refresh path,
-not full orchestration.
+first-class schema migrations, a first incremental refresh path, and a
+versioned downstream publication contract, not full orchestration.
 The current line does not yet provide:
 
 - persisted failure-state resume from mid-pipeline checkpoints

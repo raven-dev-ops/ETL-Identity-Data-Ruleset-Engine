@@ -12,6 +12,7 @@ import hashlib
 from pathlib import Path
 from typing import Sequence
 
+from etl_identity_engine.delivery_publish import publish_delivery_snapshot
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
 from etl_identity_engine.incremental_refresh import refresh_incremental_run
 from etl_identity_engine.ingest.manifest import (
@@ -31,6 +32,7 @@ from etl_identity_engine.normalize.phones import normalize_phone
 from etl_identity_engine.output_contracts import (
     BLOCKING_METRICS_HEADERS,
     CROSSWALK_HEADERS,
+    DELIVERY_CONTRACT_VERSION,
     ENTITY_CLUSTER_HEADERS,
     EXCEPTION_HEADERS,
     GOLDEN_HEADERS,
@@ -89,7 +91,7 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
 
     state_db_should_default = False
     command = getattr(args, "command", None)
-    if command in {"state-db-upgrade", "state-db-current", "run-all"}:
+    if command in {"state-db-upgrade", "state-db-current", "publish-delivery", "run-all"}:
         state_db_should_default = True
     if command == "report" and getattr(args, "run_id", None):
         state_db_should_default = True
@@ -875,6 +877,24 @@ def _cmd_state_db_current(args: argparse.Namespace) -> None:
     print(f"state db revision: {current_revision} (head={head_revision()})")
 
 
+def _cmd_publish_delivery(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    run_id = args.run_id or store.latest_completed_run_id()
+    if run_id is None:
+        raise FileNotFoundError(f"No completed persisted runs found in {state_db}")
+
+    bundle = store.load_run_bundle(run_id)
+    published = publish_delivery_snapshot(
+        bundle=bundle,
+        state_db_path=state_db,
+        output_root=Path(args.output_dir),
+        contract_version=args.contract_version,
+    )
+    print(f"delivery snapshot published: {published.snapshot_dir}")
+    print(f"delivery pointer updated: {published.current_pointer_path}")
+
+
 def _cmd_report(args: argparse.Namespace) -> None:
     (
         input_file,
@@ -1287,6 +1307,30 @@ def build_parser() -> argparse.ArgumentParser:
     state_db_current_parser.add_argument("--runtime-config", default=None)
     state_db_current_parser.add_argument("--state-db", default=None)
     state_db_current_parser.set_defaults(func=_cmd_state_db_current)
+
+    publish_delivery_parser = subparsers.add_parser(
+        "publish-delivery",
+        help="Publish versioned downstream golden and crosswalk snapshots from persisted state.",
+    )
+    publish_delivery_parser.add_argument("--environment", default=None)
+    publish_delivery_parser.add_argument("--runtime-config", default=None)
+    publish_delivery_parser.add_argument("--state-db", default=None)
+    publish_delivery_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to publish. Defaults to the latest completed run in --state-db.",
+    )
+    publish_delivery_parser.add_argument(
+        "--output-dir",
+        default="published/delivery",
+        help="Root directory where versioned delivery snapshots should be published.",
+    )
+    publish_delivery_parser.add_argument(
+        "--contract-version",
+        default=DELIVERY_CONTRACT_VERSION,
+        help="Versioned consumer contract to publish. Defaults to the current stable delivery contract.",
+    )
+    publish_delivery_parser.set_defaults(func=_cmd_publish_delivery)
 
     run_all_parser = subparsers.add_parser("run-all", help="Run all scaffold stages in sequence.")
     run_all_parser.add_argument("--base-dir", default=".")

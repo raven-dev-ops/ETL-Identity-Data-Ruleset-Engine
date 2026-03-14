@@ -52,6 +52,12 @@ golden records, and reporting artifacts.
    - Can optionally persist completed run state into SQLite
    - Supports manifest-driven incremental refresh when paired with
      `--state-db --refresh-mode incremental`
+9. `publish-delivery`
+   - Reads a completed persisted run from SQLite
+   - Publishes immutable downstream snapshots for golden records and the
+     source-to-golden crosswalk
+   - Updates an atomic `current.json` consumer pointer under the
+     versioned delivery-contract root
 
 ## Config Surfaces
 
@@ -105,6 +111,9 @@ carry forward unaffected persisted entities unchanged. If the current
 configuration fingerprint differs from the predecessor, the runtime
 falls back to a full rebuild and records that decision in the run
 summary.
+`publish-delivery --state-db ...` can then materialize a versioned
+golden/crosswalk snapshot from any completed persisted run without
+needing the original working-directory files.
 
 ## Output Layout
 

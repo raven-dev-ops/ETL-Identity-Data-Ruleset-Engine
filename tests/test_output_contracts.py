@@ -4,6 +4,11 @@ from pathlib import Path
 
 from etl_identity_engine.cli import main
 from etl_identity_engine.output_contracts import (
+    DELIVERY_ARTIFACT_HEADERS,
+    DELIVERY_CONTRACT_NAME,
+    DELIVERY_CONTRACT_VERSION,
+    DELIVERY_CURRENT_POINTER_KEYS,
+    DELIVERY_MANIFEST_KEYS,
     MATCH_DECISIONS,
     PIPELINE_ARTIFACT_PATHS,
     PIPELINE_CSV_ARTIFACT_HEADERS,
@@ -101,3 +106,32 @@ def test_run_all_outputs_follow_documented_contracts(tmp_path: Path) -> None:
     report_text = report_path.read_text(encoding="utf-8")
     assert report_text.startswith("# Pipeline Report\n")
     assert "## Duplicate Reduction" in report_text
+
+
+def test_delivery_contract_constants_are_versioned_and_complete() -> None:
+    assert DELIVERY_CONTRACT_NAME == "golden_crosswalk_snapshot"
+    assert DELIVERY_CONTRACT_VERSION == "v1"
+    assert set(DELIVERY_ARTIFACT_HEADERS) == {
+        Path("golden_person_records.csv"),
+        Path("source_to_golden_crosswalk.csv"),
+    }
+    assert set(DELIVERY_MANIFEST_KEYS) == {
+        "contract_name",
+        "contract_version",
+        "snapshot_id",
+        "published_at_utc",
+        "run_id",
+        "state_db",
+        "source_run",
+        "row_counts",
+        "artifacts",
+    }
+    assert set(DELIVERY_CURRENT_POINTER_KEYS) == {
+        "contract_name",
+        "contract_version",
+        "snapshot_id",
+        "run_id",
+        "published_at_utc",
+        "relative_snapshot_path",
+        "relative_manifest_path",
+    }

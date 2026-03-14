@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#67` through `#80`.
+  open child issues `#68` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -33,11 +33,15 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#66` is complete: manifest-driven persisted runs now support
   incremental refresh with predecessor reuse for unaffected entities and
   documented fallback-to-full behavior.
+- Issue `#67` is complete: completed persisted runs can now be
+  published under a versioned golden/crosswalk delivery contract with
+  immutable snapshots and an atomic consumer pointer.
 
 ## Open Task Groups
 
 - [ ] `v0.4.0` Production data ingestion and persistence
-  - Open issues: `#67` in the active backlog catalog.
+  - Open issues: none. `v0.4.0` implementation work is complete in the
+    active backlog catalog.
 - [ ] `v0.5.0` Review workflow and service surface
   - Open issues: `#68` through `#73` in the active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
@@ -55,7 +59,7 @@ truth for tracked work; this file is the short maintainer view.
 - [ ] Persisted manual-review workflow and decision application
 - [ ] Service and operator interfaces for run status, review, and golden
   lookups
-- [ ] Downstream publication contracts for warehouse and data-product
+- [x] Downstream publication contracts for warehouse and data-product
   consumers
 - [ ] Authentication, authorization, observability, deployment, and
   recovery runbooks
@@ -63,4 +67,4 @@ truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#67`.
+  then `v0.6.0`, starting with issue `#68`.

@@ -167,6 +167,7 @@ is included in the repository.
 - [Data Model](docs/data-model.md)
 - [Normalization](docs/normalization.md)
 - [Production Batch Manifest](docs/production-batch-manifest.md)
+- [Delivery Contracts](docs/delivery-contracts.md)
 - [Persistent State](docs/persistent-state.md)
 - [Runtime Environments](docs/runtime-environments.md)
 - [Matching and Thresholds](docs/matching-and-thresholds.md)
@@ -207,7 +208,7 @@ This repository now includes a working `M1` scaffold:
 
 - Python package skeleton under `src/etl_identity_engine/`
 - stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
-  `review-queue`, `golden`, `report`, `run-all`
+  `review-queue`, `golden`, `report`, `publish-delivery`, `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
 - governance files: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
@@ -249,6 +250,9 @@ used per run.
 
 The stable output shapes for those files are documented in
 [docs/output-contracts.md](docs/output-contracts.md).
+Persisted runs can also be published for downstream consumers through
+the versioned snapshot contract documented in
+[docs/delivery-contracts.md](docs/delivery-contracts.md).
 
 The current matcher remains rules-based, but it now includes exact,
 partial, and lightweight phonetic-name signals. Candidate outputs expose
@@ -260,6 +264,8 @@ runtime also supports `--refresh-mode incremental`. That path reuses the
 prior completed manifest run from persisted state, recalculates only the
 affected entities and candidate pairs, and records the refresh outcome
 in `data/exceptions/run_summary.json`.
+Completed persisted runs can then be published into immutable golden and
+crosswalk snapshots with `publish-delivery`.
 
 The current manual-review operating model is a CSV handoff via
 `data/review_queue/manual_review_queue.csv`; the project does not yet
