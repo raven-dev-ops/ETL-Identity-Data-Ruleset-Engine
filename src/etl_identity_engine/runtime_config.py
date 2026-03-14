@@ -34,10 +34,12 @@ SUPPORTED_SERVICE_SCOPES = frozenset(
         "service:metrics",
         "runs:read",
         "runs:replay",
+        "runs:publish",
         "golden:read",
         "crosswalk:read",
         "review_cases:read",
         "review_cases:write",
+        "exports:run",
     }
 )
 DEFAULT_READER_SERVICE_SCOPES = (
@@ -51,7 +53,9 @@ DEFAULT_READER_SERVICE_SCOPES = (
 DEFAULT_OPERATOR_SERVICE_SCOPES = (
     *DEFAULT_READER_SERVICE_SCOPES,
     "runs:replay",
+    "runs:publish",
     "review_cases:write",
+    "exports:run",
 )
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
 

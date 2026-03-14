@@ -4,19 +4,25 @@ from __future__ import annotations
 
 from contextlib import redirect_stdout
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Callable, Sequence
 
+from etl_identity_engine.delivery_publish import publish_delivery_snapshot
 from etl_identity_engine.ingest.manifest import peek_manifest_batch_id
 from etl_identity_engine.ingest.replay_bundle import (
     replay_bundle_is_replayable_from_summary,
     replay_bundle_replay_manifest_path_from_summary,
 )
+from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_NAME, DELIVERY_CONTRACT_VERSION
+from etl_identity_engine.runtime_config import ExportJobConfig
 from etl_identity_engine.storage.sqlite_store import (
+    ExportJobRunRecord,
     PersistedReviewCase,
     PipelineRunRecord,
     PipelineStateStore,
+    build_export_key,
     build_run_key,
 )
 from etl_identity_engine.storage.state_store_target import state_store_display_name
@@ -40,6 +46,23 @@ class ReplayRunOperationResult:
     base_dir: Path
     refresh_mode: str
     replay_command: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PublishRunOperationResult:
+    action: str
+    run: PipelineRunRecord
+    contract_version: str
+    snapshot_dir: Path
+    current_pointer_path: Path
+
+
+@dataclass(frozen=True)
+class ExportJobRunOperationResult:
+    action: str
+    job: ExportJobConfig
+    source_run: PipelineRunRecord
+    export_run: ExportJobRunRecord
 
 
 def _resolve_replay_manifest_path(source_run: PipelineRunRecord) -> Path:
@@ -203,4 +226,145 @@ def replay_run_operation(
         base_dir=replay_base_dir.resolve(),
         refresh_mode=resolved_refresh_mode,
         replay_command=tuple(replay_argv),
+    )
+
+
+def publish_run_operation(
+    *,
+    store: PipelineStateStore,
+    state_db: str | Path,
+    run_id: str | None,
+    output_dir: Path,
+    contract_version: str = DELIVERY_CONTRACT_VERSION,
+) -> PublishRunOperationResult:
+    resolved_run_id = resolve_completed_run_id(store, run_id)
+    run = store.load_run_record(resolved_run_id)
+    contract_root = output_dir / DELIVERY_CONTRACT_NAME / contract_version
+    snapshot_dir = contract_root / "snapshots" / resolved_run_id
+    snapshot_existed = snapshot_dir.exists()
+    bundle = store.load_run_bundle(resolved_run_id)
+    published = publish_delivery_snapshot(
+        bundle=bundle,
+        state_db_path=state_db,
+        output_root=output_dir,
+        contract_version=contract_version,
+    )
+    return PublishRunOperationResult(
+        action="reused_snapshot" if snapshot_existed else "published",
+        run=run,
+        contract_version=contract_version,
+        snapshot_dir=published.snapshot_dir,
+        current_pointer_path=published.current_pointer_path,
+    )
+
+
+def export_job_run_operation(
+    *,
+    store: PipelineStateStore,
+    state_db: str | Path,
+    source_run_id: str | None,
+    job: ExportJobConfig,
+) -> ExportJobRunOperationResult:
+    resolved_source_run_id = resolve_completed_run_id(store, source_run_id)
+    source_run = store.load_run_record(resolved_source_run_id)
+    if source_run.status != "completed":
+        raise ValueError(
+            f"Only completed persisted runs can be exported, received status={source_run.status!r}"
+        )
+
+    export_key = build_export_key(
+        job_name=job.name,
+        source_run_id=resolved_source_run_id,
+        contract_name=job.contract_name,
+        contract_version=job.contract_version,
+        output_root=str(job.output_root),
+    )
+    started_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    start_decision = store.begin_export_run(
+        export_key=export_key,
+        job_name=job.name,
+        source_run_id=resolved_source_run_id,
+        contract_name=job.contract_name,
+        contract_version=job.contract_version,
+        output_root=str(job.output_root),
+        started_at_utc=started_at_utc,
+    )
+
+    export_run_id = start_decision.export_run_id
+    try:
+        bundle = store.load_run_bundle(resolved_source_run_id)
+        published = publish_delivery_snapshot(
+            bundle=bundle,
+            state_db_path=state_db,
+            output_root=job.output_root,
+            contract_version=job.contract_version,
+        )
+        if start_decision.action == "reuse_completed":
+            export_record = store.load_export_run_record(export_run_id)
+            action = "reused_completed_export"
+        else:
+            finished_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            row_counts = {
+                "golden_records": len(bundle.golden_rows),
+                "source_to_golden_crosswalk": len(bundle.crosswalk_rows),
+            }
+            metadata = {
+                "job": {
+                    "name": job.name,
+                    "consumer": job.consumer,
+                    "description": job.description,
+                    "output_root": str(job.output_root),
+                    "contract_name": job.contract_name,
+                    "contract_version": job.contract_version,
+                    "format": job.export_format,
+                },
+                "source_run": {
+                    "run_id": source_run.run_id,
+                    "run_key": source_run.run_key,
+                    "attempt_number": source_run.attempt_number,
+                    "batch_id": source_run.batch_id,
+                    "input_mode": source_run.input_mode,
+                    "manifest_path": source_run.manifest_path,
+                    "base_dir": source_run.base_dir,
+                    "config_dir": source_run.config_dir,
+                    "profile": source_run.profile,
+                    "seed": source_run.seed,
+                    "formats": source_run.formats,
+                    "status": source_run.status,
+                    "started_at_utc": source_run.started_at_utc,
+                    "finished_at_utc": source_run.finished_at_utc,
+                    "total_records": source_run.total_records,
+                    "candidate_pair_count": source_run.candidate_pair_count,
+                    "cluster_count": source_run.cluster_count,
+                    "golden_record_count": source_run.golden_record_count,
+                    "review_queue_count": source_run.review_queue_count,
+                    "failure_detail": source_run.failure_detail,
+                    "resumed_from_run_id": source_run.resumed_from_run_id,
+                    "summary": source_run.summary,
+                },
+            }
+            store.complete_export_run(
+                export_run_id=export_run_id,
+                finished_at_utc=finished_at_utc,
+                snapshot_dir=str(published.snapshot_dir),
+                current_pointer_path=str(published.current_pointer_path),
+                row_counts=row_counts,
+                metadata=metadata,
+            )
+            export_record = store.load_export_run_record(export_run_id)
+            action = "exported"
+    except Exception as exc:
+        if start_decision.action == "start_new":
+            store.mark_export_run_failed(
+                export_run_id=export_run_id,
+                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                failure_detail=str(exc),
+            )
+        raise
+
+    return ExportJobRunOperationResult(
+        action=action,
+        job=job,
+        source_run=source_run,
+        export_run=export_record,
     )

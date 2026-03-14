@@ -48,6 +48,8 @@ from etl_identity_engine.normalize.phones import normalize_phone
 from etl_identity_engine.observability import emit_structured_log, seconds_since
 from etl_identity_engine.operator_actions import (
     apply_review_decision_operation,
+    export_job_run_operation,
+    publish_run_operation,
     replay_run_operation,
 )
 from etl_identity_engine.output_contracts import (
@@ -97,7 +99,6 @@ from etl_identity_engine.storage.sqlite_store import (
     PipelineRunRecord,
     RunCheckpointRecord,
     RUN_CHECKPOINT_STAGE_ORDER,
-    build_export_key,
     build_run_key,
 )
 from etl_identity_engine.storage.state_store_target import state_store_display_name, state_store_reference_name
@@ -1478,49 +1479,45 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
     store = PipelineStateStore(state_db)
-    run_id = _resolve_completed_run_id(args, store)
-    contract_root = Path(args.output_dir) / DELIVERY_CONTRACT_NAME / args.contract_version
-    snapshot_dir = contract_root / "snapshots" / run_id
-    snapshot_existed = snapshot_dir.exists()
-    bundle = store.load_run_bundle(run_id)
-    published = publish_delivery_snapshot(
-        bundle=bundle,
-        state_db_path=state_db,
-        output_root=Path(args.output_dir),
+    result = publish_run_operation(
+        store=store,
+        state_db=state_db,
+        run_id=args.run_id,
+        output_dir=Path(args.output_dir),
         contract_version=args.contract_version,
     )
     _record_cli_audit_event(
         store,
         action="publish_run",
         resource_type="pipeline_run",
-        resource_id=run_id,
-        run_id=run_id,
-        status="reused" if snapshot_existed else "succeeded",
+        resource_id=result.run.run_id,
+        run_id=result.run.run_id,
+        status="reused" if result.action == "reused_snapshot" else "succeeded",
         details={
-            "contract_version": args.contract_version,
-            "snapshot_dir": str(published.snapshot_dir),
-            "current_pointer_path": str(published.current_pointer_path),
-            "action": "reused_snapshot" if snapshot_existed else "published",
+            "contract_version": result.contract_version,
+            "snapshot_dir": str(result.snapshot_dir),
+            "current_pointer_path": str(result.current_pointer_path),
+            "action": result.action,
         },
     )
     emit_structured_log(
         "delivery_snapshot_published",
         component="cli",
         command="publish-run",
-        run_id=run_id,
-        action="reused_snapshot" if snapshot_existed else "published",
-        contract_version=args.contract_version,
-        snapshot_dir=published.snapshot_dir,
+        run_id=result.run.run_id,
+        action=result.action,
+        contract_version=result.contract_version,
+        snapshot_dir=result.snapshot_dir,
         duration_seconds=seconds_since(started),
     )
     print(
         json.dumps(
             {
-                "action": "reused_snapshot" if snapshot_existed else "published",
-                "run_id": run_id,
-                "contract_version": args.contract_version,
-                "snapshot_dir": str(published.snapshot_dir),
-                "current_pointer_path": str(published.current_pointer_path),
+                "action": result.action,
+                "run_id": result.run.run_id,
+                "contract_version": result.contract_version,
+                "snapshot_dir": str(result.snapshot_dir),
+                "current_pointer_path": str(result.current_pointer_path),
             },
             indent=2,
             sort_keys=True,
@@ -1543,80 +1540,25 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
     store = PipelineStateStore(state_db)
-    source_run_id = _resolve_completed_run_id(args, store)
-    source_run = store.load_run_record(source_run_id)
-    if source_run.status != "completed":
-        raise ValueError(f"Only completed persisted runs can be exported, received status={source_run.status!r}")
-
     job = _resolve_export_job(args)
-    export_key = build_export_key(
-        job_name=job.name,
-        source_run_id=source_run_id,
-        contract_name=job.contract_name,
-        contract_version=job.contract_version,
-        output_root=str(job.output_root),
-    )
-    started_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    start_decision = store.begin_export_run(
-        export_key=export_key,
-        job_name=job.name,
-        source_run_id=source_run_id,
-        contract_name=job.contract_name,
-        contract_version=job.contract_version,
-        output_root=str(job.output_root),
-        started_at_utc=started_at_utc,
-    )
-
-    export_run_id = start_decision.export_run_id
     try:
-        bundle = store.load_run_bundle(source_run_id)
-        published = publish_delivery_snapshot(
-            bundle=bundle,
-            state_db_path=state_db,
-            output_root=job.output_root,
-            contract_version=job.contract_version,
+        result = export_job_run_operation(
+            store=store,
+            state_db=state_db,
+            source_run_id=args.run_id,
+            job=job,
         )
-        if start_decision.action == "reuse_completed":
-            export_record = store.load_export_run_record(export_run_id)
-            action = "reused_completed_export"
-        else:
-            finished_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            row_counts = {
-                "golden_records": len(bundle.golden_rows),
-                "source_to_golden_crosswalk": len(bundle.crosswalk_rows),
-            }
-            metadata = {
-                "job": _serialize_export_job(job),
-                "source_run": _serialize_run_record(source_run),
-            }
-            store.complete_export_run(
-                export_run_id=export_run_id,
-                finished_at_utc=finished_at_utc,
-                snapshot_dir=str(published.snapshot_dir),
-                current_pointer_path=str(published.current_pointer_path),
-                row_counts=row_counts,
-                metadata=metadata,
-            )
-            export_record = store.load_export_run_record(export_run_id)
-            action = "exported"
     except Exception as exc:
-        if start_decision.action == "start_new":
-            store.mark_export_run_failed(
-                export_run_id=export_run_id,
-                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                failure_detail=str(exc),
-            )
         _record_cli_audit_event(
             store,
             action="export_job_run",
             resource_type="export_job",
             resource_id=args.job_name,
-            run_id=source_run_id,
+            run_id=args.run_id,
             status="failed",
             details={
-                "export_run_id": export_run_id,
                 "job_name": args.job_name,
-                "source_run_id": source_run_id,
+                "source_run_id": args.run_id or "",
                 "error": str(exc),
             },
         )
@@ -1625,8 +1567,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
             component="cli",
             command="export-job-run",
             job_name=args.job_name,
-            source_run_id=source_run_id,
-            export_run_id=export_run_id,
+            source_run_id=args.run_id or "",
             duration_seconds=seconds_since(started),
             error=str(exc),
             level="ERROR",
@@ -1638,15 +1579,15 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
         action="export_job_run",
         resource_type="export_job",
         resource_id=args.job_name,
-        run_id=source_run_id,
-        status="reused" if action == "reused_completed_export" else "succeeded",
+        run_id=result.source_run.run_id,
+        status="reused" if result.action == "reused_completed_export" else "succeeded",
         details={
             "job_name": args.job_name,
-            "source_run_id": source_run_id,
-            "export_run_id": export_record.export_run_id,
-            "snapshot_dir": export_record.snapshot_dir,
-            "current_pointer_path": export_record.current_pointer_path,
-            "action": action,
+            "source_run_id": result.source_run.run_id,
+            "export_run_id": result.export_run.export_run_id,
+            "snapshot_dir": result.export_run.snapshot_dir,
+            "current_pointer_path": result.export_run.current_pointer_path,
+            "action": result.action,
         },
     )
     emit_structured_log(
@@ -1654,18 +1595,18 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
         component="cli",
         command="export-job-run",
         job_name=args.job_name,
-        source_run_id=source_run_id,
-        export_run_id=export_record.export_run_id,
-        action=action,
+        source_run_id=result.source_run.run_id,
+        export_run_id=result.export_run.export_run_id,
+        action=result.action,
         duration_seconds=seconds_since(started),
     )
 
     print(
         json.dumps(
             {
-                "action": action,
-                "job": _serialize_export_job(job),
-                "export_run": _serialize_export_run_record(export_record),
+                "action": result.action,
+                "job": _serialize_export_job(result.job),
+                "export_run": _serialize_export_run_record(result.export_run),
             },
             indent=2,
             sort_keys=True,
@@ -1792,7 +1733,12 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
         port=args.port,
         log_level=args.log_level,
     )
-    app = create_service_app(state_db, service_auth=runtime_environment.service_auth)
+    app = create_service_app(
+        state_db,
+        service_auth=runtime_environment.service_auth,
+        config_dir=runtime_environment.config_dir,
+        environment=runtime_environment.name,
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
 
 

@@ -19,10 +19,14 @@ from etl_identity_engine import __version__
 from etl_identity_engine.observability import emit_structured_log, seconds_since, utc_now
 from etl_identity_engine.operator_actions import (
     apply_review_decision_operation,
+    export_job_run_operation,
+    publish_run_operation,
     replay_run_operation,
 )
-from etl_identity_engine.runtime_config import ServiceAuthConfig
+from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_VERSION
+from etl_identity_engine.runtime_config import ExportJobConfig, ServiceAuthConfig, load_export_job_configs
 from etl_identity_engine.storage.sqlite_store import (
+    ExportJobRunRecord,
     PersistedReviewCase,
     PipelineStateStore,
     PipelineRunRecord,
@@ -39,10 +43,12 @@ ServiceScope = Literal[
     "service:metrics",
     "runs:read",
     "runs:replay",
+    "runs:publish",
     "golden:read",
     "crosswalk:read",
     "review_cases:read",
     "review_cases:write",
+    "exports:run",
 ]
 
 
@@ -229,12 +235,103 @@ class ReplayRunResponse(BaseModel):
     result_run: RunStatusResponse
 
 
+class PublishRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    output_dir: str = Field(min_length=1)
+    contract_version: str = Field(default=DELIVERY_CONTRACT_VERSION, min_length=1)
+
+
+class PublishRunResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["published", "reused_snapshot"]
+    run_id: str
+    contract_version: str
+    snapshot_dir: str
+    current_pointer_path: str
+
+
+class ExportJobResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    consumer: str
+    description: str
+    output_root: str
+    contract_name: str
+    contract_version: str
+    format: str
+
+
+class ExportJobRunResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    export_run_id: str
+    export_key: str
+    attempt_number: int
+    job_name: str
+    source_run_id: str
+    contract_name: str
+    contract_version: str
+    output_root: str
+    status: RunStatus
+    started_at_utc: str
+    finished_at_utc: str
+    snapshot_dir: str
+    current_pointer_path: str
+    row_counts: dict[str, int] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    failure_detail: str | None = None
+
+
+class ExportJobTriggerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["exported", "reused_completed_export"]
+    job: ExportJobResponse
+    export_run: ExportJobRunResponse
+
+
 def _serialize_run(record: PipelineRunRecord) -> RunStatusResponse:
     return RunStatusResponse.model_validate(asdict(record))
 
 
 def _serialize_review_case(case: PersistedReviewCase) -> ReviewCaseResponse:
     return ReviewCaseResponse.model_validate(asdict(case))
+
+
+def _serialize_export_job(job: ExportJobConfig) -> ExportJobResponse:
+    return ExportJobResponse(
+        name=job.name,
+        consumer=job.consumer,
+        description=job.description,
+        output_root=str(job.output_root),
+        contract_name=job.contract_name,
+        contract_version=job.contract_version,
+        format=job.export_format,
+    )
+
+
+def _serialize_export_run(record: ExportJobRunRecord) -> ExportJobRunResponse:
+    return ExportJobRunResponse(
+        export_run_id=record.export_run_id,
+        export_key=record.export_key,
+        attempt_number=record.attempt_number,
+        job_name=record.job_name,
+        source_run_id=record.source_run_id,
+        contract_name=record.contract_name,
+        contract_version=record.contract_version,
+        output_root=record.output_root,
+        status=record.status,
+        started_at_utc=record.started_at_utc,
+        finished_at_utc=record.finished_at_utc,
+        snapshot_dir=record.snapshot_dir,
+        current_pointer_path=record.current_pointer_path,
+        row_counts=record.row_counts,
+        metadata=record.metadata,
+        failure_detail=record.failure_detail,
+    )
 
 
 def _resolve_not_found(error: FileNotFoundError) -> None:
@@ -398,9 +495,11 @@ def _authenticate_jwt_bearer(
 
 
 def create_service_app(
-    state_db_path: str,
+    state_db_path: str | Path,
     *,
     service_auth: ServiceAuthConfig,
+    config_dir: Path | None = None,
+    environment: str | None = None,
 ) -> FastAPI:
     state_target = resolve_state_store_target(state_db_path)
     if state_target.file_path is not None and not state_target.file_path.exists():
@@ -408,6 +507,7 @@ def create_service_app(
 
     state_db_display = state_target.display_name
     store = PipelineStateStore(state_target.raw_value)
+    export_jobs = load_export_job_configs(config_dir, environment=environment)
     app = FastAPI(
         title="ETL Identity Engine Operator API",
         version=__version__,
@@ -496,6 +596,8 @@ def create_service_app(
     review_read_access = require_access("reader", "operator", required_scopes=("review_cases:read",))
     review_write_access = require_access("operator", required_scopes=("review_cases:write",))
     replay_access = require_access("operator", required_scopes=("runs:replay",))
+    publish_access = require_access("operator", required_scopes=("runs:publish",))
+    export_access = require_access("operator", required_scopes=("exports:run",))
 
     @app.get("/healthz", response_model=HealthResponse, tags=["health"])
     def healthz(
@@ -828,6 +930,230 @@ def create_service_app(
             replay_command=list(result.replay_command),
             source_run=_serialize_run(result.requested_run),
             result_run=_serialize_run(result.result_run),
+        )
+
+    @app.post(
+        "/api/v1/runs/{run_id}/publish",
+        response_model=PublishRunResponse,
+        tags=["runs"],
+    )
+    def publish_run(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        request: PublishRunRequest,
+        principal: AuthenticatedPrincipal = Depends(publish_access),
+    ) -> PublishRunResponse:
+        try:
+            result = publish_run_operation(
+                store=store,
+                state_db=state_target.raw_value,
+                run_id=run_id,
+                output_dir=Path(request.output_dir),
+                contract_version=request.contract_version,
+            )
+        except FileNotFoundError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.subject or principal.role,
+                action="publish_run",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "output_dir": request.output_dir,
+                    "contract_version": request.contract_version,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["runs:publish"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_not_found(error)
+        except ValueError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.subject or principal.role,
+                action="publish_run",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "output_dir": request.output_dir,
+                    "contract_version": request.contract_version,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["runs:publish"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_operation_conflict(error)
+        store.record_audit_event(
+            actor_type="service_api",
+            actor_id=principal.subject or principal.role,
+            action="publish_run",
+            resource_type="pipeline_run",
+            resource_id=result.run.run_id,
+            run_id=result.run.run_id,
+            status="reused" if result.action == "reused_snapshot" else "succeeded",
+            details={
+                "output_dir": request.output_dir,
+                "contract_version": result.contract_version,
+                "snapshot_dir": str(result.snapshot_dir),
+                "current_pointer_path": str(result.current_pointer_path),
+                "action": result.action,
+                "actor_role": principal.role,
+                "actor_subject": principal.subject or "",
+                "granted_scopes": list(principal.scopes),
+                "required_scopes": ["runs:publish"],
+                "auth_mode": principal.auth_mode,
+            },
+        )
+        emit_structured_log(
+            "delivery_snapshot_published",
+            component="service_api",
+            actor_role=principal.role,
+            actor_subject=principal.subject or "",
+            actor_scopes=list(principal.scopes),
+            run_id=result.run.run_id,
+            action=result.action,
+            contract_version=result.contract_version,
+            output_dir=request.output_dir,
+            snapshot_dir=str(result.snapshot_dir),
+        )
+        return PublishRunResponse(
+            action=result.action,
+            run_id=result.run.run_id,
+            contract_version=result.contract_version,
+            snapshot_dir=str(result.snapshot_dir),
+            current_pointer_path=str(result.current_pointer_path),
+        )
+
+    @app.post(
+        "/api/v1/runs/{run_id}/exports/{job_name}",
+        response_model=ExportJobTriggerResponse,
+        tags=["exports"],
+    )
+    def trigger_export_job(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        job_name: Annotated[str, ApiPath(min_length=1)],
+        principal: AuthenticatedPrincipal = Depends(export_access),
+    ) -> ExportJobTriggerResponse:
+        job = export_jobs.get(job_name)
+        if job is None:
+            error = FileNotFoundError(
+                f"Configured export job not found: {job_name}. Available jobs: {sorted(export_jobs)}"
+            )
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.subject or principal.role,
+                action="export_job_run",
+                resource_type="export_job",
+                resource_id=job_name,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "job_name": job_name,
+                    "source_run_id": run_id,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["exports:run"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_not_found(error)
+        try:
+            result = export_job_run_operation(
+                store=store,
+                state_db=state_target.raw_value,
+                source_run_id=run_id,
+                job=job,
+            )
+        except FileNotFoundError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.subject or principal.role,
+                action="export_job_run",
+                resource_type="export_job",
+                resource_id=job_name,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "job_name": job_name,
+                    "source_run_id": run_id,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["exports:run"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_not_found(error)
+        except ValueError as error:
+            store.record_audit_event(
+                actor_type="service_api",
+                actor_id=principal.subject or principal.role,
+                action="export_job_run",
+                resource_type="export_job",
+                resource_id=job_name,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "job_name": job_name,
+                    "source_run_id": run_id,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["exports:run"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_operation_conflict(error)
+        store.record_audit_event(
+            actor_type="service_api",
+            actor_id=principal.subject or principal.role,
+            action="export_job_run",
+            resource_type="export_job",
+            resource_id=result.job.name,
+            run_id=result.source_run.run_id,
+            status="reused" if result.action == "reused_completed_export" else "succeeded",
+            details={
+                "job_name": result.job.name,
+                "source_run_id": result.source_run.run_id,
+                "export_run_id": result.export_run.export_run_id,
+                "snapshot_dir": result.export_run.snapshot_dir,
+                "current_pointer_path": result.export_run.current_pointer_path,
+                "action": result.action,
+                "actor_role": principal.role,
+                "actor_subject": principal.subject or "",
+                "granted_scopes": list(principal.scopes),
+                "required_scopes": ["exports:run"],
+                "auth_mode": principal.auth_mode,
+            },
+        )
+        emit_structured_log(
+            "export_job_completed",
+            component="service_api",
+            actor_role=principal.role,
+            actor_subject=principal.subject or "",
+            actor_scopes=list(principal.scopes),
+            job_name=result.job.name,
+            source_run_id=result.source_run.run_id,
+            export_run_id=result.export_run.export_run_id,
+            action=result.action,
+        )
+        return ExportJobTriggerResponse(
+            action=result.action,
+            job=_serialize_export_job(result.job),
+            export_run=_serialize_export_run(result.export_run),
         )
 
     return app

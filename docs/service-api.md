@@ -57,7 +57,8 @@ maps external identity claims into the stable internal service roles:
     `GET /readyz`, and `GET /api/v1/metrics`
 - `operator`
   - may call all `reader` endpoints
-  - may also execute privileged review-decision and replay actions
+  - may also execute privileged review-decision, replay, publish, and
+    export-trigger actions
 
 The service also enforces endpoint-level scopes. The current stable
 scope surface is:
@@ -81,6 +82,10 @@ scope surface is:
   - `POST /api/v1/runs/{run_id}/review-cases/{review_id}/decision`
 - `runs:replay`
   - `POST /api/v1/runs/{run_id}/replay`
+- `runs:publish`
+  - `POST /api/v1/runs/{run_id}/publish`
+- `exports:run`
+  - `POST /api/v1/runs/{run_id}/exports/{job_name}`
 
 JWT bearer callers can present a narrower `scope_claim` than the full
 default role scope set. API-key compatibility mode keeps the documented
@@ -134,6 +139,16 @@ committed into repo config.
   - Applies an operator review decision to a persisted review case.
 - `POST /api/v1/runs/{run_id}/replay`
   - Replays a persisted manifest-backed run through `run-all`.
+- `POST /api/v1/runs/{run_id}/publish`
+  - Publishes a persisted run into a versioned delivery snapshot at the
+    requested output root.
+  - Request body includes `output_dir` and optional
+    `contract_version`.
+- `POST /api/v1/runs/{run_id}/exports/{job_name}`
+  - Triggers a configured named export job for the requested persisted
+    run.
+  - Reuses an existing completed export run when the same job and run
+    already produced a completed snapshot.
 
 ## Validation Model
 
@@ -155,9 +170,10 @@ endpoint scope also return `403`.
 Unsupported replay operations such as non-manifest source runs return
 `409`.
 
-Privileged review-decision and replay actions also now persist audit
-events in the configured state store, and the service emits structured
-JSON request logs to `stderr` for operational collection.
+Privileged review-decision, replay, publish, and export actions also
+persist audit events in the configured state store, and the service
+emits structured JSON request logs to `stderr` for operational
+collection.
 
 ## Compatibility
 
@@ -171,10 +187,5 @@ deprecation are defined in
 
 ## Current Boundary
 
-It does not yet:
-
-- expose publish or export-job triggers over HTTP
-- support field-level or tenant-level authorization beyond the current
-  service roles and endpoint scopes
-
-Those remain tracked in the active backlog.
+It does not yet support field-level or tenant-level authorization
+beyond the current service roles and endpoint scopes.

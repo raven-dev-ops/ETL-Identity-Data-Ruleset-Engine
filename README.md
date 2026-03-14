@@ -146,8 +146,7 @@ is included in the repository.
   service surface now enforces documented endpoint scopes in addition to
   the stable `reader` and `operator` roles.
   The current service line supports read-only lookups plus operator-only
-  review decision and replay actions; publication and export
-  orchestration remain CLI-driven.
+  review decision, replay, publish, and export-trigger actions.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
@@ -307,11 +306,12 @@ Persisted SQL state can also now be served through an authenticated
 operator API with `serve-api`. That surface exposes run status, golden
 record lookups, source-to-golden crosswalk lookups, and persisted
 review-case retrieval for downstream systems and operators, and it now
-supports operator-only review decision and replay actions behind
-separate API-key roles. It also now exposes authenticated `healthz`,
-`readyz`, and `/api/v1/metrics` endpoints, while privileged CLI and
-service actions emit structured JSON logs and persist audit events in
-the configured state store. The service contract is documented in
+supports operator-only review decision, replay, publish, and
+export-trigger actions behind separate API-key or JWT-backed roles. It
+also now exposes authenticated `healthz`, `readyz`, and
+`/api/v1/metrics` endpoints, while privileged CLI and service actions
+emit structured JSON logs and persist audit events in the configured
+state store. The service contract is documented in
 [docs/service-api.md](docs/service-api.md), and the current operations
 baseline is documented in
 [docs/operations-observability.md](docs/operations-observability.md).

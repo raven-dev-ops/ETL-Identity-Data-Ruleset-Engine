@@ -23,6 +23,9 @@ All notable changes to this project will be documented in this file.
 - Added endpoint-level service scopes, JWT scope-claim narrowing, and
   audit-context propagation for authenticated actor subject, role,
   granted scopes, and required scopes.
+- Added authenticated service control-plane endpoints for persisted
+  run publication and named export-job triggers, with idempotent reuse
+  and persisted audit coverage.
 
 ## [0.6.0] - 2026-03-14
 

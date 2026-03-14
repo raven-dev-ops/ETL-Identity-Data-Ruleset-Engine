@@ -79,10 +79,12 @@ The stable service scope names for the current line are:
 - `service:metrics`
 - `runs:read`
 - `runs:replay`
+- `runs:publish`
 - `golden:read`
 - `crosswalk:read`
 - `review_cases:read`
 - `review_cases:write`
+- `exports:run`
 
 The default production environment now uses JWT bearer auth with:
 

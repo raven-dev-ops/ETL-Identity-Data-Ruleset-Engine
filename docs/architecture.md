@@ -11,10 +11,10 @@ golden records, and reporting artifacts.
   local and object-storage-compatible landed batches. Persisted SQL
   state is now supported, and an authenticated operator service API now
   exposes persisted run, golden, crosswalk, and review-case lookups
-  plus operator-only review-decision and replay actions. A container
-  image, a single-host compose deployment baseline, and named benchmark
-  fixtures with capacity targets are now available. Publication and
-  export orchestration remain CLI-driven follow-on service work.
+  plus operator-only review-decision, replay, publish, and export
+  actions. A container image, a single-host compose deployment
+  baseline, and named benchmark fixtures with capacity targets are now
+  available.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -71,7 +71,8 @@ golden records, and reporting artifacts.
    - Reads persisted SQL state through a local HTTP service
    - Exposes authenticated run status, golden-record lookup,
      source-to-golden crosswalk lookup, and review-case retrieval
-   - Supports operator-only review decision and replay actions
+   - Supports operator-only review decision, replay, publish, and
+     export-trigger actions
    - Exposes authenticated `healthz`, `readyz`, and `/api/v1/metrics`
      endpoints for service and batch observability
 11. `export-job-run`

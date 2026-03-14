@@ -21,6 +21,10 @@ If private reporting is unavailable, open an issue with minimal details and requ
 - Never commit secrets to source control.
 - Rotate exposed credentials immediately.
 - Remove sensitive content and force-rotate any impacted keys.
+- Expose service control-plane endpoints only behind the documented
+  authenticated `reader` / `operator` boundary.
+- Restrict `runs:publish` and `exports:run` to trusted operator
+  identities because they can materialize downstream datasets.
 
 For the supported production deployment boundary, including operator
 responsibilities, audit expectations, and rollback ownership, see

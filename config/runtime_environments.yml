@@ -33,10 +33,12 @@ environments:
         - service:metrics
         - runs:read
         - runs:replay
+        - runs:publish
         - golden:read
         - crosswalk:read
         - review_cases:read
         - review_cases:write
+        - exports:run
   prod:
     description: Production defaults sourced from deployment environment variables.
     config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}
@@ -70,7 +72,9 @@ environments:
         - service:metrics
         - runs:read
         - runs:replay
+        - runs:publish
         - golden:read
         - crosswalk:read
         - review_cases:read
         - review_cases:write
+        - exports:run

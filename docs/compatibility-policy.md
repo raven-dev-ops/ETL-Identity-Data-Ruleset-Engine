@@ -27,6 +27,8 @@ The current stable surfaces are:
   [service-api.md](service-api.md)
 - documented `/api/v1/...` endpoints plus the current `reader` and
   `operator` service-role split in [service-api.md](service-api.md)
+- the documented operator-only publish and export trigger endpoints in
+  [service-api.md](service-api.md)
 - the `golden_crosswalk_snapshot/v1` delivery contract documented in
   [delivery-contracts.md](delivery-contracts.md)
 - the documented export-job commands and audit states in

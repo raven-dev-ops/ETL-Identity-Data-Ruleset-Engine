@@ -41,13 +41,16 @@ of truth for tracked work; this file is the short maintainer view.
   level scopes beyond the stable `reader` / `operator` roles, and audit
   events persist authenticated actor identity plus granted/required
   scope context.
+- GitHub issue `#90` is complete: the authenticated service API now
+  exposes operator-only publish and named export-job triggers with
+  scoped authorization, idempotent reuse, and persisted audit coverage.
 
 ## Open Task Groups
 
 - [ ] `v0.7.0` Durable replay and database platform
   - Open GitHub issues: none
 - [ ] `v0.8.0` Enterprise access and service control plane
-  - Open GitHub issues: `#90`, `#91`
+  - Open GitHub issues: `#91`
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
   - Open GitHub issues: `#92`, `#93`, `#94`, `#95`
 
@@ -59,7 +62,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Checkpointed resume for failed persisted runs
 - [x] OIDC or JWT service authentication
 - [x] Fine-grained RBAC and actor identity propagation
-- [ ] HTTP publish and export triggers
+- [x] HTTP publish and export triggers
 - [ ] Paginated service list and search endpoints
 - [ ] Clustered deployment manifests
 - [ ] Container signing and image-level supply-chain gates
@@ -68,5 +71,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Start issue `#90`: Expose publish and export-job triggers over the
-  service API.
+- Start issue `#91`: Add paginated list and search endpoints for runs,
+  goldens, and review cases.

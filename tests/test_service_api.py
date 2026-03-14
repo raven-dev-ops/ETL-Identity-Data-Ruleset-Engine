@@ -33,6 +33,26 @@ def _write_parquet_rows(path: Path, rows: list[dict[str, str]]) -> None:
     pq.write_table(pa.Table.from_pylist(rows), path)
 
 
+def _write_export_jobs_config(config_dir: Path, *, output_root: Path) -> Path:
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "export_jobs.yml"
+    config_path.write_text(
+        f"""
+export_jobs:
+  - name: service_api_identity_snapshot
+    consumer: warehouse
+    description: Materialize a service API test export snapshot.
+    output_root: {output_root.as_posix()}
+    contract_name: golden_crosswalk_snapshot
+    contract_version: v1
+    format: csv_snapshot
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
 def _person_row(
     *,
     source_record_id: str,
@@ -187,6 +207,8 @@ def _jwt_service_auth() -> ServiceAuthConfig:
             "review_cases:read",
             "review_cases:write",
             "runs:replay",
+            "runs:publish",
+            "exports:run",
         ),
         subject_claim="preferred_username",
     )
@@ -465,5 +487,172 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
         and event.actor_id == "replay.operator"
         and event.details["required_scopes"] == ["runs:replay"]
         and "runs:replay" in event.details["granted_scopes"]
+        for event in audit_events
+    )
+
+
+def test_service_api_exposes_publish_and_export_job_triggers(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    publish_root = tmp_path / "service-publish"
+    export_root = tmp_path / "service-exports"
+    config_dir = tmp_path / "service-config"
+    _write_export_jobs_config(config_dir, output_root=export_root)
+
+    client = TestClient(
+        create_service_app(
+            db_path,
+            service_auth=_service_auth(),
+            config_dir=config_dir,
+        )
+    )
+    reader_headers = _auth_headers("reader-secret")
+    operator_headers = _auth_headers("operator-secret")
+
+    reader_publish_response = client.post(
+        f"/api/v1/runs/{run_id}/publish",
+        headers=reader_headers,
+        json={"output_dir": str(publish_root)},
+    )
+    assert reader_publish_response.status_code == 403
+
+    operator_publish_response = client.post(
+        f"/api/v1/runs/{run_id}/publish",
+        headers=operator_headers,
+        json={"output_dir": str(publish_root)},
+    )
+    assert operator_publish_response.status_code == 200
+    assert operator_publish_response.json()["action"] == "published"
+    assert Path(operator_publish_response.json()["snapshot_dir"]).exists()
+    assert Path(operator_publish_response.json()["current_pointer_path"]).exists()
+
+    reused_publish_response = client.post(
+        f"/api/v1/runs/{run_id}/publish",
+        headers=operator_headers,
+        json={"output_dir": str(publish_root)},
+    )
+    assert reused_publish_response.status_code == 200
+    assert reused_publish_response.json()["action"] == "reused_snapshot"
+
+    reader_export_response = client.post(
+        f"/api/v1/runs/{run_id}/exports/service_api_identity_snapshot",
+        headers=reader_headers,
+    )
+    assert reader_export_response.status_code == 403
+
+    operator_export_response = client.post(
+        f"/api/v1/runs/{run_id}/exports/service_api_identity_snapshot",
+        headers=operator_headers,
+    )
+    assert operator_export_response.status_code == 200
+    assert operator_export_response.json()["action"] == "exported"
+    assert operator_export_response.json()["job"]["name"] == "service_api_identity_snapshot"
+    assert Path(operator_export_response.json()["export_run"]["snapshot_dir"]).exists()
+    assert Path(operator_export_response.json()["export_run"]["current_pointer_path"]).exists()
+
+    reused_export_response = client.post(
+        f"/api/v1/runs/{run_id}/exports/service_api_identity_snapshot",
+        headers=operator_headers,
+    )
+    assert reused_export_response.status_code == 200
+    assert reused_export_response.json()["action"] == "reused_completed_export"
+
+    audit_events = store.list_audit_events(run_id=run_id, limit=20)
+    assert any(
+        event.action == "publish_run"
+        and event.actor_type == "service_api"
+        and event.details["required_scopes"] == ["runs:publish"]
+        and event.details["action"] in {"published", "reused_snapshot"}
+        for event in audit_events
+    )
+    assert any(
+        event.action == "export_job_run"
+        and event.actor_type == "service_api"
+        and event.details["required_scopes"] == ["exports:run"]
+        and event.details["action"] in {"exported", "reused_completed_export"}
+        for event in audit_events
+    )
+
+
+def test_service_api_enforces_publish_and_export_scopes_for_jwt_tokens(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    publish_root = tmp_path / "jwt-publish"
+    export_root = tmp_path / "jwt-exports"
+    config_dir = tmp_path / "service-config"
+    _write_export_jobs_config(config_dir, output_root=export_root)
+
+    client = TestClient(
+        create_service_app(
+            db_path,
+            service_auth=_jwt_service_auth(),
+            config_dir=config_dir,
+        )
+    )
+
+    missing_publish_scope_headers = _jwt_headers(
+        "etl-operator",
+        username="missing.publish.scope",
+        scopes=("runs:read",),
+    )
+    publish_headers = _jwt_headers(
+        "etl-operator",
+        username="publish.operator",
+        scopes=("runs:publish",),
+    )
+    missing_export_scope_headers = _jwt_headers(
+        "etl-operator",
+        username="missing.export.scope",
+        scopes=("runs:publish",),
+    )
+    export_headers = _jwt_headers(
+        "etl-operator",
+        username="export.operator",
+        scopes=("exports:run",),
+    )
+
+    missing_publish_scope_response = client.post(
+        f"/api/v1/runs/{run_id}/publish",
+        headers=missing_publish_scope_headers,
+        json={"output_dir": str(publish_root)},
+    )
+    assert missing_publish_scope_response.status_code == 403
+    assert "runs:publish" in missing_publish_scope_response.json()["detail"]
+
+    publish_response = client.post(
+        f"/api/v1/runs/{run_id}/publish",
+        headers=publish_headers,
+        json={"output_dir": str(publish_root)},
+    )
+    assert publish_response.status_code == 200
+    assert publish_response.json()["action"] == "published"
+
+    missing_export_scope_response = client.post(
+        f"/api/v1/runs/{run_id}/exports/service_api_identity_snapshot",
+        headers=missing_export_scope_headers,
+    )
+    assert missing_export_scope_response.status_code == 403
+    assert "exports:run" in missing_export_scope_response.json()["detail"]
+
+    export_response = client.post(
+        f"/api/v1/runs/{run_id}/exports/service_api_identity_snapshot",
+        headers=export_headers,
+    )
+    assert export_response.status_code == 200
+    assert export_response.json()["action"] == "exported"
+
+    audit_events = store.list_audit_events(run_id=run_id, limit=20)
+    assert any(
+        event.action == "publish_run"
+        and event.actor_id == "publish.operator"
+        and event.details["required_scopes"] == ["runs:publish"]
+        and "runs:publish" in event.details["granted_scopes"]
+        and event.details["auth_mode"] == "jwt"
+        for event in audit_events
+    )
+    assert any(
+        event.action == "export_job_run"
+        and event.actor_id == "export.operator"
+        and event.details["required_scopes"] == ["exports:run"]
+        and "exports:run" in event.details["granted_scopes"]
+        and event.details["auth_mode"] == "jwt"
         for event in audit_events
     )
