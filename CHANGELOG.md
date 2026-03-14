@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-03-14
+
 - Added shared observability redaction for structured logs and persisted
   audit-event details so free-text review notes, auth material, JWT-like
   tokens, PEM payloads, and DSN passwords are not retained verbatim in
