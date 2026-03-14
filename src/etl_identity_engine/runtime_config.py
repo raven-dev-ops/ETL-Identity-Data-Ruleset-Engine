@@ -28,6 +28,7 @@ SUPPORTED_EXPORT_JOB_CONSUMERS = frozenset({"warehouse", "data_product"})
 SUPPORTED_EXPORT_JOB_FORMATS = frozenset({"csv_snapshot"})
 SUPPORTED_SYNTHETIC_PROFILES = frozenset({"small", "medium", "large"})
 SUPPORTED_BENCHMARK_FORMATS = frozenset({"csv", "parquet"})
+SUPPORTED_BENCHMARK_MODES = frozenset({"batch", "event_stream"})
 SUPPORTED_SERVICE_SCOPES = frozenset(
     {
         "service:health",
@@ -176,11 +177,14 @@ class BenchmarkCapacityTargetConfig:
 class BenchmarkFixtureConfig:
     name: str
     description: str
+    mode: str
     profile: str
     person_count: int
     duplicate_rate: float
     seed: int
     formats: tuple[str, ...]
+    stream_batch_count: int
+    stream_events_per_batch: int
     capacity_targets: dict[str, BenchmarkCapacityTargetConfig]
 
 
@@ -393,6 +397,22 @@ def _optional_non_empty_string(
     if not isinstance(value, str) or not value.strip():
         raise _config_error(path, f"{context}.{key} must be a non-empty string")
     return value.strip()
+
+
+def _require_positive_int_if_present(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    path: Path,
+    context: str,
+    default: int,
+) -> int:
+    if key not in mapping:
+        return default
+    value = mapping.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise _config_error(path, f"{context}.{key} must be an integer greater than 0")
+    return value
 
 
 def _optional_string_list(
@@ -1299,11 +1319,14 @@ def load_benchmark_fixture_configs(
             allowed_keys={
                 "name",
                 "description",
+                "mode",
                 "profile",
                 "person_count",
                 "duplicate_rate",
                 "seed",
                 "formats",
+                "stream_batch_count",
+                "stream_events_per_batch",
                 "capacity_targets",
             },
             path=benchmark_path,
@@ -1318,6 +1341,20 @@ def load_benchmark_fixture_configs(
         )
         if name in resolved_fixtures:
             raise _config_error(benchmark_path, f"benchmark fixture name {name!r} is duplicated")
+
+        mode = _optional_non_empty_string(
+            raw_fixture,
+            "mode",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+            default="batch",
+        )
+        if mode not in SUPPORTED_BENCHMARK_MODES:
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].mode must be one of: "
+                f"{', '.join(sorted(SUPPORTED_BENCHMARK_MODES))}",
+            )
 
         profile = _require_non_empty_string(
             raw_fixture,
@@ -1356,6 +1393,37 @@ def load_benchmark_fixture_configs(
             raise _config_error(
                 benchmark_path,
                 f"benchmark_fixtures[{index}].seed must be an integer",
+            )
+
+        stream_batch_count = _require_positive_int_if_present(
+            raw_fixture,
+            "stream_batch_count",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+            default=0,
+        )
+        stream_events_per_batch = _require_positive_int_if_present(
+            raw_fixture,
+            "stream_events_per_batch",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+            default=0,
+        )
+        if mode == "event_stream":
+            if stream_batch_count <= 0:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].stream_batch_count must be greater than 0 for event_stream fixtures",
+                )
+            if stream_events_per_batch <= 0:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].stream_events_per_batch must be greater than 0 for event_stream fixtures",
+                )
+        elif stream_batch_count or stream_events_per_batch:
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}] stream_batch_count and stream_events_per_batch require mode=event_stream",
             )
 
         formats = _require_string_list(
@@ -1446,11 +1514,14 @@ def load_benchmark_fixture_configs(
                 path=benchmark_path,
                 context=f"benchmark_fixtures[{index}]",
             ),
+            mode=mode,
             profile=profile,
             person_count=person_count_value,
             duplicate_rate=duplicate_rate,
             seed=seed_value,
             formats=formats,
+            stream_batch_count=stream_batch_count,
+            stream_events_per_batch=stream_events_per_batch,
             capacity_targets=capacity_targets,
         )
 

@@ -86,6 +86,12 @@ python -m etl_identity_engine.cli replay-run \
   --run-id RUN-20260314T000000Z-ABC12345 \
   --refresh-mode incremental
 
+python -m etl_identity_engine.cli stream-refresh \
+  --state-db data/state/pipeline_state.sqlite \
+  --source-run-id RUN-20260314T000000Z-ABC12345 \
+  --events data/events/batch_001.jsonl \
+  --stream-id booking_updates
+
 python -m etl_identity_engine.cli publish-run \
   --state-db data/state/pipeline_state.sqlite \
   --run-id RUN-20260314T000000Z-ABC12345 \
@@ -160,6 +166,10 @@ completed run already exists:
 - persisted artifact rows are not duplicated
 - file artifacts are restored from persisted state into the requested
   `base_dir`
+
+For `stream-refresh`, the stable key also includes the predecessor run,
+stream identifier, event sequence range, and event-batch SHA-256
+digest.
 
 ## Failed-Run Resume Model
 
@@ -262,6 +272,34 @@ The current incremental prototype uses this operator model:
 
 If no compatible predecessor exists, the runtime falls back to a full
 rebuild and records that fallback in `run_summary.json`.
+
+## Event-Stream Refresh Model
+
+Persisted runs now also support:
+
+```bash
+python -m etl_identity_engine.cli stream-refresh \
+  --state-db data/state/pipeline_state.sqlite \
+  --source-run-id RUN-20260314T000000Z-ABC12345 \
+  --events data/events/batch_001.jsonl \
+  --stream-id booking_updates \
+  --base-dir work/stream_batch_001
+```
+
+The current event-driven operator model is:
+
+- input is an ordered JSONL or NDJSON batch
+- the predecessor is any completed persisted run
+- events are applied in ascending `sequence` order
+- `upsert` records are normalized through the same canonical field rules
+- `delete` events remove source rows before incremental recomputation
+- the resulting run records stream digest, sequence range, batch counts,
+  and predecessor lineage in `summary.stream`
+- the copied input batch is stored under `data/events/stream_events.jsonl`
+- a persisted audit event records the stream refresh outcome
+
+The event contract is documented in
+[event-stream-ingestion.md](event-stream-ingestion.md).
 
 ## Artifact Storage
 
@@ -449,18 +487,16 @@ That distinction is important because:
 
 ## Current Boundary
 
-This issue adds durable relational persistence, a basic run registry,
-first-class schema migrations, a first incremental refresh path, a
-persisted review-case lifecycle, a versioned downstream publication
-contract, and auditable named export-job execution, not full
-orchestration.
-The current line does not yet provide:
+The persisted runtime now covers durable batch runs, manifest-driven
+incremental refresh, file-backed event-stream refresh, direct
+replay-from-bundle, review workflow state, downstream publication, and
+auditable export execution.
 
-- persisted failure-state resume from mid-pipeline checkpoints
-- portable replay-bundle relocation without restoring the archived
-  bundle to its recorded bundle path
+The remaining boundary for the current line is narrower:
 
-Recovery procedures for the current supported model are now documented
-in [recovery-runbooks.md](recovery-runbooks.md). The remaining boundary
-above stays in effect until the runtime can replay directly from a
-restored bundle at an arbitrary replacement path.
+- event-driven ingestion is file-backed micro-batching, not a long-lived
+  broker consumer
+- distributed benchmark and SLO targets remain separate tracked work
+
+Recovery procedures for the current supported model are documented in
+[recovery-runbooks.md](recovery-runbooks.md).

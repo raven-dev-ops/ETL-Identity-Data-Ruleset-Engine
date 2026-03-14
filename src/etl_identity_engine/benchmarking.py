@@ -109,18 +109,22 @@ def build_benchmark_summary(
     benchmark_root: Path,
     run_artifact_root: Path,
     run_summary_path: Path,
+    continuous_ingest: dict[str, object] | None = None,
 ) -> dict[str, object]:
     target = fixture.capacity_targets.get(deployment_name)
-    return {
+    summary = {
         "benchmarked_at_utc": utc_now(),
         "fixture": {
             "name": fixture.name,
             "description": fixture.description,
+            "mode": fixture.mode,
             "profile": fixture.profile,
             "person_count": fixture.person_count,
             "duplicate_rate": fixture.duplicate_rate,
             "seed": fixture.seed,
             "formats": list(fixture.formats),
+            "stream_batch_count": fixture.stream_batch_count,
+            "stream_events_per_batch": fixture.stream_events_per_batch,
         },
         "deployment_target": deployment_name,
         "benchmark_root": str(benchmark_root),
@@ -129,6 +133,9 @@ def build_benchmark_summary(
         "run_summary": run_summary,
         "capacity_assertions": build_capacity_assertions(run_summary, target=target),
     }
+    if continuous_ingest:
+        summary["continuous_ingest"] = continuous_ingest
+    return summary
 
 
 def build_benchmark_report_markdown(summary: dict[str, object]) -> str:
@@ -142,6 +149,7 @@ def build_benchmark_report_markdown(summary: dict[str, object]) -> str:
         "# Benchmark Report",
         "",
         f"- Fixture: `{fixture.get('name', '')}`",
+        f"- Mode: `{fixture.get('mode', 'batch')}`",
         f"- Deployment target: `{summary.get('deployment_target', '')}`",
         f"- Benchmarked at: `{summary.get('benchmarked_at_utc', '')}`",
         f"- Person count: `{fixture.get('person_count', 0)}`",
@@ -175,6 +183,21 @@ def build_benchmark_report_markdown(summary: dict[str, object]) -> str:
             f"output_records=`{metrics.get('output_record_count', 0)}`, "
             f"output_records_per_second=`{metrics.get('output_records_per_second', 0.0)}`, "
             f"candidate_pairs_per_second=`{metrics.get('candidate_pairs_per_second', 0.0)}`"
+        )
+
+    continuous_ingest = summary.get("continuous_ingest", {})
+    if isinstance(continuous_ingest, dict) and continuous_ingest:
+        lines.extend(["", "## Continuous Ingest"])
+        lines.append(f"- `batch_count`: `{continuous_ingest.get('batch_count', 0)}`")
+        lines.append(f"- `total_event_count`: `{continuous_ingest.get('total_event_count', 0)}`")
+        lines.append(
+            f"- `total_stream_duration_seconds`: `{continuous_ingest.get('total_stream_duration_seconds', 0.0)}`"
+        )
+        lines.append(
+            f"- `events_per_second`: `{continuous_ingest.get('events_per_second', 0.0)}`"
+        )
+        lines.append(
+            f"- `last_stream_run_summary_path`: `{continuous_ingest.get('last_stream_run_summary_path', '')}`"
         )
 
     lines.extend(["", "## Capacity Assertions"])

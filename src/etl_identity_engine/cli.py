@@ -26,6 +26,7 @@ from etl_identity_engine.ingest.manifest import (
     peek_manifest_batch_id,
     resolve_batch_manifest,
 )
+from etl_identity_engine.ingest.stream_events import ResolvedStreamEventBatch, resolve_stream_event_batch
 from etl_identity_engine.ingest.replay_bundle import (
     REPLAY_BUNDLE_RESTORE_MODE,
     REPLAY_BUNDLE_VERSION,
@@ -102,6 +103,11 @@ from etl_identity_engine.storage.sqlite_store import (
     build_run_key,
 )
 from etl_identity_engine.storage.state_store_target import state_store_display_name, state_store_reference_name
+from etl_identity_engine.streaming import (
+    apply_stream_event_batch,
+    synthesize_stream_events,
+    write_stream_events_jsonl,
+)
 from etl_identity_engine.survivorship.rules_engine import build_golden_records
 
 
@@ -147,6 +153,7 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
         "replay-run",
         "serve-api",
         "run-all",
+        "stream-refresh",
     }:
         state_db_should_default = True
     if command == "report" and getattr(args, "run_id", None):
@@ -931,6 +938,7 @@ def _build_pipeline_summary(
     resume_summary: dict[str, object],
     phase_metrics: dict[str, dict[str, float | int]],
     total_duration_seconds: float,
+    stream_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
     summary = build_run_summary(
         normalized_rows,
@@ -947,6 +955,8 @@ def _build_pipeline_summary(
         "total_duration_seconds": round(total_duration_seconds, 6),
         "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
     }
+    if stream_summary is not None:
+        summary["stream"] = stream_summary
     return summary
 
 
@@ -968,6 +978,59 @@ def _resolve_run_key_args(
         "formats": None if manifest_path else args.formats,
         "refresh_mode": getattr(args, "refresh_mode", "full"),
     }
+
+
+def _resolve_stream_run_key_args(
+    args: argparse.Namespace,
+    *,
+    source_run_id: str,
+    batch: ResolvedStreamEventBatch,
+) -> dict[str, object | None]:
+    return {
+        "input_mode": "event_stream",
+        "manifest_path": None,
+        "batch_id": batch.batch_id,
+        "config_dir": str(Path(args.config_dir).resolve()) if args.config_dir else None,
+        "profile": None,
+        "seed": None,
+        "person_count": None,
+        "duplicate_rate": None,
+        "formats": "jsonl",
+        "refresh_mode": "incremental",
+        "source_run_id": source_run_id,
+        "stream_id": batch.stream_id,
+        "stream_first_sequence": batch.first_sequence,
+        "stream_last_sequence": batch.last_sequence,
+        "stream_event_hash": batch.content_sha256,
+    }
+
+
+def _persist_stream_event_snapshot(
+    *,
+    batch: ResolvedStreamEventBatch,
+    output_path: Path,
+) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if batch.event_path.resolve() == output_path.resolve():
+        return output_path
+    shutil.copyfile(batch.event_path, output_path)
+    return output_path
+
+
+def _build_stream_phase_metric(
+    duration_seconds: float,
+    *,
+    event_count: int,
+    output_record_count: int,
+) -> dict[str, float | int]:
+    metric = _build_phase_metric(
+        duration_seconds,
+        input_record_count=event_count,
+        output_record_count=output_record_count,
+    )
+    metric["event_count"] = int(event_count)
+    metric["events_per_second"] = _rate(event_count, duration_seconds)
+    return metric
 
 
 def _restore_persisted_run_outputs(base: Path, bundle) -> None:
@@ -2591,6 +2654,546 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         raise
 
 
+def _cmd_stream_refresh(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
+    base = Path(args.base_dir)
+    state_db = _require_state_db(args)
+    state_store = PipelineStateStore(state_db)
+    source_run_id = args.source_run_id or state_store.latest_completed_run_id()
+    if source_run_id is None:
+        raise FileNotFoundError(f"No completed persisted runs found in {state_store_display_name(state_db)}")
+
+    source_run = state_store.load_run_record(source_run_id)
+    if source_run.status != "completed":
+        raise ValueError(
+            f"stream-refresh requires a completed predecessor run, received status={source_run.status!r} "
+            f"for run_id={source_run.run_id}"
+        )
+    source_bundle = state_store.load_run_bundle(source_run_id)
+    resolved_batch = resolve_stream_event_batch(Path(args.events), default_stream_id=args.stream_id)
+
+    source_run_context = source_run.summary.get("run_context", {})
+    if not isinstance(source_run_context, dict):
+        source_run_context = {}
+
+    run_started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    run_key = build_run_key(**_resolve_stream_run_key_args(args, source_run_id=source_run_id, batch=resolved_batch))
+    run_id: str | None = None
+    attempt_number = 0
+    resume_checkpoint: RunCheckpointRecord | None = None
+    resumed_from_run_id: str | None = None
+    resumed_from_stage: str | None = None
+    latest_checkpoint_run_id: str | None = None
+    latest_checkpoint_stage: str | None = None
+    checkpoint_duration_baseline = 0.0
+    phase_metrics: dict[str, dict[str, float | int]] = {}
+
+    normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
+    matches_file = base / "data" / "matches" / "candidate_scores.csv"
+    clusters_file = base / "data" / "matches" / "entity_clusters.csv"
+    golden_file = base / "data" / "golden" / "golden_person_records.csv"
+    crosswalk_file = base / "data" / "golden" / "source_to_golden_crosswalk.csv"
+    review_queue_file = base / "data" / "review_queue" / "manual_review_queue.csv"
+    report_file = base / "data" / "exceptions" / "run_report.md"
+    stream_events_file = base / "data" / "events" / "stream_events.jsonl"
+
+    emit_structured_log(
+        "stream_refresh_requested",
+        component="cli",
+        command="stream-refresh",
+        base_dir=base.resolve(),
+        source_run_id=source_run_id,
+        stream_id=resolved_batch.stream_id,
+        batch_id=resolved_batch.batch_id,
+        event_path=resolved_batch.event_path,
+        event_count=len(resolved_batch.events),
+        run_key=run_key,
+        state_db=state_store_display_name(state_db),
+    )
+
+    start_decision = state_store.begin_run(
+        run_key=run_key,
+        batch_id=resolved_batch.batch_id,
+        input_mode="event_stream",
+        manifest_path=str(resolved_batch.event_path),
+        base_dir=str(base.resolve()),
+        config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+        profile=None,
+        seed=None,
+        formats="jsonl",
+        started_at_utc=run_started,
+    )
+    if start_decision.action == "reuse_completed":
+        bundle = state_store.load_run_bundle(start_decision.run_id)
+        _restore_persisted_run_outputs(base, bundle)
+        emit_structured_log(
+            "stream_refresh_reused",
+            component="cli",
+            command="stream-refresh",
+            run_id=bundle.run.run_id,
+            source_run_id=source_run_id,
+            stream_id=resolved_batch.stream_id,
+            duration_seconds=seconds_since(started),
+        )
+        print(
+            json.dumps(
+                {
+                    "action": "reused_completed_run",
+                    "run_id": bundle.run.run_id,
+                    "source_run_id": source_run_id,
+                    "stream_id": resolved_batch.stream_id,
+                    "state_db": state_store_display_name(state_db),
+                },
+                sort_keys=True,
+            )
+        )
+        return
+
+    run_id = start_decision.run_id
+    attempt_number = start_decision.attempt_number
+    resumed_from_run_id = start_decision.resume_from_run_id
+    resumed_from_stage = start_decision.resume_checkpoint_stage
+    if resumed_from_run_id and resumed_from_stage:
+        resume_checkpoint = state_store.load_run_checkpoint(
+            run_id=resumed_from_run_id,
+            stage_name=resumed_from_stage,
+        )
+        latest_checkpoint_run_id = resume_checkpoint.run_id
+        latest_checkpoint_stage = resume_checkpoint.stage_name
+        checkpoint_duration_baseline = resume_checkpoint.total_duration_seconds
+        phase_metrics = _deep_copy_phase_metrics(resume_checkpoint.phase_metrics)
+        emit_structured_log(
+            "stream_refresh_resuming",
+            component="cli",
+            command="stream-refresh",
+            run_id=run_id,
+            source_run_id=source_run_id,
+            stream_id=resolved_batch.stream_id,
+            resume_from_run_id=resumed_from_run_id,
+            resume_from_stage=resumed_from_stage,
+            resume_checkpointed_at_utc=start_decision.resume_checkpointed_at_utc or "",
+        )
+    emit_structured_log(
+        "stream_refresh_started",
+        component="cli",
+        command="stream-refresh",
+        run_id=run_id,
+        source_run_id=source_run_id,
+        stream_id=resolved_batch.stream_id,
+        batch_id=resolved_batch.batch_id,
+        attempt_number=attempt_number,
+        resume_from_run_id=resumed_from_run_id or "",
+        resume_from_stage=resumed_from_stage or "",
+    )
+
+    config = _load_config(args.config_dir, args.environment)
+    config_fingerprint = _config_fingerprint(config)
+    normalized_rows: list[dict[str, str]] = []
+    match_rows: list[dict[str, str | float]] = []
+    blocking_metrics_rows: list[dict[str, str | int]] = []
+    clustered_rows: list[dict[str, str]] = []
+    golden_rows: list[dict[str, str]] = []
+    crosswalk_rows: list[dict[str, str]] = []
+    review_rows: list[dict[str, str | float]] = []
+    active_review_rows: list[dict[str, str | float]] = []
+    run_context: dict[str, object] = {
+        "input_mode": "event_stream",
+        "batch_id": resolved_batch.batch_id,
+        "manifest_path": str(resolved_batch.event_path),
+        "replay_source_run_id": "",
+        "config_fingerprint": config_fingerprint,
+        "refresh_mode": "incremental",
+        "profile": source_run_context.get("profile"),
+        "seed": source_run_context.get("seed"),
+        "person_count": source_run_context.get("person_count"),
+        "formats": "jsonl",
+        "source_run_id": source_run_id,
+        "source_input_mode": source_run.input_mode,
+        "stream_id": resolved_batch.stream_id,
+    }
+    refresh_summary: dict[str, object] = {
+        "mode": "incremental",
+        "fallback_to_full": False,
+        "predecessor_run_id": source_run_id,
+        "affected_record_count": 0,
+        "reused_record_count": 0,
+        "inserted_record_count": 0,
+        "changed_record_count": 0,
+        "removed_record_count": 0,
+        "recalculated_candidate_pair_count": 0,
+        "reused_candidate_pair_count": 0,
+        "recalculated_cluster_count": 0,
+        "reused_cluster_count": 0,
+    }
+    stream_summary: dict[str, object] = {
+        "mode": "event_stream",
+        "stream_id": resolved_batch.stream_id,
+        "batch_id": resolved_batch.batch_id,
+        "source_run_id": source_run_id,
+        "event_path": str(resolved_batch.event_path),
+        "event_snapshot_path": str(stream_events_file),
+        "event_count": len(resolved_batch.events),
+        "upsert_count": 0,
+        "delete_count": 0,
+        "first_sequence": resolved_batch.first_sequence,
+        "last_sequence": resolved_batch.last_sequence,
+        "event_sha256": resolved_batch.content_sha256,
+    }
+    resume_stage_order = 0
+
+    try:
+        if resume_checkpoint is not None:
+            resume_stage_order = RUN_CHECKPOINT_STAGE_ORDER[resume_checkpoint.stage_name]
+            checkpoint_run_context = resume_checkpoint.summary.get("run_context", {})
+            if isinstance(checkpoint_run_context, dict):
+                run_context.update(checkpoint_run_context)
+            checkpoint_refresh = resume_checkpoint.summary.get("refresh", {})
+            if isinstance(checkpoint_refresh, dict):
+                refresh_summary.update(checkpoint_refresh)
+            checkpoint_stream = resume_checkpoint.summary.get("stream", {})
+            if isinstance(checkpoint_stream, dict):
+                stream_summary.update(checkpoint_stream)
+            _restore_checkpoint_outputs(
+                normalized_file=normalized_file,
+                matches_file=matches_file,
+                clusters_file=clusters_file,
+                golden_file=golden_file,
+                crosswalk_file=crosswalk_file,
+                review_queue_file=review_queue_file,
+                checkpoint=resume_checkpoint,
+            )
+            normalized_rows = [dict(row) for row in resume_checkpoint.normalized_rows]
+            match_rows = [dict(row) for row in resume_checkpoint.match_rows]
+            blocking_metrics_rows = [dict(row) for row in resume_checkpoint.blocking_metrics_rows]
+            clustered_rows = [dict(row) for row in resume_checkpoint.cluster_rows]
+            golden_rows = [dict(row) for row in resume_checkpoint.golden_rows]
+            crosswalk_rows = [dict(row) for row in resume_checkpoint.crosswalk_rows]
+            review_rows = [dict(row) for row in resume_checkpoint.review_rows]
+            active_review_rows = [dict(row) for row in resume_checkpoint.active_review_rows]
+            print(
+                f"resuming stream refresh from checkpoint: {resume_checkpoint.stage_name} "
+                f"(source_run_id={source_run_id})"
+            )
+
+        def persist_checkpoint(stage_name: str) -> None:
+            nonlocal latest_checkpoint_run_id
+            nonlocal latest_checkpoint_stage
+            assert run_id is not None
+            checkpoint_summary = _build_pipeline_summary(
+                normalized_rows=normalized_rows,
+                match_rows=match_rows,
+                clustered_rows=clustered_rows,
+                golden_rows=golden_rows,
+                active_review_rows=active_review_rows,
+                run_context=run_context,
+                refresh_summary=refresh_summary,
+                resume_summary=_build_resume_summary(
+                    resumed_from_run_id=resumed_from_run_id,
+                    resumed_from_stage=resumed_from_stage,
+                    available_checkpoint_run_id=run_id,
+                    available_checkpoint_stage=stage_name,
+                ),
+                phase_metrics=phase_metrics,
+                total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
+                stream_summary=stream_summary,
+            )
+            state_store.persist_run_checkpoint(
+                run_id=run_id,
+                run_key=run_key,
+                attempt_number=attempt_number,
+                stage_name=stage_name,
+                checkpointed_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
+                phase_metrics=_deep_copy_phase_metrics(phase_metrics),
+                normalized_rows=normalized_rows,
+                match_rows=match_rows,
+                blocking_metrics_rows=blocking_metrics_rows,
+                cluster_rows=clustered_rows,
+                golden_rows=golden_rows,
+                crosswalk_rows=crosswalk_rows,
+                review_rows=review_rows,
+                active_review_rows=active_review_rows,
+                summary=checkpoint_summary,
+            )
+            latest_checkpoint_run_id = run_id
+            latest_checkpoint_stage = stage_name
+
+        if not stream_events_file.exists():
+            _persist_stream_event_snapshot(batch=resolved_batch, output_path=stream_events_file)
+
+        if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["normalize"]:
+            normalize_started = time.perf_counter()
+            _persist_stream_event_snapshot(batch=resolved_batch, output_path=stream_events_file)
+            normalized_rows, applied_stream_summary = apply_stream_event_batch(
+                previous_rows=source_bundle.normalized_rows,
+                batch=resolved_batch,
+                config=config,
+            )
+            stream_summary.update(applied_stream_summary)
+            stream_summary["source_run_id"] = source_run_id
+            stream_summary["event_snapshot_path"] = str(stream_events_file)
+            run_context["person_count"] = len(
+                {
+                    str(row.get("person_entity_id", "")).strip()
+                    for row in normalized_rows
+                    if str(row.get("person_entity_id", "")).strip()
+                }
+            )
+            write_csv_dicts(normalized_file, normalized_rows, fieldnames=NORMALIZED_HEADERS)
+            print(f"stream-refreshed normalized rows written: {normalized_file}")
+            normalize_metric = _build_stream_phase_metric(
+                seconds_since(normalize_started),
+                event_count=len(resolved_batch.events),
+                output_record_count=len(normalized_rows),
+            )
+            phase_metrics["normalize"] = normalize_metric
+            phase_metrics["stream_apply_events"] = dict(normalize_metric)
+            persist_checkpoint("normalize")
+
+        if resume_stage_order < RUN_CHECKPOINT_STAGE_ORDER["match"]:
+            incremental_result = refresh_incremental_run(
+                current_rows=normalized_rows,
+                previous_bundle=source_bundle,
+                config=config,
+            )
+            match_rows = incremental_result.match_rows
+            blocking_metrics_rows = incremental_result.blocking_metrics_rows
+            clustered_rows = incremental_result.clustered_rows
+            golden_rows = incremental_result.golden_rows
+            crosswalk_rows = incremental_result.crosswalk_rows
+            active_review_rows = incremental_result.active_review_rows
+            review_rows = incremental_result.review_rows
+            refresh_summary = {
+                **incremental_result.metadata,
+                "mode": "incremental",
+                "fallback_to_full": False,
+                "predecessor_run_id": source_run_id,
+            }
+
+            match_started = time.perf_counter()
+            _write_precomputed_match_outputs(matches_file, match_rows, blocking_metrics_rows)
+            phase_metrics["match"] = _build_phase_metric(
+                seconds_since(match_started),
+                input_record_count=len(normalized_rows),
+                output_record_count=len(match_rows),
+                candidate_pair_count=len(match_rows),
+            )
+            persist_checkpoint("match")
+
+            cluster_started = time.perf_counter()
+            _write_precomputed_cluster_output(
+                clusters_file,
+                _build_cluster_output_rows(clustered_rows),
+            )
+            phase_metrics["cluster"] = _build_phase_metric(
+                seconds_since(cluster_started),
+                input_record_count=len(normalized_rows),
+                output_record_count=len(clustered_rows),
+            )
+            persist_checkpoint("cluster")
+
+            review_queue_started = time.perf_counter()
+            _write_precomputed_review_queue_output(review_queue_file, review_rows)
+            phase_metrics["review_queue"] = _build_phase_metric(
+                seconds_since(review_queue_started),
+                input_record_count=len(match_rows),
+                output_record_count=len(active_review_rows),
+            )
+            persist_checkpoint("review_queue")
+
+            golden_started = time.perf_counter()
+            _write_precomputed_golden_output(golden_file, golden_rows)
+            phase_metrics["golden"] = _build_phase_metric(
+                seconds_since(golden_started),
+                input_record_count=len(clustered_rows),
+                output_record_count=len(golden_rows),
+            )
+            persist_checkpoint("golden")
+
+            crosswalk_started = time.perf_counter()
+            _write_precomputed_crosswalk_output(crosswalk_file, crosswalk_rows)
+            phase_metrics["crosswalk"] = _build_phase_metric(
+                seconds_since(crosswalk_started),
+                input_record_count=len(clustered_rows),
+                output_record_count=len(crosswalk_rows),
+            )
+            persist_checkpoint("crosswalk")
+
+        resume_summary = _build_resume_summary(
+            resumed_from_run_id=resumed_from_run_id,
+            resumed_from_stage=resumed_from_stage,
+            available_checkpoint_run_id=latest_checkpoint_run_id,
+            available_checkpoint_stage=latest_checkpoint_stage,
+        )
+        report_started = time.perf_counter()
+        summary = _write_quality_outputs(
+            report_file,
+            normalized_file,
+            normalized_rows,
+            candidate_pair_count=len(match_rows),
+            decision_counts=_decision_counts(match_rows),
+            cluster_count=_cluster_count(clustered_rows),
+            golden_record_count=len(golden_rows),
+            review_queue_count=len(active_review_rows),
+            summary_updates={
+                "run_context": run_context,
+                "refresh": refresh_summary,
+                "resume": resume_summary,
+                "stream": stream_summary,
+                "performance": {
+                    "total_duration_seconds": round(
+                        checkpoint_duration_baseline + seconds_since(started),
+                        6,
+                    ),
+                    "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
+                },
+            },
+        )
+        phase_metrics["report"] = _build_phase_metric(
+            seconds_since(report_started),
+            input_record_count=len(normalized_rows),
+            output_record_count=1,
+        )
+        summary["performance"] = {
+            "total_duration_seconds": round(checkpoint_duration_baseline + seconds_since(started), 6),
+            "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
+        }
+        _write_run_summary_artifacts(
+            report_file=report_file,
+            normalized_file=normalized_file,
+            summary=summary,
+        )
+        persist_checkpoint("report")
+
+        persist_started = time.perf_counter()
+        state_store.persist_run(
+            metadata=PersistRunMetadata(
+                run_id=run_id,
+                run_key=run_key,
+                attempt_number=attempt_number,
+                batch_id=resolved_batch.batch_id,
+                input_mode="event_stream",
+                manifest_path=str(resolved_batch.event_path),
+                base_dir=str(base.resolve()),
+                config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+                profile=None,
+                seed=None,
+                formats="jsonl",
+                started_at_utc=run_started,
+                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                status="completed",
+            ),
+            normalized_rows=normalized_rows,
+            match_rows=match_rows,
+            blocking_metrics_rows=blocking_metrics_rows,
+            cluster_rows=read_dict_rows(clusters_file),
+            golden_rows=golden_rows,
+            crosswalk_rows=crosswalk_rows,
+            review_rows=review_rows,
+            summary=summary,
+        )
+        phase_metrics["persist_state"] = _build_phase_metric(
+            seconds_since(persist_started),
+            input_record_count=len(normalized_rows),
+            output_record_count=1,
+        )
+        summary["performance"] = {
+            "total_duration_seconds": round(checkpoint_duration_baseline + seconds_since(started), 6),
+            "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
+        }
+        state_store.update_run_summary(run_id=run_id, summary=summary)
+        _write_run_summary_artifacts(
+            report_file=report_file,
+            normalized_file=normalized_file,
+            summary=summary,
+        )
+        _record_cli_audit_event(
+            state_store,
+            action="stream_refresh",
+            resource_type="pipeline_run",
+            resource_id=run_id,
+            run_id=run_id,
+            status="succeeded",
+            details={
+                "source_run_id": source_run_id,
+                "stream_id": resolved_batch.stream_id,
+                "batch_id": resolved_batch.batch_id,
+                "event_count": len(resolved_batch.events),
+                "event_sha256": resolved_batch.content_sha256,
+            },
+        )
+        emit_structured_log(
+            "stream_refresh_completed",
+            component="cli",
+            command="stream-refresh",
+            run_id=run_id,
+            source_run_id=source_run_id,
+            stream_id=resolved_batch.stream_id,
+            event_count=len(resolved_batch.events),
+            total_records=summary["total_records"],
+            candidate_pair_count=summary["candidate_pair_count"],
+            cluster_count=summary["cluster_count"],
+            golden_record_count=summary["golden_record_count"],
+            review_queue_count=summary["review_queue_count"],
+            duration_seconds=summary["performance"]["total_duration_seconds"],
+        )
+        print(json.dumps({"action": "stream_refreshed", "run_id": run_id, "summary": summary}, sort_keys=True))
+    except Exception as exc:
+        failure_summary = None
+        if normalized_rows:
+            failure_summary = _build_pipeline_summary(
+                normalized_rows=normalized_rows,
+                match_rows=match_rows,
+                clustered_rows=clustered_rows,
+                golden_rows=golden_rows,
+                active_review_rows=active_review_rows,
+                run_context=run_context,
+                refresh_summary=refresh_summary,
+                resume_summary=_build_resume_summary(
+                    resumed_from_run_id=resumed_from_run_id,
+                    resumed_from_stage=resumed_from_stage,
+                    available_checkpoint_run_id=latest_checkpoint_run_id,
+                    available_checkpoint_stage=latest_checkpoint_stage,
+                ),
+                phase_metrics=phase_metrics,
+                total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
+                stream_summary=stream_summary,
+            )
+        if run_id is not None:
+            state_store.mark_run_failed(
+                run_id=run_id,
+                finished_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                failure_detail=str(exc),
+                summary=failure_summary,
+            )
+            _record_cli_audit_event(
+                state_store,
+                action="stream_refresh",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "source_run_id": source_run_id,
+                    "stream_id": resolved_batch.stream_id,
+                    "batch_id": resolved_batch.batch_id,
+                    "error": str(exc),
+                },
+            )
+        emit_structured_log(
+            "stream_refresh_failed",
+            component="cli",
+            command="stream-refresh",
+            run_id=run_id or "",
+            source_run_id=source_run_id,
+            stream_id=resolved_batch.stream_id,
+            duration_seconds=seconds_since(started),
+            error=str(exc),
+            level="ERROR",
+        )
+        raise
+
+
 def _cmd_benchmark_run(args: argparse.Namespace) -> None:
     benchmark_config_dir = Path(args.config_dir) if args.config_dir else None
     fixtures = load_benchmark_fixture_configs(benchmark_config_dir, environment=args.environment)
@@ -2612,7 +3215,6 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
         shutil.rmtree(benchmark_root)
     benchmark_root.mkdir(parents=True, exist_ok=True)
 
-    run_artifact_root = benchmark_root / "run_artifacts"
     state_db = args.state_db if args.state_db else benchmark_root / "state" / "pipeline_state.sqlite"
     benchmark_summary_path = benchmark_root / "benchmark_summary.json"
     benchmark_report_path = benchmark_root / "benchmark_report.md"
@@ -2627,34 +3229,141 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
         state_db=state_store_display_name(state_db),
     )
 
-    run_all_argv = [
-        "run-all",
-        "--base-dir",
-        str(run_artifact_root),
-        "--profile",
-        fixture.profile,
-        "--seed",
-        str(fixture.seed),
-        "--duplicate-rate",
-        str(fixture.duplicate_rate),
-        "--formats",
-        ",".join(fixture.formats),
-        "--person-count",
-        str(fixture.person_count),
-        "--state-db",
-        str(state_db),
-    ]
-    if args.environment:
-        run_all_argv.extend(["--environment", args.environment])
-    if args.runtime_config:
-        run_all_argv.extend(["--runtime-config", args.runtime_config])
-    if args.config_dir:
-        run_all_argv.extend(["--config-dir", args.config_dir])
+    def apply_runtime_overrides(argv: list[str]) -> list[str]:
+        if args.environment:
+            argv.extend(["--environment", args.environment])
+        if args.runtime_config:
+            argv.extend(["--runtime-config", args.runtime_config])
+        if args.config_dir:
+            argv.extend(["--config-dir", args.config_dir])
+        return argv
 
-    main(run_all_argv)
+    run_artifact_root: Path
+    run_summary_path: Path
+    run_summary: dict[str, object]
+    continuous_ingest_summary: dict[str, object] | None = None
 
-    run_summary_path = run_artifact_root / "data" / "exceptions" / "run_summary.json"
-    run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+    if fixture.mode == "event_stream":
+        seed_artifact_root = benchmark_root / "seed_run"
+        main(
+            apply_runtime_overrides(
+                [
+                    "run-all",
+                    "--base-dir",
+                    str(seed_artifact_root),
+                    "--profile",
+                    fixture.profile,
+                    "--seed",
+                    str(fixture.seed),
+                    "--duplicate-rate",
+                    str(fixture.duplicate_rate),
+                    "--formats",
+                    ",".join(fixture.formats),
+                    "--person-count",
+                    str(fixture.person_count),
+                    "--state-db",
+                    str(state_db),
+                ]
+            )
+        )
+
+        store = PipelineStateStore(state_db)
+        current_source_run_id = store.latest_completed_run_id()
+        if current_source_run_id is None:
+            raise RuntimeError("benchmark seed run did not persist a completed run")
+        seed_run_id = current_source_run_id
+
+        total_event_count = 0
+        total_stream_duration_seconds = 0.0
+        stream_run_ids: list[str] = []
+        event_batch_paths: list[str] = []
+        run_artifact_root = seed_artifact_root
+        run_summary_path = seed_artifact_root / "data" / "exceptions" / "run_summary.json"
+        run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+
+        for batch_index in range(1, fixture.stream_batch_count + 1):
+            source_bundle = store.load_run_bundle(current_source_run_id)
+            events = synthesize_stream_events(
+                source_bundle.normalized_rows,
+                stream_id=f"{fixture.name}_stream",
+                batch_index=batch_index,
+                events_per_batch=fixture.stream_events_per_batch,
+            )
+            event_file = benchmark_root / "events" / f"batch_{batch_index:03d}.jsonl"
+            write_stream_events_jsonl(event_file, events)
+            event_batch_paths.append(str(event_file))
+
+            stream_artifact_root = benchmark_root / "stream_runs" / f"batch_{batch_index:03d}"
+            main(
+                apply_runtime_overrides(
+                    [
+                        "stream-refresh",
+                        "--base-dir",
+                        str(stream_artifact_root),
+                        "--state-db",
+                        str(state_db),
+                        "--source-run-id",
+                        current_source_run_id,
+                        "--events",
+                        str(event_file),
+                        "--stream-id",
+                        f"{fixture.name}_stream",
+                    ]
+                )
+            )
+
+            current_source_run_id = store.latest_completed_run_id()
+            if current_source_run_id is None:
+                raise RuntimeError("benchmark stream refresh did not persist a completed run")
+            stream_run_ids.append(current_source_run_id)
+            run_artifact_root = stream_artifact_root
+            run_summary_path = stream_artifact_root / "data" / "exceptions" / "run_summary.json"
+            run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+            total_event_count += len(events)
+            performance = run_summary.get("performance", {})
+            if isinstance(performance, dict):
+                total_stream_duration_seconds += float(performance.get("total_duration_seconds", 0.0) or 0.0)
+
+        continuous_ingest_summary = {
+            "mode": "event_stream",
+            "stream_id": f"{fixture.name}_stream",
+            "batch_count": fixture.stream_batch_count,
+            "events_per_batch": fixture.stream_events_per_batch,
+            "total_event_count": total_event_count,
+            "total_stream_duration_seconds": round(total_stream_duration_seconds, 6),
+            "events_per_second": _rate(total_event_count, total_stream_duration_seconds),
+            "seed_run_id": seed_run_id,
+            "final_run_id": current_source_run_id,
+            "stream_run_ids": stream_run_ids,
+            "event_batch_paths": event_batch_paths,
+            "last_stream_run_summary_path": str(run_summary_path),
+        }
+    else:
+        run_artifact_root = benchmark_root / "run_artifacts"
+        main(
+            apply_runtime_overrides(
+                [
+                    "run-all",
+                    "--base-dir",
+                    str(run_artifact_root),
+                    "--profile",
+                    fixture.profile,
+                    "--seed",
+                    str(fixture.seed),
+                    "--duplicate-rate",
+                    str(fixture.duplicate_rate),
+                    "--formats",
+                    ",".join(fixture.formats),
+                    "--person-count",
+                    str(fixture.person_count),
+                    "--state-db",
+                    str(state_db),
+                ]
+            )
+        )
+        run_summary_path = run_artifact_root / "data" / "exceptions" / "run_summary.json"
+        run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+
     benchmark_summary = build_benchmark_summary(
         fixture=fixture,
         deployment_name=deployment_name,
@@ -2662,6 +3371,7 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
         benchmark_root=benchmark_root,
         run_artifact_root=run_artifact_root,
         run_summary_path=run_summary_path,
+        continuous_ingest=continuous_ingest_summary,
     )
     benchmark_summary_path.write_text(
         json.dumps(benchmark_summary, indent=2, sort_keys=True),
@@ -3071,6 +3781,32 @@ def build_parser() -> argparse.ArgumentParser:
     serve_api_parser.add_argument("--port", default=8000, type=int)
     serve_api_parser.add_argument("--log-level", default="info")
     serve_api_parser.set_defaults(func=_cmd_serve_api)
+
+    stream_refresh_parser = subparsers.add_parser(
+        "stream-refresh",
+        help="Apply an ordered event batch onto a persisted run and recompute affected entities.",
+    )
+    stream_refresh_parser.add_argument("--environment", default=None)
+    stream_refresh_parser.add_argument("--runtime-config", default=None)
+    stream_refresh_parser.add_argument("--config-dir", default=None)
+    stream_refresh_parser.add_argument("--state-db", default=None)
+    stream_refresh_parser.add_argument("--base-dir", default=".")
+    stream_refresh_parser.add_argument(
+        "--source-run-id",
+        default=None,
+        help="Completed persisted run to refresh. Defaults to the latest completed run in --state-db.",
+    )
+    stream_refresh_parser.add_argument(
+        "--events",
+        required=True,
+        help="Path to the ordered event batch in JSONL/NDJSON format.",
+    )
+    stream_refresh_parser.add_argument(
+        "--stream-id",
+        default=None,
+        help="Optional default stream identifier when the event lines omit stream_id.",
+    )
+    stream_refresh_parser.set_defaults(func=_cmd_stream_refresh)
 
     benchmark_run_parser = subparsers.add_parser(
         "benchmark-run",

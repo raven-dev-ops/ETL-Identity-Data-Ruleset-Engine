@@ -55,6 +55,10 @@ of truth for tracked work; this file is the short maintainer view.
   container attestation, SBOM-style inventory, provenance, and
   dependency-audit outputs, and CI enforces the container dependency
   gate before image publication.
+- GitHub issue `#94` is complete: the runtime now supports persisted
+  `stream-refresh` event batches with deterministic incremental entity
+  recomputation, copied event snapshots, persisted stream lineage in run
+  summaries, and continuous-ingest benchmark coverage.
 
 ## Open Task Groups
 
@@ -63,7 +67,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: none
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
-  - Open GitHub issues: `#94`, `#95`
+  - Open GitHub issues: `#95`
 
 ## Gaps Now Explicitly Tracked
 
@@ -77,10 +81,10 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Paginated service list and search endpoints
 - [x] Clustered deployment manifests
 - [x] Container signing and image-level supply-chain gates
-- [ ] Event-driven ingestion and streaming entity refresh
+- [x] Event-driven ingestion and streaming entity refresh
 - [ ] Clustered benchmarks and distributed SLO targets
 
 ## Next Step
 
-- Start issue `#94`: Add event-driven ingestion and streaming
-  entity-refresh mode.
+- Start issue `#95`: Add clustered benchmark fixtures and distributed
+  SLO targets.

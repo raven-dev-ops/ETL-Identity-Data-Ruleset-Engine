@@ -166,8 +166,9 @@ is included in the repository.
 - Configurable identity matching rules
 - Additional explainable heuristic signals and richer offline evaluation
 - Address standardization using geocoding services
-- Streaming ETL support
-- Real-time identity resolution pipelines
+- Long-lived broker integrations beyond the current deterministic
+  file-backed event batch model
+- Distributed real-time identity resolution pipelines
 
 ## Planning Artifacts
 
@@ -187,6 +188,7 @@ is included in the repository.
 - [Compatibility Policy](docs/compatibility-policy.md)
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
+- [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Export Jobs](docs/export-jobs.md)
@@ -237,8 +239,8 @@ This repository now includes a working `M1` scaffold:
 - stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
   `review-queue`, `golden`, `report`, `publish-delivery`, `publish-run`,
   `review-case-list`, `review-case-update`, `apply-review-decision`,
-  `replay-run`, `benchmark-run`, `export-job-list`, `export-job-run`,
-  `export-job-history`, `serve-api`, `run-all`
+  `replay-run`, `stream-refresh`, `benchmark-run`, `export-job-list`,
+  `export-job-run`, `export-job-history`, `serve-api`, `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
 - governance files: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
@@ -298,6 +300,13 @@ in `data/exceptions/run_summary.json`.
 Completed persisted runs can then be published into immutable golden and
 crosswalk snapshots with `publish-delivery`.
 
+The persisted runtime now also supports near-real-time micro-batch
+refresh through `stream-refresh`. That command applies an ordered JSONL
+event batch onto a completed persisted predecessor run, copies the
+processed event file into `data/events/stream_events.jsonl`, and records
+the stream batch digest, sequence range, and predecessor lineage in the
+resulting `run_summary.json`.
+
 The current manual-review operating model keeps the file handoff via
 `data/review_queue/manual_review_queue.csv`, and persisted runs now also
 support durable review-case state through `review-case-list` and
@@ -324,6 +333,8 @@ For operator workflows, the CLI now also exposes:
 
 - `apply-review-decision` for idempotent review-case decisions
 - `replay-run` for manifest-backed persisted reruns
+- `stream-refresh` for ordered event-batch entity refresh over persisted
+  state
 - `publish-run` for JSON-based downstream publication triggers
 - `export-job-list` for configured warehouse and data-product exports
 - `export-job-run` for auditable downstream snapshot materialization
@@ -348,6 +359,12 @@ For scale validation, `benchmark-run` executes the real persisted
 pipeline against a named large-batch fixture from
 `config/benchmark_fixtures.yml` and writes benchmark artifacts under
 `dist/benchmarks/<fixture>/`.
+
+The benchmark catalog now supports both standard batch fixtures and
+continuous-ingest fixtures. Event-stream fixtures seed one persisted run
+through `run-all`, then drive repeated `stream-refresh` batches and
+emit a `continuous_ingest` summary block alongside the final run
+artifacts.
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

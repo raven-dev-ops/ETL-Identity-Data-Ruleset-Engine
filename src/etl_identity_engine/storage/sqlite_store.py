@@ -342,6 +342,11 @@ def build_run_key(
     duplicate_rate: float | None,
     formats: str | None,
     refresh_mode: str | None,
+    source_run_id: str | None = None,
+    stream_id: str | None = None,
+    stream_first_sequence: int | None = None,
+    stream_last_sequence: int | None = None,
+    stream_event_hash: str | None = None,
 ) -> str:
     payload = json.dumps(
         {
@@ -355,6 +360,11 @@ def build_run_key(
             "duplicate_rate": duplicate_rate,
             "formats": formats,
             "refresh_mode": refresh_mode,
+            "source_run_id": source_run_id,
+            "stream_id": stream_id,
+            "stream_first_sequence": stream_first_sequence,
+            "stream_last_sequence": stream_last_sequence,
+            "stream_event_hash": stream_event_hash,
         },
         sort_keys=True,
         separators=(",", ":"),

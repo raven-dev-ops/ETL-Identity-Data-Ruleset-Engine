@@ -933,7 +933,40 @@ benchmark_fixtures:
     assert set(fixtures) == {"tiny"}
     assert fixtures["tiny"].person_count == 48
     assert fixtures["tiny"].formats == ("csv",)
+    assert fixtures["tiny"].mode == "batch"
     assert fixtures["tiny"].capacity_targets["single_host_container"].max_total_duration_seconds == 30.0
+
+
+def test_load_benchmark_fixture_configs_reads_event_stream_fixture(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_text(
+        config_dir / "benchmark_fixtures.yml",
+        """
+benchmark_fixtures:
+  - name: stream_tiny
+    description: Tiny event-stream benchmark fixture.
+    mode: event_stream
+    profile: small
+    person_count: 48
+    duplicate_rate: 0.25
+    seed: 123
+    formats:
+      - csv
+    stream_batch_count: 2
+    stream_events_per_batch: 4
+    capacity_targets:
+      single_host_container:
+        max_total_duration_seconds: 30.0
+        min_normalize_records_per_second: 0.0
+        min_match_candidate_pairs_per_second: 0.0
+""",
+    )
+
+    fixtures = load_benchmark_fixture_configs(config_dir)
+
+    assert fixtures["stream_tiny"].mode == "event_stream"
+    assert fixtures["stream_tiny"].stream_batch_count == 2
+    assert fixtures["stream_tiny"].stream_events_per_batch == 4
 
 
 def test_cli_match_uses_runtime_environment_overlay(tmp_path: Path) -> None:

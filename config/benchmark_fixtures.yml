@@ -30,3 +30,22 @@ benchmark_fixtures:
         max_total_duration_seconds: 30.0
         min_normalize_records_per_second: 10000.0
         min_match_candidate_pairs_per_second: 20000.0
+
+  - name: continuous_ingest_small
+    description: >
+      Continuous-ingest benchmark that seeds one persisted synthetic run,
+      then applies multiple ordered event batches through stream-refresh.
+    mode: event_stream
+    profile: small
+    person_count: 96
+    duplicate_rate: 0.25
+    seed: 42
+    formats:
+      - csv
+    stream_batch_count: 3
+    stream_events_per_batch: 12
+    capacity_targets:
+      single_host_container:
+        max_total_duration_seconds: 10.0
+        min_normalize_records_per_second: 1000.0
+        min_match_candidate_pairs_per_second: 1000.0

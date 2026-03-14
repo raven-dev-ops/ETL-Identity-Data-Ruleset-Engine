@@ -61,6 +61,7 @@ ETL-Identity-Data-Ruleset-Engine/
     benchmarking-and-capacity.md
     compatibility-policy.md
     container-deployment.md
+    event-stream-ingestion.md
     kubernetes-deployment.md
     data-model.md
     delivery-contracts.md
@@ -110,6 +111,7 @@ ETL-Identity-Data-Ruleset-Engine/
       benchmarking.py
       cli.py
       generate/
+      ingest/
       io/
       matching/
       normalize/
@@ -117,6 +119,7 @@ ETL-Identity-Data-Ruleset-Engine/
       quality/
       storage/
       survivorship/
+      streaming.py
   tests/
     test_benchmarking.py
     conftest.py
@@ -131,6 +134,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_release_hardening_check.py
     test_repo_scripts.py
     test_runtime_config.py
+    test_stream_refresh.py
     test_survivorship.py
     test_create_github_backlog.py
     test_deployment_assets.py
@@ -171,6 +175,8 @@ The current public line is now explicitly scoped around:
   the documented release path
 - keep benchmark fixtures, capacity targets, and the persisted
   performance contract aligned with the supported deployment baseline
+- keep the event-stream contract and persisted stream-refresh runtime
+  aligned with the documented micro-batch operator model
 - execute the new post-`v0.6.0` backlog cycle tracked in
   `planning/active-github-issues-backlog.md`
 

@@ -14,8 +14,9 @@ golden records, and reporting artifacts.
   plus paginated run, golden, and review-case collections and
   operator-only review-decision, replay, publish, and export actions.
   A container image, a single-host compose deployment baseline, a
-  Kubernetes PostgreSQL-backed deployment baseline, and named benchmark
-  fixtures with capacity targets are now available.
+  Kubernetes PostgreSQL-backed deployment baseline, file-backed
+  event-stream refresh, and named benchmark fixtures with capacity
+  targets are now available.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -62,13 +63,20 @@ golden records, and reporting artifacts.
      replay bundles containing the manifest plus landed-input snapshot
    - Supports manifest-driven incremental refresh when paired with
      `--state-db --refresh-mode incremental`
-9. `publish-delivery`
+9. `stream-refresh`
+   - Reads a completed persisted predecessor run plus an ordered JSONL
+     event batch
+   - Applies the event batch deterministically in sequence order
+   - Reuses the incremental refresh path to rebuild only affected
+     entities and golden outputs
+   - Copies the processed event batch under `data/events/`
+10. `publish-delivery`
    - Reads a completed persisted run from the configured state store
    - Publishes immutable downstream snapshots for golden records and the
      source-to-golden crosswalk
    - Updates an atomic `current.json` consumer pointer under the
      versioned delivery-contract root
-10. `serve-api`
+11. `serve-api`
    - Reads persisted SQL state through a local HTTP service
    - Exposes authenticated paginated run, golden-record, and
      review-case collections plus direct run, golden-record, crosswalk,
@@ -77,14 +85,15 @@ golden records, and reporting artifacts.
      export-trigger actions
    - Exposes authenticated `healthz`, `readyz`, and `/api/v1/metrics`
      endpoints for service and batch observability
-11. `export-job-run`
+12. `export-job-run`
    - Reads a completed persisted run from the configured state store
    - Materializes a named warehouse or data-product export under the
      configured output root
    - Records auditable export execution and reuse in the state store
-12. `benchmark-run`
+13. `benchmark-run`
    - Executes the real persisted `run-all` path against a named
-     large-batch fixture
+     large-batch fixture, or a seed `run-all` plus repeated
+     `stream-refresh` batches for continuous-ingest fixtures
    - Captures phase timing and throughput metrics from the resulting run
      summary
    - Evaluates the run against a named deployment target such as
@@ -114,6 +123,8 @@ or threshold semantics are invalid.
 
 The production batch manifest contract is documented separately in
 [production-batch-manifest.md](production-batch-manifest.md).
+The event-batch contract is documented in
+[event-stream-ingestion.md](event-stream-ingestion.md).
 
 ## Persistent State
 
@@ -146,6 +157,10 @@ carry forward unaffected persisted entities unchanged. If the current
 configuration fingerprint differs from the predecessor, the runtime
 falls back to a full rebuild and records that decision in the run
 summary.
+For persisted event-driven refresh, `stream-refresh --state-db ...`
+applies an ordered JSONL batch onto any completed predecessor run and
+records the stream digest, sequence range, batch counts, and
+predecessor lineage in the persisted summary and audit trail.
 `publish-delivery --state-db ...` can then materialize a versioned
 golden/crosswalk snapshot from any completed persisted run without
 needing the original working-directory files.
@@ -166,6 +181,7 @@ and throughput metrics on named large-batch fixtures.
 The current end-to-end path writes:
 
 - `data/synthetic_sources/`
+- `data/events/` when `stream-refresh` is used
 - `data/normalized/normalized_person_records.csv`
 - `data/matches/candidate_scores.csv`
 - `data/matches/blocking_metrics.csv`
@@ -180,7 +196,10 @@ Named benchmark runs additionally write:
 
 - `dist/benchmarks/<fixture>/benchmark_report.md`
 - `dist/benchmarks/<fixture>/benchmark_summary.json`
-- `dist/benchmarks/<fixture>/run_artifacts/`
+- `dist/benchmarks/<fixture>/run_artifacts/` for batch fixtures
+- `dist/benchmarks/<fixture>/seed_run/` plus
+  `dist/benchmarks/<fixture>/stream_runs/` for continuous-ingest
+  fixtures
 
 ## Manual Review Operating Model
 
@@ -231,8 +250,8 @@ The current deployment baseline also includes:
 - a Kubernetes PostgreSQL-backed topology under `deploy/kubernetes/`
 - CI smoke validation for the single-host and Kubernetes-backed
   deployment assets
-- named benchmark fixtures and capacity targets for the supported
-  single-host container baseline
+- named batch and continuous-ingest benchmark fixtures plus capacity
+  targets for the supported single-host container baseline
 
 ## Command Example
 

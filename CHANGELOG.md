@@ -36,6 +36,10 @@ All notable changes to this project will be documented in this file.
 - Added retained container supply-chain outputs for the built image,
   including an attestation bundle, SBOM-style inventory, provenance,
   and a dependency-audit gate wired into CI.
+- Added file-backed `stream-refresh` event-batch ingestion with
+  deterministic persisted entity recomputation, copied event snapshots,
+  stream lineage in `run_summary.json`, and continuous-ingest benchmark
+  coverage.
 - Changed runtime-environment loading to resolve only the selected
   environment's secret placeholders, so compatibility and cluster
   deployments do not require unrelated environment secrets.

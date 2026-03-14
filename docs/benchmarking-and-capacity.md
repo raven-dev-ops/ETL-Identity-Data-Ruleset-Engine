@@ -11,6 +11,9 @@ python -m etl_identity_engine.cli benchmark-run --fixture scale_medium
 The benchmark runner executes the real persisted `run-all` path, then
 evaluates the resulting `run_summary.json` performance block against the
 configured capacity target for a supported deployment profile.
+For `mode: event_stream` fixtures, it seeds one persisted synthetic run,
+then executes multiple `stream-refresh` batches and emits a
+`continuous_ingest` block in `benchmark_summary.json`.
 
 ## Supported Deployment Target
 
@@ -45,6 +48,16 @@ production traffic.
     - `max_total_duration_seconds <= 30.0`
     - `min_normalize_records_per_second >= 10000.0`
     - `min_match_candidate_pairs_per_second >= 20000.0`
+- `continuous_ingest_small`
+  - `mode`: `event_stream`
+  - `profile`: `small`
+  - seed `person_count`: `96`
+  - `stream_batch_count`: `3`
+  - `stream_events_per_batch`: `12`
+  - target for `single_host_container`:
+    - `max_total_duration_seconds <= 10.0`
+    - `min_normalize_records_per_second >= 1000.0`
+    - `min_match_candidate_pairs_per_second >= 1000.0`
 
 Reference maintainer measurements on 2026-03-14 were comfortably above
 those thresholds:
@@ -68,7 +81,9 @@ By default, benchmark output is written under `dist/benchmarks/`:
 
 - `dist/benchmarks/<fixture>/benchmark_summary.json`
 - `dist/benchmarks/<fixture>/benchmark_report.md`
-- `dist/benchmarks/<fixture>/run_artifacts/`
+- `dist/benchmarks/<fixture>/run_artifacts/` for batch fixtures
+- `dist/benchmarks/<fixture>/seed_run/` for event-stream fixtures
+- `dist/benchmarks/<fixture>/stream_runs/` for event-stream fixtures
 - `dist/benchmarks/<fixture>/state/pipeline_state.sqlite`
 
 `benchmark_summary.json` includes:
@@ -92,12 +107,27 @@ throughput for:
 - `report`
 - `persist_state`
 
+For event-stream fixtures, `benchmark_summary.json` also includes
+`continuous_ingest` with:
+
+- total stream batch count
+- total event count
+- aggregate stream duration
+- aggregate events-per-second
+- the last stream run summary path
+
 ## Common Commands
 
 Run the medium regression benchmark and enforce its targets:
 
 ```bash
 python -m etl_identity_engine.cli benchmark-run --fixture scale_medium
+```
+
+Run the shipped continuous-ingest benchmark:
+
+```bash
+python -m etl_identity_engine.cli benchmark-run --fixture continuous_ingest_small
 ```
 
 Run the large benchmark but keep the artifacts even if you only want the
