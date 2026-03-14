@@ -9,11 +9,19 @@ from dataclasses import dataclass
 from pathlib import Path
 import posixpath
 import re
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 
 from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
+from etl_identity_engine.ingest.public_safety_contracts import (
+    PUBLIC_SAFETY_CONTRACT_MARKER,
+    SUPPORTED_PUBLIC_SAFETY_CONTRACTS,
+    PublicSafetyContractValidationError,
+    ValidatedPublicSafetyContractBundle,
+    validate_public_safety_contract_bundle,
+)
 from etl_identity_engine.io.read import read_dict_fieldnames, read_dict_rows
 
 
@@ -24,6 +32,9 @@ SUPPORTED_LANDING_ZONE_KINDS = frozenset({"local_filesystem", "object_storage"})
 SUPPORTED_SOURCE_FORMATS = frozenset({"csv", "parquet"})
 SUPPORTED_SOURCE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 SUPPORTED_SCHEMA_VERSIONS = {"person-v1": PERSON_HEADERS}
+SUPPORTED_SOURCE_BUNDLE_CLASSES = frozenset(
+    spec.source_system for spec in SUPPORTED_PUBLIC_SAFETY_CONTRACTS.values()
+)
 
 
 class BatchManifestValidationError(ValueError):
@@ -47,12 +58,22 @@ class BatchSourceSpec:
 
 
 @dataclass(frozen=True)
+class BatchSourceBundleSpec:
+    bundle_id: str
+    source_class: str
+    path: str
+    contract_name: str
+    contract_version: str
+
+
+@dataclass(frozen=True)
 class BatchManifest:
     manifest_version: str
     entity_type: str
     batch_id: str
     landing_zone: LandingZoneSpec
     sources: tuple[BatchSourceSpec, ...]
+    source_bundles: tuple[BatchSourceBundleSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,10 +85,30 @@ class ResolvedBatchSource:
 
 
 @dataclass(frozen=True)
+class ResolvedBatchSourceBundleFile:
+    logical_name: str
+    relative_path: str
+    format: str
+    fieldnames: tuple[str, ...]
+    row_count: int
+
+
+@dataclass(frozen=True)
+class ResolvedBatchSourceBundle:
+    spec: BatchSourceBundleSpec
+    bundle_reference: str
+    contract_name: str
+    contract_version: str
+    source_system: str
+    files: tuple[ResolvedBatchSourceBundleFile, ...]
+
+
+@dataclass(frozen=True)
 class ResolvedBatchManifest:
     manifest_path: Path
     manifest: BatchManifest
     sources: tuple[ResolvedBatchSource, ...]
+    source_bundles: tuple[ResolvedBatchSourceBundle, ...] = ()
 
     @property
     def input_paths(self) -> tuple[str, ...]:
@@ -241,19 +282,7 @@ def _load_object_storage_rows(
     source_format: str,
     storage_options: Mapping[str, str | int | float | bool],
 ) -> tuple[tuple[str, ...], list[dict[str, str]]]:
-    try:
-        import fsspec
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "Object-storage manifest inputs require `fsspec`. Install project dependencies "
-            "and any protocol-specific plugin such as `s3fs` for s3:// URIs."
-        ) from exc
-
-    try:
-        with fsspec.open(location, "rb", **storage_options) as handle:
-            payload = handle.read()
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"Input file not found: {location}") from exc
+    payload = _load_object_storage_payload(location, storage_options=storage_options)
 
     if source_format == "csv":
         text = payload.decode("utf-8")
@@ -276,11 +305,38 @@ def _load_object_storage_rows(
     raise ValueError(f"Unsupported source format: {source_format}")
 
 
+def _load_object_storage_payload(
+    location: str,
+    *,
+    storage_options: Mapping[str, str | int | float | bool],
+) -> bytes:
+    try:
+        import fsspec
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Object-storage manifest inputs require `fsspec`. Install project dependencies "
+            "and any protocol-specific plugin such as `s3fs` for s3:// URIs."
+        ) from exc
+
+    try:
+        with fsspec.open(location, "rb", **storage_options) as handle:
+            return handle.read()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Input file not found: {location}") from exc
+
+
 def _load_batch_manifest(path: Path) -> BatchManifest:
     manifest = _load_manifest_mapping(path)
     _validate_allowed_keys(
         manifest,
-        allowed_keys={"manifest_version", "entity_type", "batch_id", "landing_zone", "sources"},
+        allowed_keys={
+            "manifest_version",
+            "entity_type",
+            "batch_id",
+            "landing_zone",
+            "sources",
+            "source_bundles",
+        },
         path=path,
         context="top-level manifest",
     )
@@ -456,6 +512,97 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
             )
         )
 
+    source_bundles_value = manifest.get("source_bundles", [])
+    if source_bundles_value is None:
+        source_bundles_value = []
+    if not isinstance(source_bundles_value, list):
+        raise _manifest_error(path, "manifest.source_bundles must be a list when present")
+
+    source_bundles: list[BatchSourceBundleSpec] = []
+    seen_bundle_ids: set[str] = set()
+    for index, bundle_value in enumerate(source_bundles_value):
+        context = f"source_bundles[{index}]"
+        if not isinstance(bundle_value, Mapping):
+            raise _manifest_error(path, f"{context} must be a mapping")
+        _validate_allowed_keys(
+            bundle_value,
+            allowed_keys={"bundle_id", "source_class", "path", "contract_name", "contract_version"},
+            path=path,
+            context=context,
+        )
+
+        bundle_id = _require_non_empty_string(
+            bundle_value,
+            "bundle_id",
+            path=path,
+            context=context,
+        )
+        if not SUPPORTED_SOURCE_ID_PATTERN.match(bundle_id):
+            raise _manifest_error(
+                path,
+                f"{context}.bundle_id must match {SUPPORTED_SOURCE_ID_PATTERN.pattern!r}",
+            )
+        if bundle_id in seen_bundle_ids:
+            raise _manifest_error(path, f"{context}.bundle_id duplicates {bundle_id!r}")
+        seen_bundle_ids.add(bundle_id)
+
+        source_class = _require_non_empty_string(
+            bundle_value,
+            "source_class",
+            path=path,
+            context=context,
+        ).lower()
+        if source_class not in SUPPORTED_SOURCE_BUNDLE_CLASSES:
+            raise _manifest_error(
+                path,
+                f"{context}.source_class must be one of: {', '.join(sorted(SUPPORTED_SOURCE_BUNDLE_CLASSES))}",
+            )
+
+        contract_name = _require_non_empty_string(
+            bundle_value,
+            "contract_name",
+            path=path,
+            context=context,
+        )
+        contract_spec = SUPPORTED_PUBLIC_SAFETY_CONTRACTS.get(contract_name)
+        if contract_spec is None:
+            raise _manifest_error(
+                path,
+                f"{context}.contract_name must be one of: {', '.join(sorted(SUPPORTED_PUBLIC_SAFETY_CONTRACTS))}",
+            )
+
+        contract_version = _require_non_empty_string(
+            bundle_value,
+            "contract_version",
+            path=path,
+            context=context,
+        )
+        if contract_version != contract_spec.contract_version:
+            raise _manifest_error(
+                path,
+                f"{context}.contract_version must be {contract_spec.contract_version!r} for {contract_name!r}",
+            )
+        if source_class != contract_spec.source_system:
+            raise _manifest_error(
+                path,
+                f"{context}.source_class must be {contract_spec.source_system!r} for {contract_name!r}",
+            )
+
+        source_bundles.append(
+            BatchSourceBundleSpec(
+                bundle_id=bundle_id,
+                source_class=source_class,
+                path=_require_non_empty_string(
+                    bundle_value,
+                    "path",
+                    path=path,
+                    context=context,
+                ),
+                contract_name=contract_name,
+                contract_version=contract_version,
+            )
+        )
+
     return BatchManifest(
         manifest_version=manifest_version,
         entity_type=entity_type,
@@ -466,6 +613,7 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
             storage_options=storage_options,
         ),
         sources=tuple(sources),
+        source_bundles=tuple(source_bundles),
     )
 
 
@@ -508,6 +656,185 @@ def _resolve_object_source_location(
             ),
         )
     return resolved_location
+
+
+def _resolve_local_bundle_path(
+    manifest_path: Path,
+    landing_zone: LandingZoneSpec,
+    bundle: BatchSourceBundleSpec,
+) -> Path:
+    bundle_path = Path(bundle.path)
+    if bundle_path.is_absolute():
+        return bundle_path
+    return _resolve_local_base_path(manifest_path, landing_zone) / bundle_path
+
+
+def _resolve_object_bundle_location(
+    landing_zone: LandingZoneSpec,
+    bundle: BatchSourceBundleSpec,
+) -> str:
+    return _resolve_object_uri(landing_zone.base_location, bundle.path)
+
+
+def _build_resolved_source_bundle(
+    bundle: BatchSourceBundleSpec,
+    *,
+    bundle_reference: str,
+    validated_bundle: ValidatedPublicSafetyContractBundle,
+) -> ResolvedBatchSourceBundle:
+    return ResolvedBatchSourceBundle(
+        spec=bundle,
+        bundle_reference=bundle_reference,
+        contract_name=validated_bundle.contract_name,
+        contract_version=validated_bundle.contract_version,
+        source_system=validated_bundle.source_system,
+        files=tuple(
+            ResolvedBatchSourceBundleFile(
+                logical_name=file.logical_name,
+                relative_path=str(file.path.relative_to(validated_bundle.bundle_dir)).replace("\\", "/"),
+                format=file.format,
+                fieldnames=file.fieldnames,
+                row_count=file.row_count,
+            )
+            for file in validated_bundle.files
+        ),
+    )
+
+
+def _validate_resolved_source_bundle(
+    manifest_path: Path,
+    bundle: BatchSourceBundleSpec,
+    validated_bundle: ValidatedPublicSafetyContractBundle,
+) -> None:
+    if validated_bundle.contract_name != bundle.contract_name:
+        raise _manifest_error(
+            manifest_path,
+            (
+                f"source_bundle {bundle.bundle_id!r} declares contract_name "
+                f"{bundle.contract_name!r} but the bundle marker resolved to "
+                f"{validated_bundle.contract_name!r}"
+            ),
+        )
+    if validated_bundle.contract_version != bundle.contract_version:
+        raise _manifest_error(
+            manifest_path,
+            (
+                f"source_bundle {bundle.bundle_id!r} declares contract_version "
+                f"{bundle.contract_version!r} but the bundle marker resolved to "
+                f"{validated_bundle.contract_version!r}"
+            ),
+        )
+    if validated_bundle.source_system != bundle.source_class:
+        raise _manifest_error(
+            manifest_path,
+            (
+                f"source_bundle {bundle.bundle_id!r} declares source_class "
+                f"{bundle.source_class!r} but the bundle contract resolved to "
+                f"{validated_bundle.source_system!r}"
+            ),
+        )
+
+
+def _read_object_storage_bundle_marker(
+    manifest_path: Path,
+    *,
+    bundle: BatchSourceBundleSpec,
+    bundle_location: str,
+    storage_options: Mapping[str, str | int | float | bool],
+) -> tuple[bytes, Mapping[str, object]]:
+    marker_location = _resolve_object_uri(bundle_location, PUBLIC_SAFETY_CONTRACT_MARKER)
+    try:
+        marker_payload = _load_object_storage_payload(
+            marker_location,
+            storage_options=storage_options,
+        )
+    except FileNotFoundError as exc:
+        raise _manifest_error(
+            manifest_path,
+            f"source_bundle {bundle.bundle_id!r} is missing {PUBLIC_SAFETY_CONTRACT_MARKER}",
+        ) from exc
+
+    try:
+        marker = yaml.safe_load(marker_payload.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise _manifest_error(
+            manifest_path,
+            f"source_bundle {bundle.bundle_id!r} contains a non-UTF-8 contract marker",
+        ) from exc
+
+    if not isinstance(marker, Mapping):
+        raise _manifest_error(
+            manifest_path,
+            f"source_bundle {bundle.bundle_id!r} contract marker must contain a mapping",
+        )
+    return marker_payload, marker
+
+
+def _materialize_object_storage_bundle(
+    manifest_path: Path,
+    *,
+    bundle: BatchSourceBundleSpec,
+    bundle_location: str,
+    storage_options: Mapping[str, str | int | float | bool],
+) -> ValidatedPublicSafetyContractBundle:
+    marker_payload, marker = _read_object_storage_bundle_marker(
+        manifest_path,
+        bundle=bundle,
+        bundle_location=bundle_location,
+        storage_options=storage_options,
+    )
+    file_mapping = marker.get("files")
+    if not isinstance(file_mapping, Mapping) or not file_mapping:
+        raise _manifest_error(
+            manifest_path,
+            f"source_bundle {bundle.bundle_id!r} contract marker must contain a non-empty files mapping",
+        )
+
+    with TemporaryDirectory(prefix="etl-identity-engine-bundle-") as temp_dir_name:
+        staged_bundle_dir = Path(temp_dir_name)
+        marker_path = staged_bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
+        marker_path.write_bytes(marker_payload)
+
+        for logical_name, relative_path_value in file_mapping.items():
+            if not isinstance(logical_name, str) or not logical_name.strip():
+                raise _manifest_error(
+                    manifest_path,
+                    f"source_bundle {bundle.bundle_id!r} contract marker contains a non-string file key",
+                )
+            if not isinstance(relative_path_value, str) or not relative_path_value.strip():
+                raise _manifest_error(
+                    manifest_path,
+                    (
+                        f"source_bundle {bundle.bundle_id!r} contract marker file entry "
+                        f"{logical_name!r} must be a non-empty string"
+                    ),
+                )
+            relative_path = relative_path_value.strip()
+            source_location = _resolve_object_uri(bundle_location, relative_path)
+            try:
+                payload = _load_object_storage_payload(
+                    source_location,
+                    storage_options=storage_options,
+                )
+            except FileNotFoundError as exc:
+                raise _manifest_error(
+                    manifest_path,
+                    (
+                        f"source_bundle {bundle.bundle_id!r} is missing declared bundle file "
+                        f"{relative_path!r}"
+                    ),
+                ) from exc
+            staged_path = staged_bundle_dir / Path(relative_path)
+            staged_path.parent.mkdir(parents=True, exist_ok=True)
+            staged_path.write_bytes(payload)
+
+        try:
+            return validate_public_safety_contract_bundle(staged_bundle_dir)
+        except PublicSafetyContractValidationError as exc:
+            raise _manifest_error(
+                manifest_path,
+                f"source_bundle {bundle.bundle_id!r} failed contract validation: {exc}",
+            ) from exc
 
 
 def _validate_source_rows(
@@ -578,8 +905,50 @@ def resolve_batch_manifest(manifest_path: Path) -> ResolvedBatchManifest:
             )
         )
 
+    resolved_source_bundles: list[ResolvedBatchSourceBundle] = []
+    for bundle in manifest.source_bundles:
+        if manifest.landing_zone.kind == "local_filesystem":
+            bundle_path = _resolve_local_bundle_path(
+                resolved_manifest_path,
+                manifest.landing_zone,
+                bundle,
+            )
+            try:
+                validated_bundle = validate_public_safety_contract_bundle(bundle_path)
+            except PublicSafetyContractValidationError as exc:
+                raise _manifest_error(
+                    resolved_manifest_path,
+                    f"source_bundle {bundle.bundle_id!r} failed contract validation: {exc}",
+                ) from exc
+            bundle_reference = str(bundle_path)
+        else:
+            bundle_reference = _resolve_object_bundle_location(
+                manifest.landing_zone,
+                bundle,
+            )
+            validated_bundle = _materialize_object_storage_bundle(
+                resolved_manifest_path,
+                bundle=bundle,
+                bundle_location=bundle_reference,
+                storage_options=manifest.landing_zone.storage_options,
+            )
+
+        _validate_resolved_source_bundle(
+            resolved_manifest_path,
+            bundle,
+            validated_bundle,
+        )
+        resolved_source_bundles.append(
+            _build_resolved_source_bundle(
+                bundle,
+                bundle_reference=bundle_reference,
+                validated_bundle=validated_bundle,
+            )
+        )
+
     return ResolvedBatchManifest(
         manifest_path=resolved_manifest_path,
         manifest=manifest,
         sources=tuple(resolved_sources),
+        source_bundles=tuple(resolved_source_bundles),
     )

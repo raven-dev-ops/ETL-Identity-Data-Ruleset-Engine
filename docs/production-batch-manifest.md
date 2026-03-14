@@ -3,7 +3,9 @@
 The runtime now supports a stable manifest contract for landed person
 batches. This is the first production-readiness input surface: it
 defines what a batch must declare before normalization or `run-all`
-will read any real input files.
+will read any real input files. The manifest can now also declare named
+CAD and RMS source bundles so public-safety onboarding validates those
+contract-bound payloads before the person pipeline starts.
 
 ## Supported Contract
 
@@ -21,6 +23,10 @@ will read any real input files.
 - `batch_id`
 - `landing_zone`
 - `sources`
+
+Optional top-level fields:
+
+- `source_bundles`
 
 ## Landing-Zone Contract
 
@@ -52,6 +58,31 @@ Each entry in `sources` must contain:
 `source_id` is the operator-facing identifier for the inbound source and
 must match the `source_system` values found in the landed file when rows
 are present.
+
+## Source Bundle Contract
+
+Each entry in `source_bundles` must contain:
+
+- `bundle_id`
+- `source_class`
+- `path`
+- `contract_name`
+- `contract_version`
+
+Supported `source_class` values:
+
+- `cad`
+- `rms`
+
+Supported contract identities:
+
+- `cad_call_for_service` `v1`
+- `rms_report_person` `v1`
+
+`source_bundles` let a manifest declare full CAD or RMS onboarding
+bundles in addition to the core landed person sources. The current
+runtime validates those bundles during manifest resolution, but it does
+not yet ingest incident activity from them into persisted state.
 
 ## Supported Schema
 
@@ -158,17 +189,82 @@ sources:
       - conflict_types
 ```
 
+Manifest example with public-safety source bundles:
+
+```yaml
+manifest_version: "1.0"
+entity_type: person
+batch_id: inbound-2026-03-13
+landing_zone:
+  kind: local_filesystem
+  base_path: ./landing
+sources:
+  - source_id: source_a
+    path: agency_a.csv
+    format: csv
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+  - source_id: source_b
+    path: agency_b.parquet
+    format: parquet
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+source_bundles:
+  - bundle_id: cad_primary
+    source_class: cad
+    path: cad_bundle
+    contract_name: cad_call_for_service
+    contract_version: v1
+  - bundle_id: rms_primary
+    source_class: rms
+    path: rms_bundle
+    contract_name: rms_report_person
+    contract_version: v1
+```
+
 ## Validation Behavior
 
 Before normalization starts, the runtime validates:
 
 - manifest shape and supported values
 - source ID syntax and uniqueness
+- source-bundle ID syntax and uniqueness
 - source file presence
 - file-format and extension alignment
 - schema-version compatibility
 - required-column presence
 - `source_system` values against `source_id`
+- declared CAD/RMS bundle contract identity and source class
+- bundle required-file completeness and row-shape validation
+- incident/link referential integrity inside each declared CAD/RMS bundle
 
 Any failure aborts the run before partial normalized output is written.
 

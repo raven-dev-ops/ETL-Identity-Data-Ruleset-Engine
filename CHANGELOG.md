@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
   public-safety source-bundle contracts, including a contract marker
   file, required file-role validation, referential integrity checks, and
   a `validate-public-safety-contract` CLI command.
+- Extended the production batch manifest model with named `source_bundles`
+  for CAD and RMS onboarding so manifests can validate contract-bound
+  public-safety bundles alongside landed person sources before runtime
+  execution.
 
 ## [0.9.2] - 2026-03-14
 

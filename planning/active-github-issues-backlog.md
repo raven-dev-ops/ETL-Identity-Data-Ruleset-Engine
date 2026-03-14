@@ -87,7 +87,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 107) Extend the manifest model with named CAD/RMS source bundles and source-class validation
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.0.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: #105, #106
