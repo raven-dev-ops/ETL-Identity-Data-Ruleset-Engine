@@ -62,6 +62,7 @@ ETL-Identity-Data-Ruleset-Engine/
   docs/
     architecture.md
     benchmarking-and-capacity.md
+    cad-source-contract.md
     compatibility-policy.md
     container-deployment.md
     cjis-deployment-baseline.md
@@ -82,6 +83,7 @@ ETL-Identity-Data-Ruleset-Engine/
     recovery-runbooks.md
     release-process.md
     review-workflow.md
+    rms-source-contract.md
     runtime-environments.md
     service-api.md
     standards-mapping.md
@@ -147,6 +149,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_pipeline_e2e.py
     test_public_safety_demo_django.py
     test_public_safety_demo.py
+    test_public_safety_contracts.py
     test_quality.py
     test_release_hardening_check.py
     test_repo_scripts.py
@@ -198,5 +201,6 @@ The current public line is now explicitly scoped around:
   aligned with the documented micro-batch operator model
 - execute the new post-`v0.9.2` backlog cycle tracked in
   `planning/active-github-issues-backlog.md`, focused on formal CAD/RMS
-  source contracts and customer pilot packaging
+  source contracts, public-safety onboarding, and customer pilot
+  packaging
 

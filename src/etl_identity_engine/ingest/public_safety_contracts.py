@@ -1,0 +1,525 @@
+"""Versioned CAD/RMS public-safety source bundle contracts."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+from etl_identity_engine.generate.synth_generator import (
+    INCIDENT_HEADERS,
+    INCIDENT_LINK_HEADERS,
+    PERSON_HEADERS,
+)
+from etl_identity_engine.io.read import read_dict_fieldnames, read_dict_rows
+
+
+PUBLIC_SAFETY_CONTRACT_MARKER = "contract_manifest.yml"
+PUBLIC_SAFETY_CONTRACT_FORMATS = frozenset({".csv", ".parquet"})
+CAD_CALL_FOR_SERVICE_CONTRACT_NAME = "cad_call_for_service"
+RMS_REPORT_PERSON_CONTRACT_NAME = "rms_report_person"
+PUBLIC_SAFETY_CONTRACT_VERSION_V1 = "v1"
+
+
+class PublicSafetyContractValidationError(ValueError):
+    """Raised when a CAD or RMS source bundle is incomplete or inconsistent."""
+
+
+@dataclass(frozen=True)
+class PublicSafetyContractFileSpec:
+    logical_name: str
+    default_filename: str
+    required_columns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PublicSafetyContractSpec:
+    contract_name: str
+    contract_version: str
+    source_system: str
+    file_specs: tuple[PublicSafetyContractFileSpec, ...]
+
+    @property
+    def file_spec_by_name(self) -> dict[str, PublicSafetyContractFileSpec]:
+        return {spec.logical_name: spec for spec in self.file_specs}
+
+
+@dataclass(frozen=True)
+class ValidatedPublicSafetyContractFile:
+    logical_name: str
+    path: Path
+    format: str
+    fieldnames: tuple[str, ...]
+    row_count: int
+
+
+@dataclass(frozen=True)
+class ValidatedPublicSafetyContractBundle:
+    bundle_dir: Path
+    marker_path: Path
+    contract_name: str
+    contract_version: str
+    source_system: str
+    files: tuple[ValidatedPublicSafetyContractFile, ...]
+
+    def to_summary(self) -> dict[str, object]:
+        return {
+            "bundle_dir": str(self.bundle_dir),
+            "marker_path": str(self.marker_path),
+            "contract_name": self.contract_name,
+            "contract_version": self.contract_version,
+            "source_system": self.source_system,
+            "files": {
+                file.logical_name: {
+                    "path": str(file.path),
+                    "relative_path": str(file.path.relative_to(self.bundle_dir)).replace("\\", "/"),
+                    "format": file.format,
+                    "row_count": file.row_count,
+                    "fieldnames": list(file.fieldnames),
+                }
+                for file in self.files
+            },
+        }
+
+
+CAD_CALL_FOR_SERVICE_CONTRACT = PublicSafetyContractSpec(
+    contract_name=CAD_CALL_FOR_SERVICE_CONTRACT_NAME,
+    contract_version=PUBLIC_SAFETY_CONTRACT_VERSION_V1,
+    source_system="cad",
+    file_specs=(
+        PublicSafetyContractFileSpec(
+            logical_name="person_records",
+            default_filename="cad_person_records.csv",
+            required_columns=PERSON_HEADERS,
+        ),
+        PublicSafetyContractFileSpec(
+            logical_name="incident_records",
+            default_filename="cad_incident_records.csv",
+            required_columns=INCIDENT_HEADERS,
+        ),
+        PublicSafetyContractFileSpec(
+            logical_name="incident_person_links",
+            default_filename="cad_incident_person_links.csv",
+            required_columns=INCIDENT_LINK_HEADERS,
+        ),
+    ),
+)
+
+RMS_REPORT_PERSON_CONTRACT = PublicSafetyContractSpec(
+    contract_name=RMS_REPORT_PERSON_CONTRACT_NAME,
+    contract_version=PUBLIC_SAFETY_CONTRACT_VERSION_V1,
+    source_system="rms",
+    file_specs=(
+        PublicSafetyContractFileSpec(
+            logical_name="person_records",
+            default_filename="rms_person_records.csv",
+            required_columns=PERSON_HEADERS,
+        ),
+        PublicSafetyContractFileSpec(
+            logical_name="incident_records",
+            default_filename="rms_incident_records.csv",
+            required_columns=INCIDENT_HEADERS,
+        ),
+        PublicSafetyContractFileSpec(
+            logical_name="incident_person_links",
+            default_filename="rms_incident_person_links.csv",
+            required_columns=INCIDENT_LINK_HEADERS,
+        ),
+    ),
+)
+
+SUPPORTED_PUBLIC_SAFETY_CONTRACTS = {
+    CAD_CALL_FOR_SERVICE_CONTRACT.contract_name: CAD_CALL_FOR_SERVICE_CONTRACT,
+    RMS_REPORT_PERSON_CONTRACT.contract_name: RMS_REPORT_PERSON_CONTRACT,
+}
+
+
+def _bundle_error(bundle_dir: Path, message: str) -> PublicSafetyContractValidationError:
+    return PublicSafetyContractValidationError(f"{bundle_dir.name}: {message}")
+
+
+def _load_marker_mapping(marker_path: Path) -> Mapping[str, object]:
+    if not marker_path.exists():
+        raise PublicSafetyContractValidationError(
+            f"{marker_path.parent.name}: missing {PUBLIC_SAFETY_CONTRACT_MARKER}"
+        )
+
+    data = yaml.safe_load(marker_path.read_text(encoding="utf-8"))
+    if not isinstance(data, Mapping):
+        raise PublicSafetyContractValidationError(
+            f"{marker_path.parent.name}: {PUBLIC_SAFETY_CONTRACT_MARKER} must contain a mapping"
+        )
+    return data
+
+
+def _require_non_empty_string(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    bundle_dir: Path,
+    context: str,
+) -> str:
+    value = mapping.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise _bundle_error(bundle_dir, f"{context}.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _require_string_mapping(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    bundle_dir: Path,
+    context: str,
+) -> dict[str, str]:
+    value = mapping.get(key)
+    if not isinstance(value, Mapping):
+        raise _bundle_error(bundle_dir, f"{context}.{key} must be a mapping")
+
+    resolved: dict[str, str] = {}
+    for item_key, item_value in value.items():
+        if not isinstance(item_key, str) or not item_key.strip():
+            raise _bundle_error(bundle_dir, f"{context}.{key} contains a non-string key")
+        if not isinstance(item_value, str) or not item_value.strip():
+            raise _bundle_error(
+                bundle_dir,
+                f"{context}.{key}.{item_key} must be a non-empty string",
+            )
+        resolved[item_key.strip()] = item_value.strip()
+    return resolved
+
+
+def _resolve_bundle_file_path(bundle_dir: Path, relative_path: str) -> Path:
+    candidate = Path(relative_path)
+    if candidate.is_absolute():
+        raise _bundle_error(bundle_dir, f"contract file paths must be relative: {relative_path}")
+
+    resolved = (bundle_dir / candidate).resolve()
+    bundle_root = bundle_dir.resolve()
+    try:
+        resolved.relative_to(bundle_root)
+    except ValueError as exc:
+        raise _bundle_error(
+            bundle_dir,
+            f"contract file path escapes the bundle root: {relative_path}",
+        ) from exc
+    return resolved
+
+
+def _validate_required_file_keys(
+    bundle_dir: Path,
+    spec: PublicSafetyContractSpec,
+    files: Mapping[str, str],
+) -> None:
+    expected = set(spec.file_spec_by_name)
+    actual = set(files)
+    missing = sorted(expected - actual)
+    if missing:
+        raise _bundle_error(
+            bundle_dir,
+            f"contract files mapping is missing required entries: {', '.join(missing)}",
+        )
+    unexpected = sorted(actual - expected)
+    if unexpected:
+        raise _bundle_error(
+            bundle_dir,
+            f"contract files mapping contains unsupported entries: {', '.join(unexpected)}",
+        )
+
+
+def _validate_required_columns(
+    bundle_dir: Path,
+    logical_name: str,
+    path: Path,
+    required_columns: tuple[str, ...],
+) -> tuple[tuple[str, ...], list[dict[str, str]]]:
+    try:
+        fieldnames = read_dict_fieldnames(path)
+        rows = read_dict_rows(path)
+    except FileNotFoundError as exc:
+        raise _bundle_error(
+            bundle_dir,
+            f"contract file '{logical_name}' not found: {path.relative_to(bundle_dir)}",
+        ) from exc
+
+    missing_columns = [column for column in required_columns if column not in fieldnames]
+    if missing_columns:
+        raise _bundle_error(
+            bundle_dir,
+            f"contract file '{logical_name}' is missing required columns: "
+            f"{', '.join(missing_columns)}",
+        )
+    return fieldnames, rows
+
+
+def _require_non_empty_values(
+    bundle_dir: Path,
+    rows: list[dict[str, str]],
+    *,
+    dataset_name: str,
+    field_name: str,
+) -> None:
+    blank_rows = sum(1 for row in rows if not row.get(field_name, "").strip())
+    if blank_rows:
+        raise _bundle_error(
+            bundle_dir,
+            f"{dataset_name} contains {blank_rows} row(s) with blank {field_name}",
+        )
+
+
+def _validate_unique_values(
+    bundle_dir: Path,
+    rows: list[dict[str, str]],
+    *,
+    dataset_name: str,
+    field_name: str,
+) -> None:
+    _require_non_empty_values(bundle_dir, rows, dataset_name=dataset_name, field_name=field_name)
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for row in rows:
+        value = row.get(field_name, "").strip()
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    if duplicates:
+        raise _bundle_error(
+            bundle_dir,
+            f"{dataset_name} contains duplicate {field_name} values: {', '.join(sorted(duplicates))}",
+        )
+
+
+def _validate_source_system_values(
+    bundle_dir: Path,
+    rows: list[dict[str, str]],
+    *,
+    dataset_name: str,
+    expected_source_system: str,
+) -> None:
+    _require_non_empty_values(bundle_dir, rows, dataset_name=dataset_name, field_name="source_system")
+    mismatched = sorted(
+        {
+            row.get("source_system", "").strip()
+            for row in rows
+            if row.get("source_system", "").strip() != expected_source_system
+        }
+    )
+    if mismatched:
+        raise _bundle_error(
+            bundle_dir,
+            f"{dataset_name} contains source_system values that do not match the contract: "
+            f"{', '.join(mismatched)}",
+        )
+
+
+def _validate_link_references(
+    bundle_dir: Path,
+    *,
+    person_rows: list[dict[str, str]],
+    incident_rows: list[dict[str, str]],
+    link_rows: list[dict[str, str]],
+) -> None:
+    person_by_source_record = {
+        row.get("source_record_id", "").strip(): row.get("person_entity_id", "").strip()
+        for row in person_rows
+    }
+    incident_ids = {row.get("incident_id", "").strip() for row in incident_rows}
+
+    missing_incident_ids: set[str] = set()
+    missing_source_record_ids: set[str] = set()
+    mismatched_person_entities: set[str] = set()
+
+    for row in link_rows:
+        incident_id = row.get("incident_id", "").strip()
+        source_record_id = row.get("source_record_id", "").strip()
+        person_entity_id = row.get("person_entity_id", "").strip()
+
+        if incident_id not in incident_ids:
+            missing_incident_ids.add(incident_id)
+        if source_record_id not in person_by_source_record:
+            missing_source_record_ids.add(source_record_id)
+            continue
+        if person_entity_id != person_by_source_record[source_record_id]:
+            mismatched_person_entities.add(
+                row.get("incident_person_link_id", "").strip() or source_record_id
+            )
+
+    if missing_incident_ids:
+        raise _bundle_error(
+            bundle_dir,
+            "incident_person_links references unknown incident_id values: "
+            + ", ".join(sorted(missing_incident_ids)),
+        )
+    if missing_source_record_ids:
+        raise _bundle_error(
+            bundle_dir,
+            "incident_person_links references unknown source_record_id values: "
+            + ", ".join(sorted(missing_source_record_ids)),
+        )
+    if mismatched_person_entities:
+        raise _bundle_error(
+            bundle_dir,
+            "incident_person_links contains person_entity_id values that do not match the "
+            "referenced source record for link ids: "
+            + ", ".join(sorted(mismatched_person_entities)),
+        )
+
+
+def validate_public_safety_contract_bundle(bundle_dir: Path) -> ValidatedPublicSafetyContractBundle:
+    """Validate a versioned CAD or RMS source bundle and return its summary."""
+    if not bundle_dir.exists():
+        raise FileNotFoundError(f"Public-safety bundle not found: {bundle_dir}")
+    if not bundle_dir.is_dir():
+        raise NotADirectoryError(f"Public-safety bundle must be a directory: {bundle_dir}")
+
+    marker_path = bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
+    marker = _load_marker_mapping(marker_path)
+
+    unexpected_keys = sorted(set(marker) - {"contract_name", "contract_version", "files"})
+    if unexpected_keys:
+        raise _bundle_error(
+            bundle_dir,
+            f"{PUBLIC_SAFETY_CONTRACT_MARKER} contains unsupported keys: {', '.join(unexpected_keys)}",
+        )
+
+    contract_name = _require_non_empty_string(
+        marker,
+        "contract_name",
+        bundle_dir=bundle_dir,
+        context="contract manifest",
+    )
+    contract_version = _require_non_empty_string(
+        marker,
+        "contract_version",
+        bundle_dir=bundle_dir,
+        context="contract manifest",
+    )
+    file_mapping = _require_string_mapping(
+        marker,
+        "files",
+        bundle_dir=bundle_dir,
+        context="contract manifest",
+    )
+
+    spec = SUPPORTED_PUBLIC_SAFETY_CONTRACTS.get(contract_name)
+    if spec is None:
+        raise _bundle_error(bundle_dir, f"unsupported contract_name: {contract_name}")
+    if contract_version != spec.contract_version:
+        raise _bundle_error(
+            bundle_dir,
+            f"unsupported {contract_name} contract_version: {contract_version}",
+        )
+
+    _validate_required_file_keys(bundle_dir, spec, file_mapping)
+
+    validated_files: list[ValidatedPublicSafetyContractFile] = []
+    rows_by_logical_name: dict[str, list[dict[str, str]]] = {}
+
+    for file_spec in spec.file_specs:
+        relative_path = file_mapping[file_spec.logical_name]
+        resolved_path = _resolve_bundle_file_path(bundle_dir, relative_path)
+        if resolved_path.suffix.lower() not in PUBLIC_SAFETY_CONTRACT_FORMATS:
+            raise _bundle_error(
+                bundle_dir,
+                f"contract file '{file_spec.logical_name}' must be CSV or Parquet: {relative_path}",
+            )
+        fieldnames, rows = _validate_required_columns(
+            bundle_dir,
+            file_spec.logical_name,
+            resolved_path,
+            file_spec.required_columns,
+        )
+        validated_files.append(
+            ValidatedPublicSafetyContractFile(
+                logical_name=file_spec.logical_name,
+                path=resolved_path,
+                format=resolved_path.suffix.lower().lstrip("."),
+                fieldnames=fieldnames,
+                row_count=len(rows),
+            )
+        )
+        rows_by_logical_name[file_spec.logical_name] = rows
+
+    person_rows = rows_by_logical_name["person_records"]
+    incident_rows = rows_by_logical_name["incident_records"]
+    link_rows = rows_by_logical_name["incident_person_links"]
+
+    _validate_unique_values(
+        bundle_dir,
+        person_rows,
+        dataset_name="person_records",
+        field_name="source_record_id",
+    )
+    _validate_unique_values(
+        bundle_dir,
+        incident_rows,
+        dataset_name="incident_records",
+        field_name="incident_id",
+    )
+    _validate_unique_values(
+        bundle_dir,
+        link_rows,
+        dataset_name="incident_person_links",
+        field_name="incident_person_link_id",
+    )
+
+    _require_non_empty_values(
+        bundle_dir,
+        person_rows,
+        dataset_name="person_records",
+        field_name="person_entity_id",
+    )
+    _require_non_empty_values(
+        bundle_dir,
+        incident_rows,
+        dataset_name="incident_records",
+        field_name="incident_id",
+    )
+    _require_non_empty_values(
+        bundle_dir,
+        link_rows,
+        dataset_name="incident_person_links",
+        field_name="incident_id",
+    )
+    _require_non_empty_values(
+        bundle_dir,
+        link_rows,
+        dataset_name="incident_person_links",
+        field_name="source_record_id",
+    )
+    _require_non_empty_values(
+        bundle_dir,
+        link_rows,
+        dataset_name="incident_person_links",
+        field_name="person_entity_id",
+    )
+
+    _validate_source_system_values(
+        bundle_dir,
+        person_rows,
+        dataset_name="person_records",
+        expected_source_system=spec.source_system,
+    )
+    _validate_source_system_values(
+        bundle_dir,
+        incident_rows,
+        dataset_name="incident_records",
+        expected_source_system=spec.source_system,
+    )
+    _validate_link_references(
+        bundle_dir,
+        person_rows=person_rows,
+        incident_rows=incident_rows,
+        link_rows=link_rows,
+    )
+
+    return ValidatedPublicSafetyContractBundle(
+        bundle_dir=bundle_dir.resolve(),
+        marker_path=marker_path.resolve(),
+        contract_name=contract_name,
+        contract_version=contract_version,
+        source_system=spec.source_system,
+        files=tuple(validated_files),
+    )

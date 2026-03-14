@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added versioned `cad_call_for_service` and `rms_report_person`
+  public-safety source-bundle contracts, including a contract marker
+  file, required file-role validation, referential integrity checks, and
+  a `validate-public-safety-contract` CLI command.
+
 ## [0.9.2] - 2026-03-14
 
 - Added shared observability redaction for structured logs and persisted

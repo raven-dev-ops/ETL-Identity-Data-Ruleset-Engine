@@ -101,3 +101,30 @@ Constraints:
 Generator supports both `CSV` and `Parquet` outputs for each dataset
 from a single command invocation.
 
+## Versioned Public-Safety Bundle Contracts
+
+The repo now also ships versioned bundle contracts for public-safety
+source onboarding:
+
+- `cad_call_for_service` `v1`
+- `rms_report_person` `v1`
+
+Each bundle is anchored by `contract_manifest.yml` plus three declared
+files:
+
+- `person_records`
+- `incident_records`
+- `incident_person_links`
+
+Those bundles reuse the row shapes documented above, but the contract
+layer adds:
+
+- bundle-level `contract_name` and `contract_version` markers
+- explicit file-role mapping
+- `source_system` alignment by source class
+- file completeness and required-column validation
+- link-to-incident and link-to-person integrity checks
+
+See [CAD Source Contract](cad-source-contract.md) and
+[RMS Source Contract](rms-source-contract.md).
+

@@ -20,7 +20,9 @@ also supports manifest-driven local and object-storage-compatible batch
 inputs for production-style evaluation. Teams can still explore
 identity-resolution techniques safely with synthetic data, then validate
 the same staged runtime against landed CSV or Parquet batches under an
-explicit manifest contract.
+explicit manifest contract. The public-safety slice now also ships
+versioned CAD and RMS bundle contracts so source-system owners can
+validate onboarding extracts before they are wired into the runtime.
 
 ## Core Concepts
 
@@ -186,6 +188,7 @@ is included in the repository.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [CAD Source Contract](docs/cad-source-contract.md)
 - [Data Model](docs/data-model.md)
 - [Normalization](docs/normalization.md)
 - [Production Batch Manifest](docs/production-batch-manifest.md)
@@ -210,6 +213,7 @@ is included in the repository.
 - [Public Safety Demo](docs/public-safety-demo.md)
 - [Production Operating Model](docs/production-operating-model.md)
 - [Release Process](docs/release-process.md)
+- [RMS Source Contract](docs/rms-source-contract.md)
 - [Standards Mapping](docs/standards-mapping.md)
 
 ## Maintainer Release Bundle

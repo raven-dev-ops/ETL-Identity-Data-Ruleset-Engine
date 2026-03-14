@@ -50,7 +50,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 105) Add versioned CAD call-for-service source contracts and validators
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.0.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: none
@@ -68,7 +68,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 106) Add versioned RMS report/person source contracts and validators
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.0.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: none

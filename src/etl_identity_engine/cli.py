@@ -27,6 +27,10 @@ from etl_identity_engine.ingest.manifest import (
     peek_manifest_batch_id,
     resolve_batch_manifest,
 )
+from etl_identity_engine.ingest.public_safety_contracts import (
+    PUBLIC_SAFETY_CONTRACT_MARKER,
+    validate_public_safety_contract_bundle,
+)
 from etl_identity_engine.ingest.stream_events import ResolvedStreamEventBatch, resolve_stream_event_batch
 from etl_identity_engine.ingest.replay_bundle import (
     REPLAY_BUNDLE_RESTORE_MODE,
@@ -1278,6 +1282,11 @@ def _cmd_public_safety_demo(args: argparse.Namespace) -> None:
     )
     if not wrote_outputs:
         raise FileNotFoundError("No public-safety demo inputs were found")
+
+
+def _cmd_validate_public_safety_contract(args: argparse.Namespace) -> None:
+    validated = validate_public_safety_contract_bundle(Path(args.bundle_dir))
+    print(json.dumps(validated.to_summary(), indent=2, sort_keys=True))
 
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
@@ -3721,6 +3730,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output directory for the public-safety demo artifacts. Defaults under data/public_safety_demo/.",
     )
     public_safety_demo_parser.set_defaults(func=_cmd_public_safety_demo)
+
+    validate_public_safety_contract_parser = subparsers.add_parser(
+        "validate-public-safety-contract",
+        help="Validate a versioned CAD or RMS source-bundle contract.",
+    )
+    validate_public_safety_contract_parser.add_argument(
+        "--bundle-dir",
+        required=True,
+        help=(
+            "Path to a CAD or RMS source bundle directory containing "
+            f"{PUBLIC_SAFETY_CONTRACT_MARKER}."
+        ),
+    )
+    validate_public_safety_contract_parser.set_defaults(func=_cmd_validate_public_safety_contract)
 
     report_parser = subparsers.add_parser("report", help="Produce run report.")
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")
