@@ -201,5 +201,6 @@ This baseline now provides:
 It does not yet provide:
 
 - a high-availability PostgreSQL topology
-- autoscaling guidance or distributed SLO targets
-- container signing or image-provenance gates
+
+Distributed benchmark fixtures and SLO targets for this baseline are now
+documented in [benchmarking-and-capacity.md](benchmarking-and-capacity.md).

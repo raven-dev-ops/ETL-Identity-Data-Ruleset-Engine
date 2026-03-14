@@ -11,6 +11,8 @@ benchmark_fixtures:
       - csv
     capacity_targets:
       single_host_container:
+        runtime_environment: container
+        state_store_backend: sqlite
         max_total_duration_seconds: 5.0
         min_normalize_records_per_second: 10000.0
         min_match_candidate_pairs_per_second: 20000.0
@@ -27,6 +29,8 @@ benchmark_fixtures:
       - csv
     capacity_targets:
       single_host_container:
+        runtime_environment: container
+        state_store_backend: sqlite
         max_total_duration_seconds: 30.0
         min_normalize_records_per_second: 10000.0
         min_match_candidate_pairs_per_second: 20000.0
@@ -46,6 +50,50 @@ benchmark_fixtures:
     stream_events_per_batch: 12
     capacity_targets:
       single_host_container:
+        runtime_environment: container
+        state_store_backend: sqlite
         max_total_duration_seconds: 10.0
         min_normalize_records_per_second: 1000.0
         min_match_candidate_pairs_per_second: 1000.0
+
+  - name: cluster_batch_medium
+    description: >
+      PostgreSQL-backed clustered-runtime benchmark for the supported
+      distributed deployment baseline.
+    profile: large
+    person_count: 2400
+    duplicate_rate: 0.40
+    seed: 42
+    formats:
+      - csv
+    capacity_targets:
+      cluster_postgresql_baseline:
+        runtime_environment: cluster
+        state_store_backend: postgresql
+        max_total_duration_seconds: 15.0
+        min_normalize_records_per_second: 5000.0
+        min_match_candidate_pairs_per_second: 10000.0
+
+  - name: cluster_continuous_ingest_small
+    description: >
+      PostgreSQL-backed clustered-runtime continuous-ingest benchmark
+      for the supported distributed deployment baseline.
+    mode: event_stream
+    profile: small
+    person_count: 96
+    duplicate_rate: 0.25
+    seed: 42
+    formats:
+      - csv
+    stream_batch_count: 3
+    stream_events_per_batch: 12
+    capacity_targets:
+      cluster_postgresql_baseline:
+        runtime_environment: cluster
+        state_store_backend: postgresql
+        max_total_duration_seconds: 15.0
+        min_normalize_records_per_second: 500.0
+        min_match_candidate_pairs_per_second: 500.0
+        max_stream_batch_duration_seconds: 6.0
+        max_p95_stream_batch_duration_seconds: 6.0
+        min_stream_events_per_second: 20.0

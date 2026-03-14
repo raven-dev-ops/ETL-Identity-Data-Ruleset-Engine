@@ -5,6 +5,7 @@ import pytest
 
 from etl_identity_engine.cli import main
 from etl_identity_engine.runtime_config import (
+    ConfigValidationError,
     load_benchmark_fixture_configs,
     load_pipeline_config,
     load_runtime_environment,
@@ -935,6 +936,8 @@ benchmark_fixtures:
     assert fixtures["tiny"].formats == ("csv",)
     assert fixtures["tiny"].mode == "batch"
     assert fixtures["tiny"].capacity_targets["single_host_container"].max_total_duration_seconds == 30.0
+    assert fixtures["tiny"].capacity_targets["single_host_container"].runtime_environment is None
+    assert fixtures["tiny"].capacity_targets["single_host_container"].state_store_backend == "sqlite"
 
 
 def test_load_benchmark_fixture_configs_reads_event_stream_fixture(tmp_path: Path) -> None:
@@ -967,6 +970,78 @@ benchmark_fixtures:
     assert fixtures["stream_tiny"].mode == "event_stream"
     assert fixtures["stream_tiny"].stream_batch_count == 2
     assert fixtures["stream_tiny"].stream_events_per_batch == 4
+
+
+def test_load_benchmark_fixture_configs_reads_clustered_target_metadata(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_text(
+        config_dir / "benchmark_fixtures.yml",
+        """
+benchmark_fixtures:
+  - name: cluster_stream
+    description: Clustered continuous-ingest benchmark fixture.
+    mode: event_stream
+    profile: small
+    person_count: 48
+    duplicate_rate: 0.25
+    seed: 123
+    formats:
+      - csv
+    stream_batch_count: 2
+    stream_events_per_batch: 4
+    capacity_targets:
+      cluster_postgresql_baseline:
+        runtime_environment: cluster
+        state_store_backend: postgresql
+        max_total_duration_seconds: 30.0
+        min_normalize_records_per_second: 0.0
+        min_match_candidate_pairs_per_second: 0.0
+        max_stream_batch_duration_seconds: 5.0
+        max_p95_stream_batch_duration_seconds: 5.0
+        min_stream_events_per_second: 1.0
+""",
+    )
+
+    fixtures = load_benchmark_fixture_configs(config_dir)
+
+    target = fixtures["cluster_stream"].capacity_targets["cluster_postgresql_baseline"]
+    assert target.runtime_environment == "cluster"
+    assert target.state_store_backend == "postgresql"
+    assert target.max_stream_batch_duration_seconds == 5.0
+    assert target.max_p95_stream_batch_duration_seconds == 5.0
+    assert target.min_stream_events_per_second == 1.0
+
+
+def test_load_benchmark_fixture_configs_rejects_stream_thresholds_for_batch_fixture(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "config"
+    _write_text(
+        config_dir / "benchmark_fixtures.yml",
+        """
+benchmark_fixtures:
+  - name: invalid_batch
+    description: Invalid batch fixture.
+    profile: small
+    person_count: 48
+    duplicate_rate: 0.25
+    seed: 123
+    formats:
+      - csv
+    capacity_targets:
+      cluster_postgresql_baseline:
+        max_total_duration_seconds: 30.0
+        min_normalize_records_per_second: 0.0
+        min_match_candidate_pairs_per_second: 0.0
+        max_stream_batch_duration_seconds: 5.0
+""",
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match=r"stream thresholds require mode=event_stream",
+    ):
+        load_benchmark_fixture_configs(config_dir)
 
 
 def test_cli_match_uses_runtime_environment_overlay(tmp_path: Path) -> None:

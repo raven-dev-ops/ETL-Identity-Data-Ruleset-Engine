@@ -29,6 +29,7 @@ SUPPORTED_EXPORT_JOB_FORMATS = frozenset({"csv_snapshot"})
 SUPPORTED_SYNTHETIC_PROFILES = frozenset({"small", "medium", "large"})
 SUPPORTED_BENCHMARK_FORMATS = frozenset({"csv", "parquet"})
 SUPPORTED_BENCHMARK_MODES = frozenset({"batch", "event_stream"})
+SUPPORTED_BENCHMARK_STATE_STORE_BACKENDS = frozenset({"sqlite", "postgresql"})
 SUPPORTED_SERVICE_SCOPES = frozenset(
     {
         "service:health",
@@ -168,9 +169,14 @@ class ExportJobConfig:
 @dataclass(frozen=True)
 class BenchmarkCapacityTargetConfig:
     deployment_name: str
+    runtime_environment: str | None
+    state_store_backend: str
     max_total_duration_seconds: float
     min_normalize_records_per_second: float
     min_match_candidate_pairs_per_second: float
+    max_stream_batch_duration_seconds: float | None = None
+    max_p95_stream_batch_duration_seconds: float | None = None
+    min_stream_events_per_second: float | None = None
 
 
 @dataclass(frozen=True)
@@ -426,6 +432,18 @@ def _optional_string_list(
     if key not in mapping:
         return default
     return _require_string_list(mapping, key, path=path, context=context)
+
+
+def _optional_float_if_present(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    path: Path,
+    context: str,
+) -> float | None:
+    if key not in mapping:
+        return None
+    return _require_float(mapping, key, path=path, context=context)
 
 
 def _load_service_auth_config(
@@ -1461,13 +1479,39 @@ def load_benchmark_fixture_configs(
             _validate_allowed_keys(
                 target_value,
                 allowed_keys={
+                    "runtime_environment",
+                    "state_store_backend",
                     "max_total_duration_seconds",
                     "min_normalize_records_per_second",
                     "min_match_candidate_pairs_per_second",
+                    "max_stream_batch_duration_seconds",
+                    "max_p95_stream_batch_duration_seconds",
+                    "min_stream_events_per_second",
                 },
                 path=benchmark_path,
                 context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
             )
+            runtime_environment = None
+            if "runtime_environment" in target_value:
+                runtime_environment = _require_non_empty_string(
+                    target_value,
+                    "runtime_environment",
+                    path=benchmark_path,
+                    context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+                )
+            state_store_backend = _optional_non_empty_string(
+                target_value,
+                "state_store_backend",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+                default="sqlite",
+            )
+            if state_store_backend not in SUPPORTED_BENCHMARK_STATE_STORE_BACKENDS:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}.state_store_backend "
+                    f"must be one of: {', '.join(sorted(SUPPORTED_BENCHMARK_STATE_STORE_BACKENDS))}",
+                )
             max_total_duration_seconds = _require_float(
                 target_value,
                 "max_total_duration_seconds",
@@ -1486,6 +1530,24 @@ def load_benchmark_fixture_configs(
                 path=benchmark_path,
                 context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
             )
+            max_stream_batch_duration_seconds = _optional_float_if_present(
+                target_value,
+                "max_stream_batch_duration_seconds",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
+            max_p95_stream_batch_duration_seconds = _optional_float_if_present(
+                target_value,
+                "max_p95_stream_batch_duration_seconds",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
+            min_stream_events_per_second = _optional_float_if_present(
+                target_value,
+                "min_stream_events_per_second",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
             if max_total_duration_seconds <= 0.0:
                 raise _config_error(
                     benchmark_path,
@@ -1498,12 +1560,49 @@ def load_benchmark_fixture_configs(
                     f"benchmark_fixtures[{index}].capacity_targets.{deployment_name} minimum throughput values "
                     "must be greater than or equal to 0",
                 )
+            stream_thresholds = {
+                "max_stream_batch_duration_seconds": max_stream_batch_duration_seconds,
+                "max_p95_stream_batch_duration_seconds": max_p95_stream_batch_duration_seconds,
+                "min_stream_events_per_second": min_stream_events_per_second,
+            }
+            if mode != "event_stream" and any(value is not None for value in stream_thresholds.values()):
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name} stream thresholds "
+                    "require mode=event_stream",
+                )
+            if max_stream_batch_duration_seconds is not None and max_stream_batch_duration_seconds <= 0.0:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}.max_stream_batch_duration_seconds "
+                    "must be greater than 0",
+                )
+            if (
+                max_p95_stream_batch_duration_seconds is not None
+                and max_p95_stream_batch_duration_seconds <= 0.0
+            ):
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}.max_p95_stream_batch_duration_seconds "
+                    "must be greater than 0",
+                )
+            if min_stream_events_per_second is not None and min_stream_events_per_second < 0.0:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}.min_stream_events_per_second "
+                    "must be greater than or equal to 0",
+                )
             normalized_deployment_name = deployment_name.strip()
             capacity_targets[normalized_deployment_name] = BenchmarkCapacityTargetConfig(
                 deployment_name=normalized_deployment_name,
+                runtime_environment=runtime_environment,
+                state_store_backend=state_store_backend,
                 max_total_duration_seconds=max_total_duration_seconds,
                 min_normalize_records_per_second=min_normalize_records_per_second,
                 min_match_candidate_pairs_per_second=min_match_candidate_pairs_per_second,
+                max_stream_batch_duration_seconds=max_stream_batch_duration_seconds,
+                max_p95_stream_batch_duration_seconds=max_p95_stream_batch_duration_seconds,
+                min_stream_events_per_second=min_stream_events_per_second,
             )
 
         resolved_fixtures[name] = BenchmarkFixtureConfig(

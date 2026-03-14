@@ -139,8 +139,9 @@ is included in the repository.
   archived replay bundles for manifest-era inputs,
   manifest-driven incremental refresh, a container image, a single-host
   compose deployment baseline, a Kubernetes PostgreSQL-backed
-  deployment baseline, named benchmark fixtures with capacity targets,
-  and an authenticated operator service API are now available.
+  deployment baseline, named benchmark fixtures with single-host and
+  clustered capacity targets, and an authenticated operator service API
+  are now available.
   The current production runtime supports JWT bearer auth backed by
   deployment-supplied issuer, audience, and signing metadata, while the
   local container baseline retains API-key compatibility mode. The
@@ -361,9 +362,15 @@ pipeline against a named large-batch fixture from
 `dist/benchmarks/<fixture>/`.
 
 The benchmark catalog now supports both standard batch fixtures and
-continuous-ingest fixtures. Event-stream fixtures seed one persisted run
-through `run-all`, then drive repeated `stream-refresh` batches and
-emit a `continuous_ingest` summary block alongside the final run
+continuous-ingest fixtures across two deployment targets:
+
+- `single_host_container` for the compose and SQLite baseline
+- `cluster_postgresql_baseline` for the clustered PostgreSQL runtime
+  baseline
+
+Event-stream fixtures seed one persisted run through `run-all`, then
+drive repeated `stream-refresh` batches and emit a `continuous_ingest`
+summary block plus explicit stream SLO metrics alongside the final run
 artifacts.
 
 The standalone `golden` stage uses normalized records plus

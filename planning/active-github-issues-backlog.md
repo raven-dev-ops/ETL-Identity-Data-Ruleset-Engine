@@ -242,7 +242,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 104) Add clustered benchmark fixtures and SLO targets for distributed deployments
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.9.0`
 - Labels: `type:feature`, `area:quality`, `priority:p2`
 - Depends on: #101, #103
@@ -279,11 +279,9 @@ Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog: `#81`, `#82`, `#83`
 - Open child issues represented in this local active catalog:
-  `#95`
+  none
 - Open milestones in GitHub for this backlog:
-  - `v0.7.0` with epic `#81`
-  - `v0.8.0` with epic `#82`
-  - `v0.9.0` with epic `#83`
+  none after closeout of epics `#81`, `#82`, and `#83`
 - Closed backlog history remains in:
   `planning/github-issues-backlog.md`,
   `planning/post-v0.1.0-github-issues-backlog.md`, and

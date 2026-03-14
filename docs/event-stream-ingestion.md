@@ -113,5 +113,11 @@ Those fixtures:
 - synthesize multiple deterministic event batches
 - execute `stream-refresh` repeatedly
 - emit a `continuous_ingest` block in `benchmark_summary.json`
+- emit explicit stream SLO metrics including `events_per_second`,
+  `max_batch_duration_seconds`, and `p95_batch_duration_seconds`
 
-The shipped reference fixture is `continuous_ingest_small`.
+The shipped reference fixtures are:
+
+- `continuous_ingest_small` for the single-host container baseline
+- `cluster_continuous_ingest_small` for the PostgreSQL-backed clustered
+  runtime baseline

@@ -94,10 +94,10 @@ golden records, and reporting artifacts.
    - Executes the real persisted `run-all` path against a named
      large-batch fixture, or a seed `run-all` plus repeated
      `stream-refresh` batches for continuous-ingest fixtures
-   - Captures phase timing and throughput metrics from the resulting run
-     summary
+   - Captures phase timing plus explicit SLO-style latency and
+     throughput metrics from the resulting run summary
    - Evaluates the run against a named deployment target such as
-     `single_host_container`
+     `single_host_container` or `cluster_postgresql_baseline`
 
 ## Config Surfaces
 
@@ -174,7 +174,10 @@ events while exposing health and metrics endpoints over the service
 surface.
 `benchmark-run` now reuses that same persisted runtime path and the
 `run_summary.json` performance block to capture concrete phase latency
-and throughput metrics on named large-batch fixtures.
+and throughput metrics on named large-batch fixtures. For the
+`cluster_postgresql_baseline` deployment target, the benchmark runtime
+uses the shipped `cluster` environment semantics and a PostgreSQL-backed
+state store so the clustered persistence path is measured directly.
 
 ## Output Layout
 
@@ -251,7 +254,8 @@ The current deployment baseline also includes:
 - CI smoke validation for the single-host and Kubernetes-backed
   deployment assets
 - named batch and continuous-ingest benchmark fixtures plus capacity
-  targets for the supported single-host container baseline
+  targets for both the single-host container baseline and the supported
+  clustered PostgreSQL runtime baseline
 
 ## Command Example
 

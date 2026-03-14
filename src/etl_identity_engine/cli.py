@@ -18,6 +18,7 @@ from etl_identity_engine.benchmarking import (
     build_benchmark_report_markdown,
     build_benchmark_summary,
 )
+from etl_identity_engine.benchmark_runtime import benchmark_execution_context
 from etl_identity_engine.delivery_publish import publish_delivery_snapshot
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
 from etl_identity_engine.incremental_refresh import refresh_incremental_run
@@ -3209,13 +3210,24 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
             f"Benchmark fixture {fixture.name!r} does not define capacity targets for "
             f"deployment {deployment_name!r}"
         )
+    target = fixture.capacity_targets.get(deployment_name)
+    if (
+        args.environment
+        and target is not None
+        and target.runtime_environment is not None
+        and args.environment != target.runtime_environment
+    ):
+        raise ValueError(
+            f"Benchmark fixture {fixture.name!r} deployment target {deployment_name!r} requires "
+            f"--environment {target.runtime_environment!r}, received {args.environment!r}"
+        )
+    runtime_environment = args.environment or (None if target is None else target.runtime_environment)
 
     benchmark_root = Path(args.output_dir) / fixture.name
     if benchmark_root.exists():
         shutil.rmtree(benchmark_root)
     benchmark_root.mkdir(parents=True, exist_ok=True)
 
-    state_db = args.state_db if args.state_db else benchmark_root / "state" / "pipeline_state.sqlite"
     benchmark_summary_path = benchmark_root / "benchmark_summary.json"
     benchmark_report_path = benchmark_root / "benchmark_report.md"
 
@@ -3226,153 +3238,192 @@ def _cmd_benchmark_run(args: argparse.Namespace) -> None:
         fixture=fixture.name,
         deployment_target=deployment_name,
         output_dir=benchmark_root,
-        state_db=state_store_display_name(state_db),
+        runtime_environment=runtime_environment or "",
+        state_store_backend="" if target is None else target.state_store_backend,
     )
 
     def apply_runtime_overrides(argv: list[str]) -> list[str]:
-        if args.environment:
-            argv.extend(["--environment", args.environment])
+        if runtime_environment:
+            argv.extend(["--environment", runtime_environment])
         if args.runtime_config:
             argv.extend(["--runtime-config", args.runtime_config])
         if args.config_dir:
             argv.extend(["--config-dir", args.config_dir])
         return argv
 
-    run_artifact_root: Path
-    run_summary_path: Path
-    run_summary: dict[str, object]
-    continuous_ingest_summary: dict[str, object] | None = None
-
-    if fixture.mode == "event_stream":
-        seed_artifact_root = benchmark_root / "seed_run"
-        main(
-            apply_runtime_overrides(
-                [
-                    "run-all",
-                    "--base-dir",
-                    str(seed_artifact_root),
-                    "--profile",
-                    fixture.profile,
-                    "--seed",
-                    str(fixture.seed),
-                    "--duplicate-rate",
-                    str(fixture.duplicate_rate),
-                    "--formats",
-                    ",".join(fixture.formats),
-                    "--person-count",
-                    str(fixture.person_count),
-                    "--state-db",
-                    str(state_db),
-                ]
-            )
+    with benchmark_execution_context(
+        benchmark_root=benchmark_root,
+        target=target,
+        explicit_state_db=args.state_db,
+        runtime_environment=runtime_environment,
+    ) as execution_target:
+        emit_structured_log(
+            "benchmark_runtime_prepared",
+            component="cli",
+            command="benchmark-run",
+            fixture=fixture.name,
+            deployment_target=deployment_name,
+            runtime_environment=execution_target.runtime_environment or "",
+            state_store_backend=execution_target.state_store_backend,
+            state_db=execution_target.state_db_display_name,
+            state_store_mode=execution_target.state_store_mode,
         )
 
-        store = PipelineStateStore(state_db)
-        current_source_run_id = store.latest_completed_run_id()
-        if current_source_run_id is None:
-            raise RuntimeError("benchmark seed run did not persist a completed run")
-        seed_run_id = current_source_run_id
+        state_db = execution_target.state_db
+        run_artifact_root: Path
+        run_summary_path: Path
+        run_summary: dict[str, object]
+        continuous_ingest_summary: dict[str, object] | None = None
 
-        total_event_count = 0
-        total_stream_duration_seconds = 0.0
-        stream_run_ids: list[str] = []
-        event_batch_paths: list[str] = []
-        run_artifact_root = seed_artifact_root
-        run_summary_path = seed_artifact_root / "data" / "exceptions" / "run_summary.json"
-        run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
-
-        for batch_index in range(1, fixture.stream_batch_count + 1):
-            source_bundle = store.load_run_bundle(current_source_run_id)
-            events = synthesize_stream_events(
-                source_bundle.normalized_rows,
-                stream_id=f"{fixture.name}_stream",
-                batch_index=batch_index,
-                events_per_batch=fixture.stream_events_per_batch,
-            )
-            event_file = benchmark_root / "events" / f"batch_{batch_index:03d}.jsonl"
-            write_stream_events_jsonl(event_file, events)
-            event_batch_paths.append(str(event_file))
-
-            stream_artifact_root = benchmark_root / "stream_runs" / f"batch_{batch_index:03d}"
+        if fixture.mode == "event_stream":
+            seed_artifact_root = benchmark_root / "seed_run"
             main(
                 apply_runtime_overrides(
                     [
-                        "stream-refresh",
+                        "run-all",
                         "--base-dir",
-                        str(stream_artifact_root),
+                        str(seed_artifact_root),
+                        "--profile",
+                        fixture.profile,
+                        "--seed",
+                        str(fixture.seed),
+                        "--duplicate-rate",
+                        str(fixture.duplicate_rate),
+                        "--formats",
+                        ",".join(fixture.formats),
+                        "--person-count",
+                        str(fixture.person_count),
                         "--state-db",
-                        str(state_db),
-                        "--source-run-id",
-                        current_source_run_id,
-                        "--events",
-                        str(event_file),
-                        "--stream-id",
-                        f"{fixture.name}_stream",
+                        state_db,
                     ]
                 )
             )
 
+            store = PipelineStateStore(state_db)
             current_source_run_id = store.latest_completed_run_id()
             if current_source_run_id is None:
-                raise RuntimeError("benchmark stream refresh did not persist a completed run")
-            stream_run_ids.append(current_source_run_id)
-            run_artifact_root = stream_artifact_root
-            run_summary_path = stream_artifact_root / "data" / "exceptions" / "run_summary.json"
+                raise RuntimeError("benchmark seed run did not persist a completed run")
+            seed_run_id = current_source_run_id
+
+            total_event_count = 0
+            total_stream_duration_seconds = 0.0
+            stream_run_ids: list[str] = []
+            event_batch_paths: list[str] = []
+            batch_durations_seconds: list[float] = []
+            run_artifact_root = seed_artifact_root
+            run_summary_path = seed_artifact_root / "data" / "exceptions" / "run_summary.json"
             run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
-            total_event_count += len(events)
-            performance = run_summary.get("performance", {})
-            if isinstance(performance, dict):
-                total_stream_duration_seconds += float(performance.get("total_duration_seconds", 0.0) or 0.0)
 
-        continuous_ingest_summary = {
-            "mode": "event_stream",
-            "stream_id": f"{fixture.name}_stream",
-            "batch_count": fixture.stream_batch_count,
-            "events_per_batch": fixture.stream_events_per_batch,
-            "total_event_count": total_event_count,
-            "total_stream_duration_seconds": round(total_stream_duration_seconds, 6),
-            "events_per_second": _rate(total_event_count, total_stream_duration_seconds),
-            "seed_run_id": seed_run_id,
-            "final_run_id": current_source_run_id,
-            "stream_run_ids": stream_run_ids,
-            "event_batch_paths": event_batch_paths,
-            "last_stream_run_summary_path": str(run_summary_path),
-        }
-    else:
-        run_artifact_root = benchmark_root / "run_artifacts"
-        main(
-            apply_runtime_overrides(
-                [
-                    "run-all",
-                    "--base-dir",
-                    str(run_artifact_root),
-                    "--profile",
-                    fixture.profile,
-                    "--seed",
-                    str(fixture.seed),
-                    "--duplicate-rate",
-                    str(fixture.duplicate_rate),
-                    "--formats",
-                    ",".join(fixture.formats),
-                    "--person-count",
-                    str(fixture.person_count),
-                    "--state-db",
-                    str(state_db),
-                ]
+            for batch_index in range(1, fixture.stream_batch_count + 1):
+                source_bundle = store.load_run_bundle(current_source_run_id)
+                events = synthesize_stream_events(
+                    source_bundle.normalized_rows,
+                    stream_id=f"{fixture.name}_stream",
+                    batch_index=batch_index,
+                    events_per_batch=fixture.stream_events_per_batch,
+                )
+                event_file = benchmark_root / "events" / f"batch_{batch_index:03d}.jsonl"
+                write_stream_events_jsonl(event_file, events)
+                event_batch_paths.append(str(event_file))
+
+                stream_artifact_root = benchmark_root / "stream_runs" / f"batch_{batch_index:03d}"
+                main(
+                    apply_runtime_overrides(
+                        [
+                            "stream-refresh",
+                            "--base-dir",
+                            str(stream_artifact_root),
+                            "--state-db",
+                            state_db,
+                            "--source-run-id",
+                            current_source_run_id,
+                            "--events",
+                            str(event_file),
+                            "--stream-id",
+                            f"{fixture.name}_stream",
+                        ]
+                    )
+                )
+
+                current_source_run_id = store.latest_completed_run_id()
+                if current_source_run_id is None:
+                    raise RuntimeError("benchmark stream refresh did not persist a completed run")
+                stream_run_ids.append(current_source_run_id)
+                run_artifact_root = stream_artifact_root
+                run_summary_path = stream_artifact_root / "data" / "exceptions" / "run_summary.json"
+                run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+                total_event_count += len(events)
+                performance = run_summary.get("performance", {})
+                batch_duration_seconds = 0.0
+                if isinstance(performance, dict):
+                    batch_duration_seconds = float(
+                        performance.get("total_duration_seconds", 0.0) or 0.0
+                    )
+                total_stream_duration_seconds += batch_duration_seconds
+                batch_durations_seconds.append(round(batch_duration_seconds, 6))
+
+            p95_batch_duration_seconds = 0.0
+            if batch_durations_seconds:
+                ordered_batch_durations = sorted(batch_durations_seconds)
+                p95_index = max(0, ((95 * len(ordered_batch_durations) + 99) // 100) - 1)
+                p95_batch_duration_seconds = ordered_batch_durations[p95_index]
+
+            continuous_ingest_summary = {
+                "mode": "event_stream",
+                "stream_id": f"{fixture.name}_stream",
+                "batch_count": fixture.stream_batch_count,
+                "events_per_batch": fixture.stream_events_per_batch,
+                "total_event_count": total_event_count,
+                "total_stream_duration_seconds": round(total_stream_duration_seconds, 6),
+                "events_per_second": _rate(total_event_count, total_stream_duration_seconds),
+                "max_batch_duration_seconds": max(batch_durations_seconds, default=0.0),
+                "p95_batch_duration_seconds": round(p95_batch_duration_seconds, 6),
+                "batch_durations_seconds": batch_durations_seconds,
+                "seed_run_id": seed_run_id,
+                "final_run_id": current_source_run_id,
+                "stream_run_ids": stream_run_ids,
+                "event_batch_paths": event_batch_paths,
+                "last_stream_run_summary_path": str(run_summary_path),
+            }
+        else:
+            run_artifact_root = benchmark_root / "run_artifacts"
+            main(
+                apply_runtime_overrides(
+                    [
+                        "run-all",
+                        "--base-dir",
+                        str(run_artifact_root),
+                        "--profile",
+                        fixture.profile,
+                        "--seed",
+                        str(fixture.seed),
+                        "--duplicate-rate",
+                        str(fixture.duplicate_rate),
+                        "--formats",
+                        ",".join(fixture.formats),
+                        "--person-count",
+                        str(fixture.person_count),
+                        "--state-db",
+                        state_db,
+                    ]
+                )
             )
-        )
-        run_summary_path = run_artifact_root / "data" / "exceptions" / "run_summary.json"
-        run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+            run_summary_path = run_artifact_root / "data" / "exceptions" / "run_summary.json"
+            run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
 
-    benchmark_summary = build_benchmark_summary(
-        fixture=fixture,
-        deployment_name=deployment_name,
-        run_summary=run_summary,
-        benchmark_root=benchmark_root,
-        run_artifact_root=run_artifact_root,
-        run_summary_path=run_summary_path,
-        continuous_ingest=continuous_ingest_summary,
-    )
+        benchmark_summary = build_benchmark_summary(
+            fixture=fixture,
+            deployment_name=deployment_name,
+            run_summary=run_summary,
+            benchmark_root=benchmark_root,
+            run_artifact_root=run_artifact_root,
+            run_summary_path=run_summary_path,
+            runtime_environment=execution_target.runtime_environment,
+            state_store_backend=execution_target.state_store_backend,
+            state_db_display_name=execution_target.state_db_display_name,
+            state_store_mode=execution_target.state_store_mode,
+            continuous_ingest=continuous_ingest_summary,
+        )
     benchmark_summary_path.write_text(
         json.dumps(benchmark_summary, indent=2, sort_keys=True),
         encoding="utf-8",

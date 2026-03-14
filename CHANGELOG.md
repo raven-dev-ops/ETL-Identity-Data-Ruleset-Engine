@@ -40,6 +40,10 @@ All notable changes to this project will be documented in this file.
   deterministic persisted entity recomputation, copied event snapshots,
   stream lineage in `run_summary.json`, and continuous-ingest benchmark
   coverage.
+- Added clustered benchmark fixtures and explicit SLO-metric output for
+  the PostgreSQL-backed runtime baseline, including event-stream
+  latency targets and temporary PostgreSQL provisioning for the
+  distributed benchmark path.
 - Changed runtime-environment loading to resolve only the selected
   environment's secret placeholders, so compatibility and cluster
   deployments do not require unrelated environment secrets.

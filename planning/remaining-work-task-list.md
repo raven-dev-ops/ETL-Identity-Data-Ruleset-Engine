@@ -59,6 +59,10 @@ of truth for tracked work; this file is the short maintainer view.
   `stream-refresh` event batches with deterministic incremental entity
   recomputation, copied event snapshots, persisted stream lineage in run
   summaries, and continuous-ingest benchmark coverage.
+- GitHub issue `#95` is complete: the benchmark catalog now includes
+  clustered PostgreSQL-backed fixtures, benchmark outputs emit explicit
+  latency and throughput SLO metrics, and the distributed benchmark path
+  can provision a temporary PostgreSQL runtime by default.
 
 ## Open Task Groups
 
@@ -67,7 +71,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [ ] `v0.8.0` Enterprise access and service control plane
   - Open GitHub issues: none
 - [ ] `v0.9.0` Distributed deployment and event-driven runtime
-  - Open GitHub issues: `#95`
+  - Open GitHub issues: none
 
 ## Gaps Now Explicitly Tracked
 
@@ -82,9 +86,9 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Clustered deployment manifests
 - [x] Container signing and image-level supply-chain gates
 - [x] Event-driven ingestion and streaming entity refresh
-- [ ] Clustered benchmarks and distributed SLO targets
+- [x] Clustered benchmarks and distributed SLO targets
 
 ## Next Step
 
-- Start issue `#95`: Add clustered benchmark fixtures and distributed
-  SLO targets.
+- Release/admin work only, or open a new backlog cycle for net-new
+  scope.
