@@ -153,6 +153,9 @@ The current manual-review model now has two surfaces:
 - approved review decisions force future merge outcomes and rejected
   review decisions block future merges on persisted reruns of the same
   manifest lineage
+- operators can apply those decisions through `apply-review-decision`,
+  replay manifest-backed runs through `replay-run`, and trigger
+  downstream publication through `publish-run`
 
 ## Support Matrix
 

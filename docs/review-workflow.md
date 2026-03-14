@@ -57,7 +57,18 @@ python -m etl_identity_engine.cli review-case-update \
   --notes "Need source verification"
 ```
 
-Both commands emit JSON so operators can script around them.
+Apply a decision through the operator wrapper:
+
+```bash
+python -m etl_identity_engine.cli apply-review-decision \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345 \
+  --review-id REV-00001 \
+  --decision approved \
+  --notes "Approved after verification"
+```
+
+All three commands emit JSON so operators can script around them.
 
 ## Current Boundary
 
@@ -71,6 +82,6 @@ manifest reruns:
 It does not yet:
 
 - expose write-side review workflow APIs
-- add full operator replay tooling
+- expose authenticated review controls
 
 Those remain tracked in the active backlog.

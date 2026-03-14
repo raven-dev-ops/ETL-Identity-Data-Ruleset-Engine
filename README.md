@@ -213,8 +213,9 @@ This repository now includes a working `M1` scaffold:
 
 - Python package skeleton under `src/etl_identity_engine/`
 - stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
-  `review-queue`, `golden`, `report`, `publish-delivery`, `serve-api`,
-  `run-all`
+  `review-queue`, `golden`, `report`, `publish-delivery`, `publish-run`,
+  `review-case-list`, `review-case-update`, `apply-review-decision`,
+  `replay-run`, `serve-api`, `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
 - governance files: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
@@ -285,6 +286,12 @@ operator API with `serve-api`. That surface exposes run status, golden
 record lookups, source-to-golden crosswalk lookups, and persisted
 review-case retrieval for downstream systems and operators. The service
 contract is documented in [docs/service-api.md](docs/service-api.md).
+
+For operator workflows, the CLI now also exposes:
+
+- `apply-review-decision` for idempotent review-case decisions
+- `replay-run` for manifest-backed persisted reruns
+- `publish-run` for JSON-based downstream publication triggers
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

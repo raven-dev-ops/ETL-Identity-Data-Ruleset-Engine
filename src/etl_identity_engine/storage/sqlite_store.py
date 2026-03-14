@@ -555,6 +555,22 @@ class SQLitePipelineStore:
             ).fetchone()
         return None if row is None else str(row["run_id"])
 
+    def latest_completed_run_for_run_key(self, run_key: str) -> PipelineRunRecord | None:
+        with _connect(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT run_id
+                FROM pipeline_runs
+                WHERE status = 'completed' AND run_key = ?
+                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """,
+                (run_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self.load_run_record(str(row["run_id"]))
+
     def latest_completed_run_id_with_review_cases(self) -> str | None:
         with _connect(self.db_path) as connection:
             row = connection.execute(

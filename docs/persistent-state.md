@@ -54,6 +54,27 @@ python -m etl_identity_engine.cli serve-api \
   --port 8000
 ```
 
+Operator CLI wrappers are also available for the persisted workflow:
+
+```bash
+python -m etl_identity_engine.cli apply-review-decision \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345 \
+  --review-id REV-00001 \
+  --decision approved \
+  --notes "Approved after verification"
+
+python -m etl_identity_engine.cli replay-run \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345 \
+  --refresh-mode incremental
+
+python -m etl_identity_engine.cli publish-run \
+  --state-db data/state/pipeline_state.sqlite \
+  --run-id RUN-20260314T000000Z-ABC12345 \
+  --output-dir published/delivery
+```
+
 ## Tables
 
 The current schema includes:
@@ -245,5 +266,7 @@ The current line does not yet provide:
 - persisted failure-state resume from mid-pipeline checkpoints
 - authenticated or write-capable service actions over the persisted
   store
+- immutable source-data replay independent of the current manifest and
+  landing-zone contents
 
 Those remain tracked follow-on work in the active backlog.

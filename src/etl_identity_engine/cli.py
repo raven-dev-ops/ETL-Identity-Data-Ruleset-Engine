@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
 from dataclasses import asdict
+from io import StringIO
 import json
 import os
 from collections import Counter
@@ -32,6 +34,7 @@ from etl_identity_engine.normalize.phones import normalize_phone
 from etl_identity_engine.output_contracts import (
     BLOCKING_METRICS_HEADERS,
     CROSSWALK_HEADERS,
+    DELIVERY_CONTRACT_NAME,
     DELIVERY_CONTRACT_VERSION,
     ENTITY_CLUSTER_HEADERS,
     EXCEPTION_HEADERS,
@@ -66,6 +69,7 @@ from etl_identity_engine.storage.migration_runner import (
 from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
     PersistRunMetadata,
+    PipelineRunRecord,
     SQLitePipelineStore,
     build_run_key,
 )
@@ -105,7 +109,10 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
         "state-db-current",
         "review-case-list",
         "review-case-update",
+        "apply-review-decision",
         "publish-delivery",
+        "publish-run",
+        "replay-run",
         "serve-api",
         "run-all",
     }:
@@ -937,6 +944,39 @@ def _serialize_review_case(case: PersistedReviewCase) -> dict[str, object]:
     }
 
 
+def _serialize_run_record(record: PipelineRunRecord) -> dict[str, object]:
+    return {
+        "run_id": record.run_id,
+        "run_key": record.run_key,
+        "attempt_number": record.attempt_number,
+        "batch_id": record.batch_id,
+        "input_mode": record.input_mode,
+        "manifest_path": record.manifest_path,
+        "base_dir": record.base_dir,
+        "config_dir": record.config_dir,
+        "profile": record.profile,
+        "seed": record.seed,
+        "formats": record.formats,
+        "status": record.status,
+        "started_at_utc": record.started_at_utc,
+        "finished_at_utc": record.finished_at_utc,
+        "total_records": record.total_records,
+        "candidate_pair_count": record.candidate_pair_count,
+        "cluster_count": record.cluster_count,
+        "golden_record_count": record.golden_record_count,
+        "review_queue_count": record.review_queue_count,
+        "failure_detail": record.failure_detail,
+        "summary": record.summary,
+    }
+
+
+def _resolve_completed_run_id(args: argparse.Namespace, store: SQLitePipelineStore) -> str:
+    run_id = args.run_id or store.latest_completed_run_id()
+    if run_id is None:
+        raise FileNotFoundError(f"No completed persisted runs found in {_require_state_db(args)}")
+    return run_id
+
+
 def _cmd_review_case_list(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
@@ -963,6 +1003,45 @@ def _cmd_review_case_update(args: argparse.Namespace) -> None:
     print(json.dumps(_serialize_review_case(updated), indent=2, sort_keys=True))
 
 
+def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    run_id = _resolve_review_case_run_id(args, store)
+    existing = store.load_review_case(run_id=run_id, review_id=args.review_id)
+
+    target_assigned_to = existing.assigned_to if args.assigned_to is None else args.assigned_to.strip()
+    target_notes = existing.operator_notes if args.notes is None else args.notes.strip()
+    is_noop = (
+        existing.queue_status == args.decision
+        and existing.assigned_to == target_assigned_to
+        and existing.operator_notes == target_notes
+    )
+    if is_noop:
+        updated = existing
+        action = "noop"
+    else:
+        updated = store.update_review_case(
+            run_id=run_id,
+            review_id=args.review_id,
+            queue_status=args.decision,
+            assigned_to=args.assigned_to,
+            operator_notes=args.notes,
+        )
+        action = "updated"
+
+    print(
+        json.dumps(
+            {
+                "action": action,
+                "state_db": str(state_db.resolve()),
+                "case": _serialize_review_case(updated),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
@@ -979,6 +1058,127 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     )
     print(f"delivery snapshot published: {published.snapshot_dir}")
     print(f"delivery pointer updated: {published.current_pointer_path}")
+
+
+def _cmd_publish_run(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    run_id = _resolve_completed_run_id(args, store)
+    contract_root = Path(args.output_dir) / DELIVERY_CONTRACT_NAME / args.contract_version
+    snapshot_dir = contract_root / "snapshots" / run_id
+    snapshot_existed = snapshot_dir.exists()
+    bundle = store.load_run_bundle(run_id)
+    published = publish_delivery_snapshot(
+        bundle=bundle,
+        state_db_path=state_db,
+        output_root=Path(args.output_dir),
+        contract_version=args.contract_version,
+    )
+    print(
+        json.dumps(
+            {
+                "action": "reused_snapshot" if snapshot_existed else "published",
+                "run_id": run_id,
+                "contract_version": args.contract_version,
+                "snapshot_dir": str(published.snapshot_dir),
+                "current_pointer_path": str(published.current_pointer_path),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _cmd_replay_run(args: argparse.Namespace) -> None:
+    state_db = _require_state_db(args)
+    store = SQLitePipelineStore(state_db)
+    source_run_id = _resolve_completed_run_id(args, store)
+    source_run = store.load_run_record(source_run_id)
+
+    if source_run.input_mode != "manifest":
+        raise ValueError(
+            f"replay-run currently supports persisted manifest runs only; "
+            f"run_id={source_run.run_id} input_mode={source_run.input_mode!r}"
+        )
+    if not source_run.manifest_path:
+        raise ValueError(f"Persisted run {source_run.run_id} is missing manifest_path and cannot be replayed")
+
+    manifest_path = Path(source_run.manifest_path)
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"Cannot replay run_id={source_run.run_id} because manifest_path no longer exists: {manifest_path}"
+        )
+
+    refresh_mode = args.refresh_mode or str(
+        source_run.summary.get("run_context", {}).get("refresh_mode", "full")
+    )
+    replay_base_dir = Path(args.base_dir) if args.base_dir else Path(source_run.base_dir)
+    resolved_manifest_path = str(manifest_path.resolve())
+    run_key = build_run_key(
+        input_mode="manifest",
+        manifest_path=resolved_manifest_path,
+        batch_id=peek_manifest_batch_id(manifest_path),
+        config_dir=source_run.config_dir,
+        profile=None,
+        seed=None,
+        duplicate_rate=None,
+        formats=None,
+        refresh_mode=refresh_mode,
+    )
+    prior_completed = store.latest_completed_run_for_run_key(run_key)
+
+    replay_argv = [
+        "run-all",
+        "--base-dir",
+        str(replay_base_dir),
+        "--manifest",
+        resolved_manifest_path,
+        "--state-db",
+        str(state_db),
+        "--refresh-mode",
+        refresh_mode,
+    ]
+    if source_run.config_dir:
+        replay_argv.extend(["--config-dir", source_run.config_dir])
+
+    replay_output = StringIO()
+    try:
+        with redirect_stdout(replay_output):
+            main(replay_argv)
+    except Exception as exc:
+        rendered_command = " ".join(replay_argv)
+        replay_logs = replay_output.getvalue().strip()
+        failure_detail = f"Replay failed for run_id={source_run.run_id} via `{rendered_command}`: {exc}"
+        if replay_logs:
+            failure_detail = f"{failure_detail}. Captured pipeline output: {replay_logs}"
+        raise RuntimeError(failure_detail) from exc
+
+    result_run = store.latest_completed_run_for_run_key(run_key)
+    if result_run is None:
+        raise RuntimeError(f"Replay completed but no persisted run was found for run_key={run_key}")
+
+    action = (
+        "reused_completed_run"
+        if prior_completed is not None and prior_completed.run_id == result_run.run_id
+        else "replayed"
+    )
+    print(
+        json.dumps(
+            {
+                "action": action,
+                "requested_run_id": source_run.run_id,
+                "result_run_id": result_run.run_id,
+                "state_db": str(state_db.resolve()),
+                "base_dir": str(replay_base_dir.resolve()),
+                "refresh_mode": refresh_mode,
+                "replay_command": replay_argv,
+                "source_run": _serialize_run_record(source_run),
+                "result_run": _serialize_run_record(result_run),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 def _cmd_serve_api(args: argparse.Namespace) -> None:
@@ -1488,6 +1688,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     review_case_update_parser.set_defaults(func=_cmd_review_case_update)
 
+    apply_review_decision_parser = subparsers.add_parser(
+        "apply-review-decision",
+        help="Apply an operator decision to a persisted review case with idempotent output.",
+    )
+    apply_review_decision_parser.add_argument("--environment", default=None)
+    apply_review_decision_parser.add_argument("--runtime-config", default=None)
+    apply_review_decision_parser.add_argument("--state-db", default=None)
+    apply_review_decision_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to update. Defaults to the latest completed run with review cases.",
+    )
+    apply_review_decision_parser.add_argument("--review-id", required=True)
+    apply_review_decision_parser.add_argument(
+        "--decision",
+        required=True,
+        choices=REVIEW_CASE_STATUSES,
+        help="Target lifecycle status for the review case.",
+    )
+    apply_review_decision_parser.add_argument(
+        "--assigned-to",
+        default=None,
+        help="Optional assignee value. Use an empty string to clear it.",
+    )
+    apply_review_decision_parser.add_argument(
+        "--notes",
+        default=None,
+        help="Optional operator notes value. Use an empty string to clear it.",
+    )
+    apply_review_decision_parser.set_defaults(func=_cmd_apply_review_decision)
+
     publish_delivery_parser = subparsers.add_parser(
         "publish-delivery",
         help="Publish versioned downstream golden and crosswalk snapshots from persisted state.",
@@ -1511,6 +1742,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="Versioned consumer contract to publish. Defaults to the current stable delivery contract.",
     )
     publish_delivery_parser.set_defaults(func=_cmd_publish_delivery)
+
+    publish_run_parser = subparsers.add_parser(
+        "publish-run",
+        help="Trigger downstream publication for a persisted run with JSON operator output.",
+    )
+    publish_run_parser.add_argument("--environment", default=None)
+    publish_run_parser.add_argument("--runtime-config", default=None)
+    publish_run_parser.add_argument("--state-db", default=None)
+    publish_run_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to publish. Defaults to the latest completed run in --state-db.",
+    )
+    publish_run_parser.add_argument(
+        "--output-dir",
+        default="published/delivery",
+        help="Root directory where versioned delivery snapshots should be published.",
+    )
+    publish_run_parser.add_argument(
+        "--contract-version",
+        default=DELIVERY_CONTRACT_VERSION,
+        help="Versioned consumer contract to publish. Defaults to the current stable delivery contract.",
+    )
+    publish_run_parser.set_defaults(func=_cmd_publish_run)
+
+    replay_run_parser = subparsers.add_parser(
+        "replay-run",
+        help="Replay a persisted manifest-backed run through run-all.",
+    )
+    replay_run_parser.add_argument("--environment", default=None)
+    replay_run_parser.add_argument("--runtime-config", default=None)
+    replay_run_parser.add_argument("--state-db", default=None)
+    replay_run_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Persisted run ID to replay. Defaults to the latest completed run in --state-db.",
+    )
+    replay_run_parser.add_argument(
+        "--base-dir",
+        default=None,
+        help="Optional output base directory override. Defaults to the stored base_dir for the source run.",
+    )
+    replay_run_parser.add_argument(
+        "--refresh-mode",
+        default=None,
+        choices=["full", "incremental"],
+        help="Optional replay refresh mode override. Defaults to the stored run refresh mode.",
+    )
+    replay_run_parser.set_defaults(func=_cmd_replay_run)
 
     serve_api_parser = subparsers.add_parser(
         "serve-api",

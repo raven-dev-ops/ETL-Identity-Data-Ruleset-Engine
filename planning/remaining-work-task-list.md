@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#71` through `#80`.
+  open child issues `#72` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -45,6 +45,9 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#70` is complete: a read-only operator service API now exposes
   persisted run status, golden-record lookup, crosswalk lookup, and
   review-case retrieval.
+- Issue `#71` is complete: operator-facing CLI wrappers now support
+  idempotent review decisions, manifest-backed replay, and downstream
+  publication triggers with JSON output.
 
 ## Open Task Groups
 
@@ -52,7 +55,7 @@ truth for tracked work; this file is the short maintainer view.
   - Open issues: none. `v0.4.0` implementation work is complete in the
     active backlog catalog.
 - [ ] `v0.5.0` Review workflow and service surface
-  - Open issues: `#71` through `#73` in the active backlog catalog.
+  - Open issues: `#72` through `#73` in the active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
   - Open issues: `#74` through `#80` in the active backlog catalog.
 
@@ -67,7 +70,7 @@ truth for tracked work; this file is the short maintainer view.
 - [x] Incremental processing across runs
 - [x] Persisted manual-review workflow
 - [x] Decision application into cluster and golden rebuilds
-- [ ] Service and operator interfaces for run status, review, and golden
+- [x] Service and operator interfaces for run status, review, and golden
   lookups
 - [x] Downstream publication contracts for warehouse and data-product
   consumers
@@ -77,4 +80,4 @@ truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#71`.
+  then `v0.6.0`, starting with issue `#72`.

@@ -189,7 +189,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 71) Add operator CLI commands for review decisions, replay, and downstream publication
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.5.0`
 - Labels: `type:feature`, `area:workflow`, `priority:p1`
 - Depends on: #68, #70
@@ -350,11 +350,11 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#71`
+- Open child issues represented in this local active catalog: `#72`
   through `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
-  - `v0.5.0` with epic `#59` plus child issues `#71` through `#73`
+  - `v0.5.0` with epic `#59` plus child issues `#72` through `#73`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
@@ -398,3 +398,6 @@ Snapshot date: 2026-03-13
   exposes persisted run status, golden-record lookup, crosswalk lookup,
   and review-case retrieval with explicit request and response
   validation.
+- Issue `#71` is complete in-repo: operator-facing CLI wrappers now
+  support idempotent review decisions, manifest-backed replay, and
+  downstream publication triggers with JSON output.

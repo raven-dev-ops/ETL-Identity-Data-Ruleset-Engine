@@ -36,6 +36,8 @@ All notable changes to this project will be documented in this file.
   cluster/golden rebuilds.
 - A read-only operator service API for persisted run status, golden
   record lookup, crosswalk lookup, and review-case retrieval.
+- Operator CLI wrappers for idempotent review decisions, persisted
+  manifest replay, and downstream publication triggers.
 
 ### Changed
 
@@ -61,6 +63,9 @@ All notable changes to this project will be documented in this file.
 - The runtime now exposes `serve-api` for local and CI-accessible
   operator queries over persisted SQLite state with explicit request and
   response validation.
+- The runtime now exposes `apply-review-decision`, `replay-run`, and
+  `publish-run` as JSON-producing operator commands over the persisted
+  workflow surface.
 
 ## [0.1.4] - 2026-03-13
 
