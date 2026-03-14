@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#77` through `#80`.
+  open child issues `#78` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -65,6 +65,10 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#76` is complete: the repo now ships a shared batch/service
   container image, a single-host compose deployment baseline, and a
   reusable container smoke test wired into CI.
+- Issue `#77` is complete: named scale fixtures now live in
+  `config/benchmark_fixtures.yml`, `run-all` now records phase timing
+  and throughput metrics, and `benchmark-run` now validates those runs
+  against the supported `single_host_container` capacity targets.
 
 ## Open Task Groups
 
@@ -75,7 +79,7 @@ truth for tracked work; this file is the short maintainer view.
   - Open issues: none. `v0.5.0` implementation work is complete in the
     active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
-  - Open issues: `#77` through `#80` in the active backlog catalog.
+  - Open issues: `#78` through `#80` in the active backlog catalog.
 
 ## Production-Readiness Gaps Now Explicitly Tracked
 
@@ -98,9 +102,11 @@ truth for tracked work; this file is the short maintainer view.
   checks, and audit events
 - [x] Containerized batch and service runtime plus deployable
   single-host environment manifests
+- [x] Large-batch benchmark fixtures and SLO-style capacity targets for
+  the supported deployment baseline
 - [ ] Recovery runbooks and release hardening
 
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#77`.
+  then `v0.6.0`, starting with issue `#78`.

@@ -160,6 +160,18 @@ SUMMARY_DUPLICATE_REDUCTION_KEYS = (
     "records_consolidated",
     "reduction_ratio",
 )
+SUMMARY_PERFORMANCE_KEYS = (
+    "total_duration_seconds",
+    "phase_metrics",
+)
+SUMMARY_PHASE_METRIC_KEYS = (
+    "duration_seconds",
+    "input_record_count",
+    "output_record_count",
+    "output_records_per_second",
+    "candidate_pair_count",
+    "candidate_pairs_per_second",
+)
 SUMMARY_TOP_LEVEL_KEYS = (
     "total_records",
     "missing_field_counts",
@@ -172,4 +184,5 @@ SUMMARY_TOP_LEVEL_KEYS = (
     "completeness",
     "before_after_completeness",
     "duplicate_reduction",
+    "performance",
 )

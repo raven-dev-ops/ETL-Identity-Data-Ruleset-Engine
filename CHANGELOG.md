@@ -53,6 +53,9 @@ All notable changes to this project will be documented in this file.
 - A containerized runtime baseline with a shared batch/service image, a
   single-host compose deployment manifest, and a reusable container
   smoke test wired into CI.
+- Named scale benchmark fixtures, a `benchmark-run` CLI command, and a
+  documented `single_host_container` capacity-target baseline for
+  larger-batch operational validation.
 
 ### Changed
 
@@ -78,6 +81,9 @@ All notable changes to this project will be documented in this file.
 - The runtime now exposes `serve-api` for local and CI-accessible
   operator queries over persisted SQLite state with explicit request and
   response validation.
+- `run-all` summaries and markdown reports now record phase timing and
+  throughput metrics for the core pipeline stages, including persisted
+  state writes when `--state-db` is enabled.
 - The runtime now exposes `apply-review-decision`, `replay-run`, and
   `publish-run` as JSON-producing operator commands over the persisted
   workflow surface.

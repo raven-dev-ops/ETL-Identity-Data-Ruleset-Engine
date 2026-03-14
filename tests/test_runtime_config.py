@@ -5,6 +5,7 @@ import pytest
 
 from etl_identity_engine.cli import main
 from etl_identity_engine.runtime_config import (
+    load_benchmark_fixture_configs,
     load_pipeline_config,
     load_runtime_environment,
 )
@@ -691,6 +692,36 @@ def test_load_runtime_environment_rejects_partial_service_auth_config(
         match=r"runtime_environments\.yml: environments\.prod\.service_auth must define both reader_api_key and operator_api_key",
     ):
         load_runtime_environment("prod", runtime_config)
+
+
+def test_load_benchmark_fixture_configs_reads_capacity_targets(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    _write_text(
+        config_dir / "benchmark_fixtures.yml",
+        """
+benchmark_fixtures:
+  - name: tiny
+    description: Tiny benchmark fixture for integration tests.
+    profile: small
+    person_count: 48
+    duplicate_rate: 0.25
+    seed: 123
+    formats:
+      - csv
+    capacity_targets:
+      single_host_container:
+        max_total_duration_seconds: 30.0
+        min_normalize_records_per_second: 0.0
+        min_match_candidate_pairs_per_second: 0.0
+""",
+    )
+
+    fixtures = load_benchmark_fixture_configs(config_dir)
+
+    assert set(fixtures) == {"tiny"}
+    assert fixtures["tiny"].person_count == 48
+    assert fixtures["tiny"].formats == ("csv",)
+    assert fixtures["tiny"].capacity_targets["single_host_container"].max_total_duration_seconds == 30.0
 
 
 def test_cli_match_uses_runtime_environment_overlay(tmp_path: Path) -> None:

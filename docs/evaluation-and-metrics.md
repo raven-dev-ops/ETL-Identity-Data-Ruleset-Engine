@@ -46,6 +46,22 @@ The summary currently includes:
 - cluster and golden-record counts
 - duplicate-reduction metrics based on post-resolution record counts
 - exception counts and missing-field counts
+- phase timing and throughput metrics for the core `run-all` stages
+
+## Performance Block
+
+`run_summary.json` now also includes a `performance` block with:
+
+- `total_duration_seconds`
+- per-phase metrics for `generate`, `normalize`, `match`, `cluster`,
+  `review_queue`, `golden`, `crosswalk`, `report`, and `persist_state`
+- per-phase `duration_seconds`
+- per-phase input and output record counts
+- per-phase record throughput
+- candidate-pair throughput for the match phase
+
+The markdown report now renders the same performance section, so normal
+pipeline runs and persisted report reloads keep the same timing view.
 
 ## Duplicate Reduction
 
@@ -55,6 +71,20 @@ The current duplicate-reduction block reports:
 - `after_record_count`
 - `records_consolidated`
 - `reduction_ratio`
+
+## Benchmark Fixtures and Capacity Targets
+
+For larger-batch operational validation, use the named fixtures and
+capacity targets documented in
+[benchmarking-and-capacity.md](benchmarking-and-capacity.md):
+
+```bash
+python -m etl_identity_engine.cli benchmark-run --fixture scale_medium
+```
+
+That command runs the real persisted pipeline path, captures the
+performance block from the resulting `run_summary.json`, and evaluates
+the measured run against the configured deployment target.
 
 ## Next Steps
 

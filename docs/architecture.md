@@ -12,9 +12,9 @@ golden records, and reporting artifacts.
   state is now supported, and an authenticated operator service API now
   exposes persisted run, golden, crosswalk, and review-case lookups
   plus operator-only review-decision and replay actions. A container
-  image and single-host compose deployment baseline are now available.
-  Publication and export orchestration remain CLI-driven follow-on
-  service work.
+  image, a single-host compose deployment baseline, and named benchmark
+  fixtures with capacity targets are now available. Publication and
+  export orchestration remain CLI-driven follow-on service work.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -76,6 +76,13 @@ golden records, and reporting artifacts.
    - Materializes a named warehouse or data-product export under the
      configured output root
    - Records auditable export execution and reuse in SQLite
+12. `benchmark-run`
+   - Executes the real persisted `run-all` path against a named
+     large-batch fixture
+   - Captures phase timing and throughput metrics from the resulting run
+     summary
+   - Evaluates the run against a named deployment target such as
+     `single_host_container`
 
 ## Config Surfaces
 
@@ -88,6 +95,7 @@ The current runtime reads these repo config files at startup:
 - `config/survivorship_rules.yml`
 - `config/runtime_environments.yml`
 - `config/export_jobs.yml`
+- `config/benchmark_fixtures.yml`
 
 Named runtime environments can now layer per-environment overrides from
 `config/environments/<environment>/` and resolve secret-backed values
@@ -142,6 +150,9 @@ an authenticated operator API for local and CI integration testing, and
 the shared observability baseline now also persists privileged audit
 events while exposing health and metrics endpoints over the service
 surface.
+`benchmark-run` now reuses that same persisted runtime path and the
+`run_summary.json` performance block to capture concrete phase latency
+and throughput metrics on named large-batch fixtures.
 
 ## Output Layout
 
@@ -157,6 +168,12 @@ The current end-to-end path writes:
 - `data/review_queue/manual_review_queue.csv`
 - `data/exceptions/run_report.md`
 - `data/exceptions/run_summary.json`
+
+Named benchmark runs additionally write:
+
+- `dist/benchmarks/<fixture>/benchmark_report.md`
+- `dist/benchmarks/<fixture>/benchmark_summary.json`
+- `dist/benchmarks/<fixture>/run_artifacts/`
 
 ## Manual Review Operating Model
 
@@ -201,6 +218,8 @@ The current deployment baseline also includes:
 - a single-host compose topology under `deploy/`
 - CI smoke validation that the containerized CLI and service start
   successfully
+- named benchmark fixtures and capacity targets for the supported
+  single-host container baseline
 
 ## Command Example
 

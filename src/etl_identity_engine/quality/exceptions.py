@@ -180,6 +180,8 @@ def build_run_report_markdown(input_path: str, summary: dict[str, object]) -> st
     missing_field_counts = summary.get("missing_field_counts", {})
     refresh = summary.get("refresh", {})
     run_context = summary.get("run_context", {})
+    performance = summary.get("performance", {})
+    phase_metrics = performance.get("phase_metrics", {}) if isinstance(performance, dict) else {}
 
     lines = [
         "# Pipeline Report",
@@ -215,6 +217,36 @@ def build_run_report_markdown(input_path: str, summary: dict[str, object]) -> st
                 "",
             ]
         )
+
+    if performance:
+        lines.extend(
+            [
+                "## Performance",
+                f"- `total_duration_seconds`: `{performance.get('total_duration_seconds', 0.0)}`",
+            ]
+        )
+        for phase_name in (
+            "generate",
+            "normalize",
+            "match",
+            "cluster",
+            "review_queue",
+            "golden",
+            "crosswalk",
+            "report",
+            "persist_state",
+        ):
+            metrics = phase_metrics.get(phase_name, {})
+            if not isinstance(metrics, dict) or not metrics:
+                continue
+            lines.append(
+                f"- `{phase_name}`: duration=`{metrics.get('duration_seconds', 0.0)}`, "
+                f"input_records=`{metrics.get('input_record_count', 0)}`, "
+                f"output_records=`{metrics.get('output_record_count', 0)}`, "
+                f"output_records_per_second=`{metrics.get('output_records_per_second', 0.0)}`, "
+                f"candidate_pairs_per_second=`{metrics.get('candidate_pairs_per_second', 0.0)}`"
+            )
+        lines.append("")
 
     lines.extend(
         [

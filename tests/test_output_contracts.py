@@ -16,6 +16,8 @@ from etl_identity_engine.output_contracts import (
     SUMMARY_BEFORE_AFTER_KEYS,
     SUMMARY_COMPLETENESS_KEYS,
     SUMMARY_DUPLICATE_REDUCTION_KEYS,
+    SUMMARY_PERFORMANCE_KEYS,
+    SUMMARY_PHASE_METRIC_KEYS,
     SUMMARY_EXCEPTION_KEYS,
     SUMMARY_TOP_LEVEL_KEYS,
 )
@@ -101,10 +103,16 @@ def test_run_all_outputs_follow_documented_contracts(tmp_path: Path) -> None:
     assert isinstance(summary["duplicate_reduction"]["after_record_count"], int)
     assert isinstance(summary["duplicate_reduction"]["records_consolidated"], int)
     assert isinstance(summary["duplicate_reduction"]["reduction_ratio"], float)
+    assert set(summary["performance"]) == set(SUMMARY_PERFORMANCE_KEYS)
+    assert isinstance(summary["performance"]["total_duration_seconds"], float)
+    assert isinstance(summary["performance"]["phase_metrics"], dict)
+    for metrics in summary["performance"]["phase_metrics"].values():
+        assert set(metrics) == set(SUMMARY_PHASE_METRIC_KEYS)
 
     report_path = tmp_path / "data" / "exceptions" / "run_report.md"
     report_text = report_path.read_text(encoding="utf-8")
     assert report_text.startswith("# Pipeline Report\n")
+    assert "## Performance" in report_text
     assert "## Duplicate Reduction" in report_text
 
 

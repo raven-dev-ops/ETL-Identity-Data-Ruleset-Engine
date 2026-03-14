@@ -136,10 +136,11 @@ is included in the repository.
   production-style evaluation. Local filesystem and object-storage-
   compatible landing zones are supported. Persisted SQLite state,
   manifest-driven incremental refresh, a container image, a single-host
-  compose deployment baseline, and an authenticated operator service
-  API are now available. The current service line supports read-only
-  lookups plus operator-only review decision and replay actions;
-  publication and export orchestration remain CLI-driven.
+  compose deployment baseline, named benchmark fixtures with capacity
+  targets, and an authenticated operator service API are now available.
+  The current service line supports read-only lookups plus operator-only
+  review decision and replay actions; publication and export
+  orchestration remain CLI-driven.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
@@ -174,6 +175,7 @@ is included in the repository.
 - [Normalization](docs/normalization.md)
 - [Production Batch Manifest](docs/production-batch-manifest.md)
 - [Compatibility Policy](docs/compatibility-policy.md)
+- [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Export Jobs](docs/export-jobs.md)
@@ -222,7 +224,7 @@ This repository now includes a working `M1` scaffold:
 - stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
   `review-queue`, `golden`, `report`, `publish-delivery`, `publish-run`,
   `review-case-list`, `review-case-update`, `apply-review-decision`,
-  `replay-run`, `export-job-list`, `export-job-run`,
+  `replay-run`, `benchmark-run`, `export-job-list`, `export-job-run`,
   `export-job-history`, `serve-api`, `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
@@ -262,6 +264,7 @@ used per run.
   `data/golden/source_to_golden_crosswalk.csv`
 - a manual review queue in `data/review_queue/manual_review_queue.csv`
 - exception artifacts and summary outputs under `data/exceptions/`
+- phase timing and throughput metrics in `data/exceptions/run_summary.json`
 
 The stable output shapes for those files are documented in
 [docs/output-contracts.md](docs/output-contracts.md).
@@ -320,6 +323,14 @@ compatibility rules in
 [docs/compatibility-policy.md](docs/compatibility-policy.md).
 Container build and compose deployment guidance is documented in
 [docs/container-deployment.md](docs/container-deployment.md).
+Benchmark fixture definitions, regression targets, and the
+`benchmark-run` workflow are documented in
+[docs/benchmarking-and-capacity.md](docs/benchmarking-and-capacity.md).
+
+For scale validation, `benchmark-run` executes the real persisted
+pipeline against a named large-batch fixture from
+`config/benchmark_fixtures.yml` and writes benchmark artifacts under
+`dist/benchmarks/<fixture>/`.
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

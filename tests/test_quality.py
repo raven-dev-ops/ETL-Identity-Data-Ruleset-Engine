@@ -109,6 +109,19 @@ def test_build_run_report_markdown_includes_before_after_and_duplicate_metrics()
             "records_consolidated": 2,
             "reduction_ratio": 0.5,
         },
+        "performance": {
+            "total_duration_seconds": 1.234,
+            "phase_metrics": {
+                "normalize": {
+                    "duration_seconds": 0.123,
+                    "input_record_count": 4,
+                    "output_record_count": 4,
+                    "output_records_per_second": 32.52,
+                    "candidate_pair_count": 0,
+                    "candidate_pairs_per_second": 0.0,
+                }
+            },
+        },
         "missing_field_counts": {"phone": 1},
         "exception_counts": {"invalid_dobs": 1, "malformed_phones": 1, "normalization_failures": 0},
     }
@@ -120,3 +133,5 @@ def test_build_run_report_markdown_includes_before_after_and_duplicate_metrics()
     assert "## Duplicate Reduction" in report
     assert "- `records_consolidated`: `2`" in report
     assert "- `reduction_ratio`: `0.5`" in report
+    assert "## Performance" in report
+    assert "- `total_duration_seconds`: `1.234`" in report

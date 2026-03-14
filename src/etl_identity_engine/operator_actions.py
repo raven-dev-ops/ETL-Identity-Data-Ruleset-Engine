@@ -121,6 +121,7 @@ def replay_run_operation(
         config_dir=source_run.config_dir,
         profile=None,
         seed=None,
+        person_count=None,
         duplicate_rate=None,
         formats=None,
         refresh_mode=resolved_refresh_mode,

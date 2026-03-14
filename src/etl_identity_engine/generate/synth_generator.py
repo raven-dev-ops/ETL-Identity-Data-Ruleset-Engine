@@ -94,6 +94,13 @@ def _validate_profile(profile: str) -> None:
         raise ValueError(f"unknown profile: {profile}")
 
 
+def _validate_person_count_override(person_count_override: int | None) -> None:
+    if person_count_override is None:
+        return
+    if person_count_override <= 0:
+        raise ValueError("person_count_override must be greater than 0")
+
+
 def _validate_formats(formats: tuple[str, ...]) -> tuple[str, ...]:
     normalized = tuple(fmt.strip().lower() for fmt in formats if fmt.strip())
     if not normalized:
@@ -166,8 +173,11 @@ def _random_iso_timestamp(rng: random.Random, start: date, end: date) -> str:
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _profile_person_count(profile: str) -> int:
+def _profile_person_count(profile: str, person_count_override: int | None = None) -> int:
     _validate_profile(profile)
+    _validate_person_count_override(person_count_override)
+    if person_count_override is not None:
+        return person_count_override
     return PROFILE_PERSON_COUNT[profile]
 
 
@@ -185,9 +195,11 @@ def generate_synthetic_sources(
     seed: int = 42,
     duplicate_rate: float | None = None,
     formats: tuple[str, ...] = ("csv", "parquet"),
+    person_count_override: int | None = None,
 ) -> SyntheticGenerationResult:
     """Generate synthetic source datasets and return file paths + summary."""
     _validate_profile(profile)
+    _validate_person_count_override(person_count_override)
     format_list = _validate_formats(formats)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -200,7 +212,7 @@ def generate_synthetic_sources(
     cities = ["SUMMIT", "BROOKFIELD", "RIVERTON", "HAYES", "PARKSIDE"]
     states = ["OH", "PA", "MI", "IN"]
 
-    person_count = _profile_person_count(profile)
+    person_count = _profile_person_count(profile, person_count_override)
     effective_duplicate_rate = _profile_duplicate_rate(profile, duplicate_rate)
     duplicate_count = int(round(person_count * effective_duplicate_rate))
     duplicate_indices = set(rng.sample(range(1, person_count + 1), duplicate_count))

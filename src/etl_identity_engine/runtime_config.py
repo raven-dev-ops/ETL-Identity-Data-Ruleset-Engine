@@ -24,6 +24,8 @@ SUPPORTED_SURVIVORSHIP_FIELDS = ("first_name", "last_name", "dob", "address", "p
 SUPPORTED_SURVIVORSHIP_STRATEGIES = frozenset({"source_priority_then_non_null"})
 SUPPORTED_EXPORT_JOB_CONSUMERS = frozenset({"warehouse", "data_product"})
 SUPPORTED_EXPORT_JOB_FORMATS = frozenset({"csv_snapshot"})
+SUPPORTED_SYNTHETIC_PROFILES = frozenset({"small", "medium", "large"})
+SUPPORTED_BENCHMARK_FORMATS = frozenset({"csv", "parquet"})
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
 
 
@@ -116,6 +118,26 @@ class ExportJobConfig:
     contract_name: str
     contract_version: str
     export_format: str
+
+
+@dataclass(frozen=True)
+class BenchmarkCapacityTargetConfig:
+    deployment_name: str
+    max_total_duration_seconds: float
+    min_normalize_records_per_second: float
+    min_match_candidate_pairs_per_second: float
+
+
+@dataclass(frozen=True)
+class BenchmarkFixtureConfig:
+    name: str
+    description: str
+    profile: str
+    person_count: int
+    duplicate_rate: float
+    seed: int
+    formats: tuple[str, ...]
+    capacity_targets: dict[str, BenchmarkCapacityTargetConfig]
 
 
 def default_config_dir() -> Path:
@@ -935,3 +957,189 @@ def load_export_job_configs(
         )
 
     return resolved_jobs
+
+
+def load_benchmark_fixture_configs(
+    config_dir: Path | None = None,
+    *,
+    environment: str | None = None,
+) -> dict[str, BenchmarkFixtureConfig]:
+    root = config_dir or default_config_dir()
+    benchmark_path = root / "benchmark_fixtures.yml"
+    benchmark_rules = _load_pipeline_yaml(root, "benchmark_fixtures.yml", environment=environment)
+
+    _validate_allowed_keys(
+        benchmark_rules,
+        allowed_keys={"benchmark_fixtures"},
+        path=benchmark_path,
+        context="top-level config",
+    )
+    raw_fixtures = benchmark_rules.get("benchmark_fixtures")
+    if not isinstance(raw_fixtures, list) or not raw_fixtures:
+        raise _config_error(benchmark_path, "benchmark_fixtures must be a non-empty list")
+
+    resolved_fixtures: dict[str, BenchmarkFixtureConfig] = {}
+    for index, raw_fixture in enumerate(raw_fixtures):
+        if not isinstance(raw_fixture, Mapping):
+            raise _config_error(benchmark_path, f"benchmark_fixtures[{index}] must be a mapping")
+        _validate_allowed_keys(
+            raw_fixture,
+            allowed_keys={
+                "name",
+                "description",
+                "profile",
+                "person_count",
+                "duplicate_rate",
+                "seed",
+                "formats",
+                "capacity_targets",
+            },
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+        )
+
+        name = _require_non_empty_string(
+            raw_fixture,
+            "name",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+        )
+        if name in resolved_fixtures:
+            raise _config_error(benchmark_path, f"benchmark fixture name {name!r} is duplicated")
+
+        profile = _require_non_empty_string(
+            raw_fixture,
+            "profile",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+        )
+        if profile not in SUPPORTED_SYNTHETIC_PROFILES:
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].profile must be one of: "
+                f"{', '.join(sorted(SUPPORTED_SYNTHETIC_PROFILES))}",
+            )
+
+        person_count_value = raw_fixture.get("person_count")
+        if isinstance(person_count_value, bool) or not isinstance(person_count_value, int) or person_count_value <= 0:
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].person_count must be an integer greater than 0",
+            )
+
+        duplicate_rate = _require_float(
+            raw_fixture,
+            "duplicate_rate",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+        )
+        if duplicate_rate < 0.0 or duplicate_rate > 1.0:
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].duplicate_rate must be between 0 and 1",
+            )
+
+        seed_value = raw_fixture.get("seed")
+        if isinstance(seed_value, bool) or not isinstance(seed_value, int):
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].seed must be an integer",
+            )
+
+        formats = _require_string_list(
+            raw_fixture,
+            "formats",
+            path=benchmark_path,
+            context=f"benchmark_fixtures[{index}]",
+        )
+        unsupported_formats = sorted(set(formats) - SUPPORTED_BENCHMARK_FORMATS)
+        if unsupported_formats:
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].formats contains unsupported values: "
+                f"{', '.join(unsupported_formats)}",
+            )
+
+        raw_targets = raw_fixture.get("capacity_targets", {})
+        if not isinstance(raw_targets, Mapping):
+            raise _config_error(
+                benchmark_path,
+                f"benchmark_fixtures[{index}].capacity_targets must be a mapping",
+            )
+        capacity_targets: dict[str, BenchmarkCapacityTargetConfig] = {}
+        for deployment_name, target_value in raw_targets.items():
+            if not isinstance(deployment_name, str) or not deployment_name.strip():
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets contains an invalid deployment name",
+                )
+            if not isinstance(target_value, Mapping):
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name} must be a mapping",
+                )
+            _validate_allowed_keys(
+                target_value,
+                allowed_keys={
+                    "max_total_duration_seconds",
+                    "min_normalize_records_per_second",
+                    "min_match_candidate_pairs_per_second",
+                },
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
+            max_total_duration_seconds = _require_float(
+                target_value,
+                "max_total_duration_seconds",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
+            min_normalize_records_per_second = _require_float(
+                target_value,
+                "min_normalize_records_per_second",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
+            min_match_candidate_pairs_per_second = _require_float(
+                target_value,
+                "min_match_candidate_pairs_per_second",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}",
+            )
+            if max_total_duration_seconds <= 0.0:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name}.max_total_duration_seconds "
+                    "must be greater than 0",
+                )
+            if min_normalize_records_per_second < 0.0 or min_match_candidate_pairs_per_second < 0.0:
+                raise _config_error(
+                    benchmark_path,
+                    f"benchmark_fixtures[{index}].capacity_targets.{deployment_name} minimum throughput values "
+                    "must be greater than or equal to 0",
+                )
+            normalized_deployment_name = deployment_name.strip()
+            capacity_targets[normalized_deployment_name] = BenchmarkCapacityTargetConfig(
+                deployment_name=normalized_deployment_name,
+                max_total_duration_seconds=max_total_duration_seconds,
+                min_normalize_records_per_second=min_normalize_records_per_second,
+                min_match_candidate_pairs_per_second=min_match_candidate_pairs_per_second,
+            )
+
+        resolved_fixtures[name] = BenchmarkFixtureConfig(
+            name=name,
+            description=_require_non_empty_string(
+                raw_fixture,
+                "description",
+                path=benchmark_path,
+                context=f"benchmark_fixtures[{index}]",
+            ),
+            profile=profile,
+            person_count=person_count_value,
+            duplicate_rate=duplicate_rate,
+            seed=seed_value,
+            formats=formats,
+            capacity_targets=capacity_targets,
+        )
+
+    return resolved_fixtures

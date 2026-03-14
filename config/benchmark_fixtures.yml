@@ -1,0 +1,32 @@
+benchmark_fixtures:
+  - name: scale_medium
+    description: >
+      Single-host container baseline benchmark for a medium operational
+      batch with persisted state enabled.
+    profile: large
+    person_count: 2400
+    duplicate_rate: 0.40
+    seed: 42
+    formats:
+      - csv
+    capacity_targets:
+      single_host_container:
+        max_total_duration_seconds: 5.0
+        min_normalize_records_per_second: 10000.0
+        min_match_candidate_pairs_per_second: 20000.0
+
+  - name: scale_large
+    description: >
+      Single-host container stretch benchmark for a larger operational
+      batch on the supported single-host deployment baseline.
+    profile: large
+    person_count: 9600
+    duplicate_rate: 0.40
+    seed: 42
+    formats:
+      - csv
+    capacity_targets:
+      single_host_container:
+        max_total_duration_seconds: 30.0
+        min_normalize_records_per_second: 10000.0
+        min_match_candidate_pairs_per_second: 20000.0

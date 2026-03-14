@@ -6,6 +6,7 @@ import argparse
 from dataclasses import asdict
 import json
 import os
+import shutil
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
@@ -13,6 +14,10 @@ from pathlib import Path
 import time
 from typing import Sequence
 
+from etl_identity_engine.benchmarking import (
+    build_benchmark_report_markdown,
+    build_benchmark_summary,
+)
 from etl_identity_engine.delivery_publish import publish_delivery_snapshot
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
 from etl_identity_engine.incremental_refresh import refresh_incremental_run
@@ -62,6 +67,7 @@ from etl_identity_engine.quality.exceptions import (
 from etl_identity_engine.runtime_config import (
     ExportJobConfig,
     PipelineConfig,
+    load_benchmark_fixture_configs,
     load_export_job_configs,
     load_pipeline_config,
     load_runtime_environment,
@@ -392,7 +398,7 @@ def _collect_report_context_from_store(
         len(filter_active_review_queue_rows(bundle.review_rows)),
         {
             key: bundle.run.summary[key]
-            for key in ("refresh", "run_context")
+            for key in ("refresh", "run_context", "performance")
             if key in bundle.run.summary
         },
     )
@@ -446,7 +452,7 @@ def _collect_report_context(
         existing_summary = json.loads(summary_file.read_text(encoding="utf-8"))
         summary_updates = {
             key: existing_summary[key]
-            for key in ("refresh", "run_context")
+            for key in ("refresh", "run_context", "performance")
             if key in existing_summary
         }
     return (
@@ -792,6 +798,29 @@ def _write_quality_outputs(
     return summary
 
 
+def _rate(count: int | float, duration_seconds: float) -> float:
+    if duration_seconds <= 0.0:
+        return 0.0
+    return round(float(count) / duration_seconds, 6)
+
+
+def _build_phase_metric(
+    duration_seconds: float,
+    *,
+    input_record_count: int = 0,
+    output_record_count: int = 0,
+    candidate_pair_count: int = 0,
+) -> dict[str, float | int]:
+    return {
+        "duration_seconds": round(duration_seconds, 6),
+        "input_record_count": int(input_record_count),
+        "output_record_count": int(output_record_count),
+        "output_records_per_second": _rate(output_record_count, duration_seconds),
+        "candidate_pair_count": int(candidate_pair_count),
+        "candidate_pairs_per_second": _rate(candidate_pair_count, duration_seconds),
+    }
+
+
 def _resolve_run_key_args(
     args: argparse.Namespace,
     *,
@@ -805,6 +834,7 @@ def _resolve_run_key_args(
         "config_dir": str(Path(args.config_dir).resolve()) if args.config_dir else None,
         "profile": None if manifest_path else args.profile,
         "seed": None if manifest_path else args.seed,
+        "person_count": None if manifest_path else getattr(args, "person_count", None),
         "duplicate_rate": None if manifest_path else args.duplicate_rate,
         "formats": None if manifest_path else args.formats,
         "refresh_mode": getattr(args, "refresh_mode", "full"),
@@ -861,6 +891,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
         seed=args.seed,
         duplicate_rate=args.duplicate_rate,
         formats=formats,
+        person_count_override=args.person_count,
     )
     print("generated:")
     for file_path in result.generated_files:
@@ -1582,6 +1613,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     crosswalk_file = base / "data" / "golden" / "source_to_golden_crosswalk.csv"
     review_queue_file = base / "data" / "review_queue" / "manual_review_queue.csv"
     report_file = base / "data" / "exceptions" / "run_report.md"
+    phase_metrics: dict[str, dict[str, float | int]] = {}
 
     emit_structured_log(
         "pipeline_run_requested",
@@ -1639,9 +1671,11 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     try:
         config = _load_config(args.config_dir, args.environment)
         resolved_manifest: ResolvedBatchManifest | None = None
+        generation_result = None
         input_mode = "manifest" if manifest_path else "synthetic"
         batch_id: str | None = None
         formats_value: str | None = None
+        generated_person_count: int | None = None
         config_fingerprint = _config_fingerprint(config)
         refresh_summary: dict[str, object] = {
             "mode": args.refresh_mode,
@@ -1658,7 +1692,9 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             "reused_cluster_count": 0,
         }
         if manifest_path:
+            normalize_started = time.perf_counter()
             resolved_manifest = _resolve_manifest_inputs(manifest_path)
+            manifest_rows = resolved_manifest.all_rows()
             batch_id = resolved_manifest.manifest.batch_id
             print(
                 f"validated batch manifest: {resolved_manifest.manifest_path} "
@@ -1668,25 +1704,47 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 print(f" - {path}")
             normalized_rows = _write_normalized_output(
                 normalized_file,
-                resolved_manifest.all_rows(),
+                manifest_rows,
                 config,
+            )
+            phase_metrics["normalize"] = _build_phase_metric(
+                seconds_since(normalize_started),
+                input_record_count=len(manifest_rows),
+                output_record_count=len(normalized_rows),
             )
         else:
             formats = _parse_formats(args.formats)
             formats_value = ",".join(formats)
-            batch_id = f"synthetic:{args.profile}:{args.seed}"
             synthetic_dir = base / "data" / "synthetic_sources"
-            generate_synthetic_sources(
+            generate_started = time.perf_counter()
+            generation_result = generate_synthetic_sources(
                 output_dir=synthetic_dir,
                 profile=args.profile,
                 seed=args.seed,
                 duplicate_rate=args.duplicate_rate,
                 formats=formats,
+                person_count_override=args.person_count,
             )
+            generated_person_count = int(generation_result.summary["person_entity_count"])
+            batch_id = f"synthetic:{args.profile}:{args.seed}"
+            if args.person_count is not None:
+                batch_id = f"{batch_id}:{generated_person_count}"
+            phase_metrics["generate"] = _build_phase_metric(
+                seconds_since(generate_started),
+                output_record_count=int(generation_result.summary["source_a_record_count"])
+                + int(generation_result.summary["source_b_record_count"]),
+            )
+            normalize_input_rows = _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats))
+            normalize_started = time.perf_counter()
             normalized_rows = _write_normalized_output(
                 normalized_file,
-                _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
+                normalize_input_rows,
                 config,
+            )
+            phase_metrics["normalize"] = _build_phase_metric(
+                seconds_since(normalize_started),
+                input_record_count=len(normalize_input_rows),
+                output_record_count=len(normalized_rows),
             )
 
         review_source_bundle = None
@@ -1738,11 +1796,42 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     active_review_rows = incremental_result.active_review_rows
                     review_rows = incremental_result.review_rows
                     refresh_summary = incremental_result.metadata
+                    match_started = time.perf_counter()
                     _write_precomputed_match_outputs(matches_file, match_rows, blocking_metrics_rows)
+                    phase_metrics["match"] = _build_phase_metric(
+                        seconds_since(match_started),
+                        input_record_count=len(normalized_rows),
+                        output_record_count=len(match_rows),
+                        candidate_pair_count=len(match_rows),
+                    )
+                    cluster_started = time.perf_counter()
                     _write_precomputed_cluster_output(clusters_file, cluster_output_rows)
+                    phase_metrics["cluster"] = _build_phase_metric(
+                        seconds_since(cluster_started),
+                        input_record_count=len(normalized_rows),
+                        output_record_count=len(cluster_output_rows),
+                    )
+                    review_queue_started = time.perf_counter()
                     _write_precomputed_review_queue_output(review_queue_file, active_review_rows)
+                    phase_metrics["review_queue"] = _build_phase_metric(
+                        seconds_since(review_queue_started),
+                        input_record_count=len(match_rows),
+                        output_record_count=len(active_review_rows),
+                    )
+                    golden_started = time.perf_counter()
                     _write_precomputed_golden_output(golden_file, golden_rows)
+                    phase_metrics["golden"] = _build_phase_metric(
+                        seconds_since(golden_started),
+                        input_record_count=len(clustered_rows),
+                        output_record_count=len(golden_rows),
+                    )
+                    crosswalk_started = time.perf_counter()
                     _write_precomputed_crosswalk_output(crosswalk_file, crosswalk_rows)
+                    phase_metrics["crosswalk"] = _build_phase_metric(
+                        seconds_since(crosswalk_started),
+                        input_record_count=len(clustered_rows),
+                        output_record_count=len(crosswalk_rows),
+                    )
                 else:
                     refresh_summary.update(
                         {
@@ -1765,6 +1854,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 print("incremental refresh fell back to full rebuild: no prior completed manifest run found")
 
         if args.refresh_mode != "incremental" or previous_bundle is None or refresh_summary.get("fallback_to_full", False):
+            match_started = time.perf_counter()
             match_rows, blocking_metrics_rows = _write_match_output(
                 matches_file,
                 normalized_rows,
@@ -1772,14 +1862,44 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 forced_pairs=forced_review_pairs,
                 review_overrides=review_overrides,
             )
+            phase_metrics["match"] = _build_phase_metric(
+                seconds_since(match_started),
+                input_record_count=len(normalized_rows),
+                output_record_count=len(match_rows),
+                candidate_pair_count=len(match_rows),
+            )
+            cluster_started = time.perf_counter()
             clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
+            phase_metrics["cluster"] = _build_phase_metric(
+                seconds_since(cluster_started),
+                input_record_count=len(normalized_rows),
+                output_record_count=len(clustered_rows),
+            )
+            review_queue_started = time.perf_counter()
             active_review_rows, review_rows = _write_manual_review_output(
                 review_queue_file,
                 match_rows,
                 previous_review_rows=review_source_bundle.review_rows if review_source_bundle is not None else None,
             )
+            phase_metrics["review_queue"] = _build_phase_metric(
+                seconds_since(review_queue_started),
+                input_record_count=len(match_rows),
+                output_record_count=len(active_review_rows),
+            )
+            golden_started = time.perf_counter()
             golden_rows = _write_golden_output(golden_file, clustered_rows, config)
+            phase_metrics["golden"] = _build_phase_metric(
+                seconds_since(golden_started),
+                input_record_count=len(clustered_rows),
+                output_record_count=len(golden_rows),
+            )
+            crosswalk_started = time.perf_counter()
             crosswalk_rows = _write_crosswalk_output(crosswalk_file, clustered_rows, golden_rows)
+            phase_metrics["crosswalk"] = _build_phase_metric(
+                seconds_since(crosswalk_started),
+                input_record_count=len(clustered_rows),
+                output_record_count=len(crosswalk_rows),
+            )
             if args.refresh_mode == "full":
                 refresh_summary["fallback_to_full"] = False
                 refresh_summary["reused_record_count"] = 0
@@ -1799,6 +1919,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             crosswalk_rows = incremental_result.crosswalk_rows
 
         decision_counts = Counter(str(row.get("decision", "")) for row in match_rows)
+        report_started = time.perf_counter()
         summary = _write_quality_outputs(
             report_file,
             normalized_file,
@@ -1815,11 +1936,36 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     "manifest_path": str(resolved_manifest.manifest_path) if resolved_manifest else "",
                     "config_fingerprint": config_fingerprint,
                     "refresh_mode": args.refresh_mode,
+                    "profile": None if manifest_path else args.profile,
+                    "seed": None if manifest_path else args.seed,
+                    "person_count": generated_person_count,
+                    "formats": formats_value,
                 },
                 "refresh": refresh_summary,
             },
         )
+        phase_metrics["report"] = _build_phase_metric(
+            seconds_since(report_started),
+            input_record_count=len(normalized_rows),
+            output_record_count=1,
+        )
+        summary["performance"] = {
+            "total_duration_seconds": round(seconds_since(started), 6),
+            "phase_metrics": phase_metrics,
+        }
+        report_file.write_text(
+            build_run_report_markdown(
+                os.path.relpath(normalized_file, report_file.parent).replace("\\", "/"),
+                summary,
+            ),
+            encoding="utf-8",
+        )
+        report_file.with_name("run_summary.json").write_text(
+            json.dumps(summary, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
         if state_store is not None and run_id is not None:
+            persist_started = time.perf_counter()
             state_store.persist_run(
                 metadata=PersistRunMetadata(
                     run_id=run_id,
@@ -1846,6 +1992,27 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 review_rows=review_rows,
                 summary=summary,
             )
+            phase_metrics["persist_state"] = _build_phase_metric(
+                seconds_since(persist_started),
+                input_record_count=len(normalized_rows),
+                output_record_count=1,
+            )
+            summary["performance"] = {
+                "total_duration_seconds": round(seconds_since(started), 6),
+                "phase_metrics": phase_metrics,
+            }
+            state_store.update_run_summary(run_id=run_id, summary=summary)
+            report_file.write_text(
+                build_run_report_markdown(
+                    os.path.relpath(normalized_file, report_file.parent).replace("\\", "/"),
+                    summary,
+                ),
+                encoding="utf-8",
+            )
+            report_file.with_name("run_summary.json").write_text(
+                json.dumps(summary, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
             print(f"persisted run state: {Path(args.state_db)} (run_id={run_id})")
         emit_structured_log(
             "pipeline_run_completed",
@@ -1859,7 +2026,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             cluster_count=summary["cluster_count"],
             golden_record_count=summary["golden_record_count"],
             review_queue_count=summary["review_queue_count"],
-            duration_seconds=seconds_since(started),
+            duration_seconds=summary["performance"]["total_duration_seconds"],
         )
         print("pipeline run complete")
     except Exception as exc:
@@ -1884,6 +2051,106 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         raise
 
 
+def _cmd_benchmark_run(args: argparse.Namespace) -> None:
+    benchmark_config_dir = Path(args.config_dir) if args.config_dir else None
+    fixtures = load_benchmark_fixture_configs(benchmark_config_dir, environment=args.environment)
+    fixture = fixtures.get(args.fixture)
+    if fixture is None:
+        raise ValueError(
+            f"Unknown benchmark fixture {args.fixture!r}; expected one of {sorted(fixtures)}"
+        )
+
+    deployment_name = args.deployment_target
+    if args.enforce_targets and deployment_name not in fixture.capacity_targets:
+        raise ValueError(
+            f"Benchmark fixture {fixture.name!r} does not define capacity targets for "
+            f"deployment {deployment_name!r}"
+        )
+
+    benchmark_root = Path(args.output_dir) / fixture.name
+    if benchmark_root.exists():
+        shutil.rmtree(benchmark_root)
+    benchmark_root.mkdir(parents=True, exist_ok=True)
+
+    run_artifact_root = benchmark_root / "run_artifacts"
+    state_db = Path(args.state_db) if args.state_db else benchmark_root / "state" / "pipeline_state.sqlite"
+    benchmark_summary_path = benchmark_root / "benchmark_summary.json"
+    benchmark_report_path = benchmark_root / "benchmark_report.md"
+
+    emit_structured_log(
+        "benchmark_run_requested",
+        component="cli",
+        command="benchmark-run",
+        fixture=fixture.name,
+        deployment_target=deployment_name,
+        output_dir=benchmark_root,
+        state_db=state_db,
+    )
+
+    run_all_argv = [
+        "run-all",
+        "--base-dir",
+        str(run_artifact_root),
+        "--profile",
+        fixture.profile,
+        "--seed",
+        str(fixture.seed),
+        "--duplicate-rate",
+        str(fixture.duplicate_rate),
+        "--formats",
+        ",".join(fixture.formats),
+        "--person-count",
+        str(fixture.person_count),
+        "--state-db",
+        str(state_db),
+    ]
+    if args.environment:
+        run_all_argv.extend(["--environment", args.environment])
+    if args.runtime_config:
+        run_all_argv.extend(["--runtime-config", args.runtime_config])
+    if args.config_dir:
+        run_all_argv.extend(["--config-dir", args.config_dir])
+
+    main(run_all_argv)
+
+    run_summary_path = run_artifact_root / "data" / "exceptions" / "run_summary.json"
+    run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+    benchmark_summary = build_benchmark_summary(
+        fixture=fixture,
+        deployment_name=deployment_name,
+        run_summary=run_summary,
+        benchmark_root=benchmark_root,
+        run_artifact_root=run_artifact_root,
+        run_summary_path=run_summary_path,
+    )
+    benchmark_summary_path.write_text(
+        json.dumps(benchmark_summary, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    write_markdown(benchmark_report_path, build_benchmark_report_markdown(benchmark_summary))
+
+    capacity_assertions = benchmark_summary["capacity_assertions"]
+    emit_structured_log(
+        "benchmark_run_completed",
+        component="cli",
+        command="benchmark-run",
+        fixture=fixture.name,
+        deployment_target=deployment_name,
+        status=capacity_assertions["status"],
+        benchmark_summary_path=benchmark_summary_path,
+    )
+
+    print(f"benchmark summary written: {benchmark_summary_path}")
+    print(f"benchmark report written: {benchmark_report_path}")
+    print(f"capacity assertion status: {capacity_assertions['status']}")
+
+    if args.enforce_targets and capacity_assertions["status"] != "passed":
+        raise RuntimeError(
+            f"Benchmark fixture {fixture.name!r} missed one or more capacity targets "
+            f"for deployment {deployment_name!r}"
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="etl-identity-engine")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1892,6 +2159,12 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--output", default="data/synthetic_sources")
     generate_parser.add_argument("--profile", default="small", choices=["small", "medium", "large"])
     generate_parser.add_argument("--seed", default=42, type=int)
+    generate_parser.add_argument(
+        "--person-count",
+        default=None,
+        type=int,
+        help="Override the synthetic person-entity count for scale testing or benchmark fixtures.",
+    )
     generate_parser.add_argument("--duplicate-rate", default=None, type=float)
     generate_parser.add_argument("--formats", default="csv,parquet")
     generate_parser.set_defaults(func=_cmd_generate)
@@ -2245,10 +2518,53 @@ def build_parser() -> argparse.ArgumentParser:
     serve_api_parser.add_argument("--log-level", default="info")
     serve_api_parser.set_defaults(func=_cmd_serve_api)
 
+    benchmark_run_parser = subparsers.add_parser(
+        "benchmark-run",
+        help="Run a named large-batch benchmark fixture and evaluate its capacity targets.",
+    )
+    benchmark_run_parser.add_argument("--fixture", required=True)
+    benchmark_run_parser.add_argument(
+        "--deployment-target",
+        default="single_host_container",
+        help="Capacity-target deployment profile to evaluate for the selected benchmark fixture.",
+    )
+    benchmark_run_parser.add_argument(
+        "--output-dir",
+        default="dist/benchmarks",
+        help="Directory where benchmark artifacts and the nested pipeline run should be written.",
+    )
+    benchmark_run_parser.add_argument(
+        "--state-db",
+        default=None,
+        help="Optional SQLite state path override for the benchmark run.",
+    )
+    benchmark_run_parser.add_argument("--environment", default=None)
+    benchmark_run_parser.add_argument("--runtime-config", default=None)
+    benchmark_run_parser.add_argument("--config-dir", default=None)
+    benchmark_run_parser.add_argument(
+        "--enforce-targets",
+        dest="enforce_targets",
+        action="store_true",
+        help="Fail the command if the selected benchmark fixture misses a configured capacity target.",
+    )
+    benchmark_run_parser.add_argument(
+        "--no-enforce-targets",
+        dest="enforce_targets",
+        action="store_false",
+        help="Write benchmark artifacts without failing the command on target misses.",
+    )
+    benchmark_run_parser.set_defaults(func=_cmd_benchmark_run, enforce_targets=True)
+
     run_all_parser = subparsers.add_parser("run-all", help="Run all scaffold stages in sequence.")
     run_all_parser.add_argument("--base-dir", default=".")
     run_all_parser.add_argument("--profile", default="small", choices=["small", "medium", "large"])
     run_all_parser.add_argument("--seed", default=42, type=int)
+    run_all_parser.add_argument(
+        "--person-count",
+        default=None,
+        type=int,
+        help="Override the synthetic person-entity count for scale testing or benchmark fixtures.",
+    )
     run_all_parser.add_argument("--duplicate-rate", default=None, type=float)
     run_all_parser.add_argument("--formats", default="csv,parquet")
     run_all_parser.add_argument("--refresh-mode", default="full", choices=["full", "incremental"])

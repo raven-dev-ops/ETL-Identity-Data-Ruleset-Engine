@@ -84,6 +84,8 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     assert summary["before_after_completeness"]["name"]["after"] == summary["completeness"]["canonical_name_present"]
     assert summary["duplicate_reduction"]["after_record_count"] == len(golden_rows)
     assert summary["duplicate_reduction"]["records_consolidated"] == len(normalized_rows) - len(golden_rows)
+    assert summary["performance"]["phase_metrics"]["normalize"]["output_record_count"] == len(normalized_rows)
+    assert summary["performance"]["phase_metrics"]["match"]["candidate_pair_count"] == len(match_rows)
     assert "- Input file: `../normalized/normalized_person_records.csv`" in report_text
     assert str(tmp_path).replace("\\", "/") not in report_text
     if review_queue_rows:

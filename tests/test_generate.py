@@ -93,3 +93,22 @@ def test_incident_links_reference_valid_records(tmp_path: Path) -> None:
     assert links
     assert all(link["source_record_id"] in valid_ids for link in links)
 
+
+def test_generate_supports_person_count_override(tmp_path: Path) -> None:
+    output = tmp_path / "override"
+    result = generate_synthetic_sources(
+        output,
+        profile="small",
+        seed=42,
+        duplicate_rate=0.25,
+        formats=("csv",),
+        person_count_override=40,
+    )
+
+    source_a = _read_csv_rows(output / "person_source_a.csv")
+    source_b = _read_csv_rows(output / "person_source_b.csv")
+
+    assert result.summary["person_entity_count"] == 40
+    assert len(source_a) == 40
+    assert len(source_b) == 40
+

@@ -261,6 +261,7 @@ def build_run_key(
     config_dir: str | None,
     profile: str | None,
     seed: int | None,
+    person_count: int | None,
     duplicate_rate: float | None,
     formats: str | None,
     refresh_mode: str | None,
@@ -273,6 +274,7 @@ def build_run_key(
             "config_dir": config_dir,
             "profile": profile,
             "seed": seed,
+            "person_count": person_count,
             "duplicate_rate": duplicate_rate,
             "formats": formats,
             "refresh_mode": refresh_mode,
@@ -695,6 +697,38 @@ class SQLitePipelineStore:
                 created_at_utc=metadata.finished_at_utc,
             )
             connection.commit()
+
+    def update_run_summary(
+        self,
+        *,
+        run_id: str,
+        summary: dict[str, object],
+    ) -> None:
+        with _connect(self.db_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE pipeline_runs
+                SET total_records = ?,
+                    candidate_pair_count = ?,
+                    cluster_count = ?,
+                    golden_record_count = ?,
+                    review_queue_count = ?,
+                    summary_json = ?
+                WHERE run_id = ?
+                """,
+                (
+                    int(summary.get("total_records", 0)),
+                    int(summary.get("candidate_pair_count", 0)),
+                    int(summary.get("cluster_count", 0)),
+                    int(summary.get("golden_record_count", 0)),
+                    int(summary.get("review_queue_count", 0)),
+                    json.dumps(summary, sort_keys=True),
+                    run_id,
+                ),
+            )
+            connection.commit()
+        if cursor.rowcount == 0:
+            raise FileNotFoundError(f"Persisted run not found: {run_id}")
 
     def mark_run_failed(
         self,

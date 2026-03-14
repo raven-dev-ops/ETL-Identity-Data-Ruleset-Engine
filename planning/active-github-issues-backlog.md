@@ -275,7 +275,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 77) Add scale benchmarks, large-batch fixtures, and SLO-oriented capacity targets
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.6.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
 - Depends on: #63, #66, #75
@@ -350,7 +350,7 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#77`
+- Open child issues represented in this local active catalog: `#78`
   through `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
@@ -419,3 +419,8 @@ Snapshot date: 2026-03-13
 - Issue `#76` is complete in-repo: the repo now ships a shared
   batch/service container image, a single-host compose deployment
   baseline, and a reusable container smoke test wired into CI.
+- Issue `#77` is complete in-repo: named benchmark fixtures now live in
+  `config/benchmark_fixtures.yml`, `run-all` now emits phase timing and
+  throughput metrics in `run_summary.json`, and `benchmark-run` now
+  executes the real persisted pipeline against the supported
+  `single_host_container` capacity targets.

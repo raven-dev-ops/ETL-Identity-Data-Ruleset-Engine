@@ -42,6 +42,7 @@ ETL-Identity-Data-Ruleset-Engine/
       lint.yml
     PULL_REQUEST_TEMPLATE.md
   config/
+    benchmark_fixtures.yml
     blocking_rules.yml
     matching_rules.yml
     normalization_rules.yml
@@ -56,6 +57,7 @@ ETL-Identity-Data-Ruleset-Engine/
     synthetic_sources/
   docs/
     architecture.md
+    benchmarking-and-capacity.md
     container-deployment.md
     data-model.md
     evaluation-and-metrics.md
@@ -89,6 +91,7 @@ ETL-Identity-Data-Ruleset-Engine/
     verify_github_issue_metadata.py
   src/
     etl_identity_engine/
+      benchmarking.py
       cli.py
       generate/
       io/
@@ -99,6 +102,7 @@ ETL-Identity-Data-Ruleset-Engine/
       storage/
       survivorship/
   tests/
+    test_benchmarking.py
     conftest.py
     test_generate.py
     test_io_read.py
@@ -150,4 +154,6 @@ The current public line is now explicitly scoped around:
 - harden the runtime for production deployment, security, and operations
 - keep the shipped container image and compose topology aligned with the
   documented single-host deployment path
+- keep benchmark fixtures, capacity targets, and the persisted
+  performance contract aligned with the supported deployment baseline
 
