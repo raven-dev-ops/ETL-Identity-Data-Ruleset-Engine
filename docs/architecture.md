@@ -212,6 +212,10 @@ Python-native `scripts/run_checks.py` and `scripts/run_pipeline.py`
 entrypoints are also supported so local validation and pipeline runs do
 not depend on shell runtime provisioning.
 
+The rollout, rollback, governance, and support boundaries for that
+supported deployment line are documented in
+[production-operating-model.md](production-operating-model.md).
+
 The current deployment baseline also includes:
 
 - one shared batch and service container image

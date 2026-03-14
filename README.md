@@ -189,6 +189,7 @@ is included in the repository.
 - [Survivorship](docs/survivorship.md)
 - [Evaluation and Metrics](docs/evaluation-and-metrics.md)
 - [Output Contracts](docs/output-contracts.md)
+- [Production Operating Model](docs/production-operating-model.md)
 - [Release Process](docs/release-process.md)
 - [Standards Mapping](docs/standards-mapping.md)
 

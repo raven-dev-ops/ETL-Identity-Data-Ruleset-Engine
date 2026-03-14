@@ -1,9 +1,9 @@
 # Active GitHub Issues Backlog
 
-This backlog is the current source of truth for new GitHub issues after
-the completed bootstrap backlog, the completed `post-v0.1.0` follow-up
-backlog, and the published `v0.1.x` hardening releases. Historical
-backlog files remain available as read-only records:
+This backlog records the completed production-readiness GitHub cycle
+that followed the bootstrap backlog, the completed `post-v0.1.0`
+follow-up backlog, and the published `v0.1.x` hardening releases.
+Historical backlog files remain available as read-only records:
 
 - `planning/github-issues-backlog.md`
 - `planning/post-v0.1.0-github-issues-backlog.md`
@@ -317,7 +317,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 80) Document production rollout, governance boundaries, and support model
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.6.0`
 - Labels: `type:docs`, `area:docs`, `priority:p2`
 - Depends on: #67, #73, #74, #78, #79
@@ -349,18 +349,19 @@ Create these 3 epics first, then link child issues:
 
 Snapshot date: 2026-03-14
 
-- Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#80`
-- Open milestones in GitHub for this backlog:
-  - `v0.4.0` with epic `#58`
-  - `v0.5.0` with epic `#59`
-  - `v0.6.0` with epic `#60` plus child issue `#80`
+- Active epic issues in GitHub for this backlog: none
+- Open child issues represented in this local active catalog: none
+- Open milestones in GitHub for this backlog: none
+- Closed milestones in GitHub for this backlog:
+  - `v0.4.0`
+  - `v0.5.0`
+  - `v0.6.0`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
   `planning/post-v0.1.0-github-issues-backlog.md`
-- This backlog opens a new production-readiness cycle focused on moving
-  the project from a file-based identity-resolution prototype toward a
-  production MDM or enterprise data-product service.
+- This backlog captures the completed production-readiness cycle that
+  moved the project from a file-based identity-resolution prototype
+  toward a production MDM or enterprise data-product service baseline.
 - Issue `#61` is complete in-repo: the runtime now supports
   manifest-driven landed batch validation for `normalize` and `run-all`
   before partial outputs are written.
@@ -433,3 +434,10 @@ Snapshot date: 2026-03-14
   builds release artifacts plus dependency inventory and audit outputs,
   and the release-process docs now require those hardening artifacts as
   part of the release gate.
+- Issue `#80` is complete in-repo: rollout, rollback, governance, PII,
+  audit, and consumer-responsibility guidance now live in one coherent
+  production operating-model document linked from the architecture,
+  safety, security, and README surfaces.
+- Epic issues `#58`, `#59`, and `#60` are complete in GitHub and can
+  now be treated as closed tracker history alongside their child issue
+  sets.

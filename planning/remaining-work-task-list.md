@@ -9,14 +9,16 @@ truth for tracked work; this file is the short maintainer view.
 
 ## Current Status
 
-- A new backlog cycle is open to move the project beyond prototype scope
-  toward a production MDM or enterprise data-product service.
-- GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issue `#80`.
+- The production-readiness backlog cycle is complete in-repo and now
+  defines a coherent single-host production operating target.
+- GitHub sync is complete for the current production-readiness backlog
+  cycle. No child issues, epics, or milestones remain open in GitHub
+  for this catalog.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
-- The current public `0.1.x` line remains a production-hardened
-  prototype until those tracked issues are completed.
+- The current `main` branch now includes the completed
+  production-readiness implementation set; the next maintainer action is
+  release or new-scope planning.
 - Issue `#61` is complete: the runtime now validates a stable landed
   batch manifest contract before `normalize` or manifest-driven
   `run-all` reads real input files.
@@ -76,17 +78,21 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#79` is complete: the release path now emits retained artifact
   hashes, dependency inventory, and dependency-audit outputs through a
   dedicated hardening script and CI artifact job.
+- Issue `#80` is complete: production rollout, rollback, governance,
+  PII-handling, audit, and consumer-responsibility guidance now live in
+  one coherent production operating-model document.
 
 ## Open Task Groups
 
-- [ ] `v0.4.0` Production data ingestion and persistence
+- [x] `v0.4.0` Production data ingestion and persistence
   - Open issues: none. `v0.4.0` implementation work is complete in the
     active backlog catalog.
-- [ ] `v0.5.0` Review workflow and service surface
+- [x] `v0.5.0` Review workflow and service surface
   - Open issues: none. `v0.5.0` implementation work is complete in the
     active backlog catalog.
-- [ ] `v0.6.0` Security, operations, and deployment hardening
-  - Open issues: `#80` in the active backlog catalog.
+- [x] `v0.6.0` Security, operations, and deployment hardening
+  - Open issues: none. `v0.6.0` implementation work is complete in the
+    active backlog catalog.
 
 ## Production-Readiness Gaps Now Explicitly Tracked
 
@@ -111,9 +117,10 @@ truth for tracked work; this file is the short maintainer view.
   single-host environment manifests
 - [x] Large-batch benchmark fixtures and SLO-style capacity targets for
   the supported deployment baseline
-- [ ] Production operating-model documentation
+- [x] Production operating-model documentation
 
 ## Next Step
 
-- Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, continuing with issue `#80`.
+- The tracked production-readiness cycle is complete. The next step is
+  to cut a release from the current green `main` state or open a new
+  backlog cycle for net-new scope.

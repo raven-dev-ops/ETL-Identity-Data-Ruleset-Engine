@@ -62,6 +62,9 @@ All notable changes to this project will be documented in this file.
 - A retained release-hardening check that builds the distribution,
   writes dependency-inventory outputs, and records artifact hashes for
   release validation.
+- A coherent production operating-model document covering rollout,
+  rollback, governance boundaries, PII handling, audit expectations,
+  and consumer responsibilities.
 
 ### Changed
 
@@ -112,6 +115,9 @@ All notable changes to this project will be documented in this file.
 - CI now includes a `release-hardening` job that publishes a retained
   dependency inventory and audit artifact for the built release
   distribution.
+- The architecture, safety, and security docs now link to a single
+  production operating-model reference instead of scattering rollout and
+  governance boundaries across separate notes.
 
 ## [0.1.4] - 2026-03-13
 

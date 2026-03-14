@@ -21,3 +21,7 @@ If private reporting is unavailable, open an issue with minimal details and requ
 - Never commit secrets to source control.
 - Rotate exposed credentials immediately.
 - Remove sensitive content and force-rotate any impacted keys.
+
+For the supported production deployment boundary, including operator
+responsibilities, audit expectations, and rollback ownership, see
+[docs/production-operating-model.md](docs/production-operating-model.md).

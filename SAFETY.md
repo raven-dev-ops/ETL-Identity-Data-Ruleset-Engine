@@ -19,3 +19,7 @@ This repository is for synthetic ETL identity-resolution experimentation only.
 
 Do not commit any non-synthetic record data to this repository.
 
+For the supported production operating boundary outside the repository,
+including PII handling expectations and consumer responsibilities, see
+[docs/production-operating-model.md](docs/production-operating-model.md).
+

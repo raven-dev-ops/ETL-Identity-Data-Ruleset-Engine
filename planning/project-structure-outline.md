@@ -10,9 +10,9 @@ Define and track the repository structure for implementing the ETL Identity Data
 ## Current Status
 
 `M1` through `M6` are implemented in-repo, the `v0.1.x` prototype line
-has been hardened and published through `v0.1.4`, and a new
-production-readiness planning cycle is now tracked in the active
-backlog.
+has been hardened and published through `v0.1.4`, and the
+production-readiness backlog cycle is now implemented in-repo and
+recorded in the active backlog.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -70,6 +70,7 @@ ETL-Identity-Data-Ruleset-Engine/
     output-contracts.md
     persistent-state.md
     production-batch-manifest.md
+    production-operating-model.md
     recovery-runbooks.md
     release-process.md
     review-workflow.md
@@ -142,9 +143,10 @@ ETL-Identity-Data-Ruleset-Engine/
 
 The current public line is now explicitly scoped around:
 
-- synthetic-only public inputs
+- synthetic-only repository data with manifest-driven landed-batch
+  runtime support outside the repo
 - deterministic explainable matching and survivorship
-- CSV manual-review handoff
+- persisted review workflow plus a portable CSV queue artifact
 - Python-native plus shell-wrapper maintainer entrypoints
 - a Python `3.11`/`3.12` CI support matrix with macOS compatibility
   validation
@@ -157,13 +159,11 @@ The current public line is now explicitly scoped around:
 
 ## Post-Release Focus
 
-- execute the new production-readiness backlog cycle tracked in
-  `planning/active-github-issues-backlog.md`
-- move from synthetic-only file orchestration toward real batch
-  ingestion, persisted state, and service interfaces
-- harden the runtime for production deployment, security, and operations
+- cut the next release from the current green `main` state
 - keep the shipped container image and compose topology aligned with the
   documented single-host deployment path
 - keep benchmark fixtures, capacity targets, and the persisted
   performance contract aligned with the supported deployment baseline
+- open a new backlog cycle only for net-new scope beyond the completed
+  production-readiness target
 
