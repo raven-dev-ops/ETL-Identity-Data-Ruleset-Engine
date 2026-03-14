@@ -27,6 +27,9 @@ from etl_identity_engine.ingest.manifest import (
     peek_manifest_batch_id,
     resolve_batch_manifest,
 )
+from etl_identity_engine.ingest.public_safety_conformance import (
+    check_public_safety_onboarding,
+)
 from etl_identity_engine.ingest.public_safety_contracts import (
     PUBLIC_SAFETY_CONTRACT_MARKER,
     validate_public_safety_contract_bundle,
@@ -1287,6 +1290,16 @@ def _cmd_public_safety_demo(args: argparse.Namespace) -> None:
 def _cmd_validate_public_safety_contract(args: argparse.Namespace) -> None:
     validated = validate_public_safety_contract_bundle(Path(args.bundle_dir))
     print(json.dumps(validated.to_summary(), indent=2, sort_keys=True))
+
+
+def _cmd_check_public_safety_onboarding(args: argparse.Namespace) -> None:
+    bundle_dirs = tuple(Path(bundle_dir) for bundle_dir in (args.bundle_dir or []))
+    manifest_path = Path(args.manifest) if args.manifest else None
+    summary = check_public_safety_onboarding(
+        bundle_dirs=bundle_dirs,
+        manifest_path=manifest_path,
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
 
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
@@ -3744,6 +3757,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     validate_public_safety_contract_parser.set_defaults(func=_cmd_validate_public_safety_contract)
+
+    check_public_safety_onboarding_parser = subparsers.add_parser(
+        "check-public-safety-onboarding",
+        help="Run contract-conformance checks for CAD/RMS bundles and an optional manifest.",
+    )
+    check_public_safety_onboarding_parser.add_argument(
+        "--bundle-dir",
+        action="append",
+        default=[],
+        help="Path to a CAD or RMS source bundle directory. Repeat to check multiple bundles.",
+    )
+    check_public_safety_onboarding_parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Optional production batch manifest path to validate alongside the source bundles.",
+    )
+    check_public_safety_onboarding_parser.set_defaults(func=_cmd_check_public_safety_onboarding)
 
     report_parser = subparsers.add_parser("report", help="Produce run report.")
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")

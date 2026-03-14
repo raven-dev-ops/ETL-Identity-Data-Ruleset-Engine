@@ -106,7 +106,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 108) Add contract conformance tooling and onboarding fixtures for CAD/RMS batches
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.0.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
 - Depends on: #107

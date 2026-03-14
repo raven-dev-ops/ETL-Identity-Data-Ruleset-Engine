@@ -1,0 +1,27 @@
+# Public Safety Onboarding Fixtures
+
+These fixtures are a contract-valid local onboarding example for the
+`cad_call_for_service` and `rms_report_person` bundle contracts plus a
+matching production batch manifest.
+
+Files included:
+
+- `example_manifest.yml`
+- `landing/source_a.csv`
+- `landing/source_b.csv`
+- `cad_bundle/`
+- `rms_bundle/`
+
+Use them with:
+
+```bash
+etl-identity-engine check-public-safety-onboarding --manifest fixtures/public_safety_onboarding/example_manifest.yml
+```
+
+Or validate the CAD and RMS bundles directly:
+
+```bash
+etl-identity-engine check-public-safety-onboarding \
+  --bundle-dir fixtures/public_safety_onboarding/cad_bundle \
+  --bundle-dir fixtures/public_safety_onboarding/rms_bundle
+```

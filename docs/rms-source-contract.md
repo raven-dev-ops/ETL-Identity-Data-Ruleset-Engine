@@ -73,7 +73,7 @@ files:
 - Every `incident_person_links.person_entity_id` must match the
   referenced `person_records.source_record_id`.
 
-## Validation Command
+## Validation Commands
 
 ```bash
 etl-identity-engine validate-public-safety-contract --bundle-dir ./rms_bundle
@@ -81,3 +81,9 @@ etl-identity-engine validate-public-safety-contract --bundle-dir ./rms_bundle
 
 The command prints a JSON summary when the bundle is valid and raises a
 validation error before runtime execution when the bundle is malformed.
+
+For full onboarding checks against a manifest plus one or more bundles:
+
+```bash
+etl-identity-engine check-public-safety-onboarding --manifest fixtures/public_safety_onboarding/example_manifest.yml --bundle-dir fixtures/public_safety_onboarding/rms_bundle
+```

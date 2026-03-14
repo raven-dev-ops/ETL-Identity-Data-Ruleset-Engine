@@ -16,6 +16,11 @@ of truth for tracked work; this file is the short maintainer view.
 - The second `v1.0.0` onboarding slice is now in-repo: manifests can
   declare named CAD/RMS source bundles and validate them before
   normalize or `run-all` executes.
+- The third `v1.0.0` onboarding slice is now in-repo: the CLI ships a
+  public-safety onboarding conformance check plus checked-in example
+  bundles and a sample manifest for source-owner self-checks.
+- The `v1.0.0` milestone is now complete in-repo and ready for GitHub
+  closeout.
 - The previous tracked backlog cycle (`v0.7.0` through `v0.9.0`) is now
   complete and should be treated as historical.
 - A new backlog cycle is now open for the documented next gaps: formal
@@ -28,9 +33,6 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Open Task Groups
 
-- [ ] `v1.0.0` CAD/RMS source contracts and validation
-  - Local catalog issues: `#108`
-  - Open GitHub issues: `#102`
 - [ ] `v1.1.0` Public safety onboarding and identity mapping
   - Local catalog issues: `#109` through `#112`
   - Open GitHub issues: `#103` through `#106`
@@ -43,6 +45,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Versioned CAD source contracts and validation tooling
 - [x] Versioned RMS source contracts and validation tooling
 - [x] Manifest-era source-bundle validation for public-safety inputs
+- [x] Contract conformance tooling and onboarding fixtures for CAD/RMS batches
 - [ ] Vendor-specific CAD/RMS field mapping overlays
 - [ ] Persisted public-safety activity ingestion from formal contracts
 - [ ] Service and demo-shell read models over persisted public-safety activity
@@ -55,4 +58,4 @@ of truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - Sync the new backlog cycle to GitHub, then begin with local catalog
-  issue `#108`.
+  issue `#109`.

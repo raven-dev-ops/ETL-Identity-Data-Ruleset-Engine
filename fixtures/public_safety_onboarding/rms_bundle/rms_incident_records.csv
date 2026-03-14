@@ -1,0 +1,3 @@
+incident_id,source_system,occurred_at,location,city,state
+RMS-INC-000001,rms,2026-03-14T09:15:00Z,123 MAIN STREET,COLUMBUS,OH
+RMS-INC-000002,rms,2026-03-14T09:30:00Z,901 RIVER ROAD,COLUMBUS,OH

@@ -1,0 +1,6 @@
+contract_name: rms_report_person
+contract_version: v1
+files:
+  person_records: rms_person_records.csv
+  incident_records: rms_incident_records.csv
+  incident_person_links: rms_incident_person_links.csv

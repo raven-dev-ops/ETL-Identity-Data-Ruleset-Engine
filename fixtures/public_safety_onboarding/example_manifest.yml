@@ -1,0 +1,56 @@
+manifest_version: "1.0"
+entity_type: person
+batch_id: fixture-public-safety-onboarding-001
+landing_zone:
+  kind: local_filesystem
+  base_path: .
+sources:
+  - source_id: source_a
+    path: landing/source_a.csv
+    format: csv
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+  - source_id: source_b
+    path: landing/source_b.csv
+    format: csv
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+source_bundles:
+  - bundle_id: cad_primary
+    source_class: cad
+    path: cad_bundle
+    contract_name: cad_call_for_service
+    contract_version: v1
+  - bundle_id: rms_primary
+    source_class: rms
+    path: rms_bundle
+    contract_name: rms_report_person
+    contract_version: v1

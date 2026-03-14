@@ -79,6 +79,7 @@ ETL-Identity-Data-Ruleset-Engine/
     persistent-state.md
     production-batch-manifest.md
     production-operating-model.md
+    public-safety-onboarding.md
     public-safety-demo.md
     recovery-runbooks.md
     release-process.md
@@ -96,6 +97,8 @@ ETL-Identity-Data-Ruleset-Engine/
     post-v0.9.0-github-issues-backlog.md
     project-structure-outline.md
     remaining-work-task-list.md
+  fixtures/
+    public_safety_onboarding/
   scripts/
     bootstrap_venv.ps1
     bootstrap_venv.sh
@@ -147,6 +150,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_package_release_sample.py
     test_package_public_safety_demo.py
     test_pipeline_e2e.py
+    test_public_safety_conformance.py
     test_public_safety_demo_django.py
     test_public_safety_demo.py
     test_public_safety_contracts.py

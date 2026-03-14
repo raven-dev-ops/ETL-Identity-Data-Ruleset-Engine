@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
   for CAD and RMS onboarding so manifests can validate contract-bound
   public-safety bundles alongside landed person sources before runtime
   execution.
+- Added `check-public-safety-onboarding`, a checked-in
+  `fixtures/public_safety_onboarding/` example tree, and onboarding
+  docs so source owners can self-check CAD/RMS bundles and example
+  manifests before pipeline onboarding.
 
 ## [0.9.2] - 2026-03-14
 

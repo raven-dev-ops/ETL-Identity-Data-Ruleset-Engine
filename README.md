@@ -212,6 +212,7 @@ is included in the repository.
 - [Survivorship](docs/survivorship.md)
 - [Evaluation and Metrics](docs/evaluation-and-metrics.md)
 - [Output Contracts](docs/output-contracts.md)
+- [Public Safety Onboarding](docs/public-safety-onboarding.md)
 - [Public Safety Demo](docs/public-safety-demo.md)
 - [Production Operating Model](docs/production-operating-model.md)
 - [Release Process](docs/release-process.md)

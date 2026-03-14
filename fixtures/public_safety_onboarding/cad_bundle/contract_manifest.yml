@@ -1,0 +1,6 @@
+contract_name: cad_call_for_service
+contract_version: v1
+files:
+  person_records: cad_person_records.csv
+  incident_records: cad_incident_records.csv
+  incident_person_links: cad_incident_person_links.csv
