@@ -11,8 +11,10 @@ golden records, and reporting artifacts.
   local and object-storage-compatible landed batches. Persisted SQLite
   state is now supported, and an authenticated operator service API now
   exposes persisted run, golden, crosswalk, and review-case lookups
-  plus operator-only review-decision and replay actions. Publication
-  and export orchestration remain CLI-driven follow-on service work.
+  plus operator-only review-decision and replay actions. A container
+  image and single-host compose deployment baseline are now available.
+  Publication and export orchestration remain CLI-driven follow-on
+  service work.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -192,6 +194,13 @@ The repository still ships shell wrappers for PowerShell and bash, but
 Python-native `scripts/run_checks.py` and `scripts/run_pipeline.py`
 entrypoints are also supported so local validation and pipeline runs do
 not depend on shell runtime provisioning.
+
+The current deployment baseline also includes:
+
+- one shared batch and service container image
+- a single-host compose topology under `deploy/`
+- CI smoke validation that the containerized CLI and service start
+  successfully
 
 ## Command Example
 

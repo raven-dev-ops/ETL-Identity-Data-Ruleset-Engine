@@ -50,6 +50,9 @@ All notable changes to this project will be documented in this file.
   SQLite audit events for privileged actions, authenticated `readyz`
   and `/api/v1/metrics` endpoints, and store-backed batch/service
   operational metrics.
+- A containerized runtime baseline with a shared batch/service image, a
+  single-host compose deployment manifest, and a reusable container
+  smoke test wired into CI.
 
 ### Changed
 
@@ -87,6 +90,10 @@ All notable changes to this project will be documented in this file.
 - `serve-api` now requires environment-backed service auth
   configuration, and the production runtime environment now defines
   `reader` and `operator` API-key slots through runtime config.
+- The runtime environment catalog now includes a dedicated `container`
+  profile so the single-host deployment topology can start without
+  cloud object-storage credentials while still using the persisted-state
+  and service-auth model.
 
 ## [0.1.4] - 2026-03-13
 

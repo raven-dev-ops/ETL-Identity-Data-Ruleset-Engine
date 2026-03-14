@@ -100,6 +100,7 @@ ETL-Identity-Data-Ruleset-Engine/
   .github/
   config/
   data/
+  deploy/
   docs/
   planning/
   scripts/
@@ -134,10 +135,11 @@ is included in the repository.
   safe experimentation and manifest-driven landed batches for
   production-style evaluation. Local filesystem and object-storage-
   compatible landing zones are supported. Persisted SQLite state,
-  manifest-driven incremental refresh, and an authenticated operator
-  service API are now available. The current service line supports
-  read-only lookups plus operator-only review decision and replay
-  actions; publication and export orchestration remain CLI-driven.
+  manifest-driven incremental refresh, a container image, a single-host
+  compose deployment baseline, and an authenticated operator service
+  API are now available. The current service line supports read-only
+  lookups plus operator-only review decision and replay actions;
+  publication and export orchestration remain CLI-driven.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
@@ -172,6 +174,7 @@ is included in the repository.
 - [Normalization](docs/normalization.md)
 - [Production Batch Manifest](docs/production-batch-manifest.md)
 - [Compatibility Policy](docs/compatibility-policy.md)
+- [Container Deployment](docs/container-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Export Jobs](docs/export-jobs.md)
 - [Persistent State](docs/persistent-state.md)
@@ -315,6 +318,8 @@ in [docs/export-jobs.md](docs/export-jobs.md).
 External service and workflow integrations should also follow the shared
 compatibility rules in
 [docs/compatibility-policy.md](docs/compatibility-policy.md).
+Container build and compose deployment guidance is documented in
+[docs/container-deployment.md](docs/container-deployment.md).
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

@@ -25,6 +25,9 @@ backlog.
 
 ```text
 ETL-Identity-Data-Ruleset-Engine/
+  deploy/
+    compose.yaml
+    container.env.example
   .github/
     ISSUE_TEMPLATE/
       bug.yml
@@ -53,6 +56,7 @@ ETL-Identity-Data-Ruleset-Engine/
     synthetic_sources/
   docs/
     architecture.md
+    container-deployment.md
     data-model.md
     evaluation-and-metrics.md
     matching-and-thresholds.md
@@ -72,6 +76,7 @@ ETL-Identity-Data-Ruleset-Engine/
   scripts/
     bootstrap_venv.ps1
     bootstrap_venv.sh
+    container_smoke_test.py
     create_github_backlog.py
     create_github_backlog.ps1
     package_release_sample.py
@@ -107,6 +112,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_runtime_config.py
     test_survivorship.py
     test_create_github_backlog.py
+    test_deployment_assets.py
     test_github_issue_templates.py
     test_verify_github_issue_metadata.py
   CODE_OF_CONDUCT.md
@@ -142,4 +148,6 @@ The current public line is now explicitly scoped around:
 - move from synthetic-only file orchestration toward real batch
   ingestion, persisted state, and service interfaces
 - harden the runtime for production deployment, security, and operations
+- keep the shipped container image and compose topology aligned with the
+  documented single-host deployment path
 

@@ -1,0 +1,56 @@
+services:
+  identity-batch:
+    image: ${ETL_IDENTITY_IMAGE:-etl-identity-engine:local}
+    init: true
+    environment:
+      ETL_IDENTITY_STATE_DB: ${ETL_IDENTITY_STATE_DB:-/runtime/state/pipeline_state.sqlite}
+      ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
+      ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
+    volumes:
+      - ${ETL_IDENTITY_RUNTIME_ROOT:-./runtime}:/runtime
+      - ${ETL_IDENTITY_CONFIG_ROOT:-../config}:/app/config:ro
+    command:
+      - run-all
+      - --environment
+      - container
+      - --base-dir
+      - /runtime/output
+      - --profile
+      - small
+      - --seed
+      - "42"
+
+  identity-service:
+    image: ${ETL_IDENTITY_IMAGE:-etl-identity-engine:local}
+    init: true
+    environment:
+      ETL_IDENTITY_STATE_DB: ${ETL_IDENTITY_STATE_DB:-/runtime/state/pipeline_state.sqlite}
+      ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
+      ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
+      ETL_IDENTITY_SERVICE_READER_API_KEY: ${ETL_IDENTITY_SERVICE_READER_API_KEY}
+      ETL_IDENTITY_SERVICE_OPERATOR_API_KEY: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}
+    volumes:
+      - ${ETL_IDENTITY_RUNTIME_ROOT:-./runtime}:/runtime
+      - ${ETL_IDENTITY_CONFIG_ROOT:-../config}:/app/config:ro
+    ports:
+      - "${ETL_IDENTITY_SERVICE_PORT:-8000}:8000"
+    command:
+      - serve-api
+      - --environment
+      - container
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'X-API-Key': os.environ['ETL_IDENTITY_SERVICE_READER_API_KEY']}); urllib.request.urlopen(request, timeout=5).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

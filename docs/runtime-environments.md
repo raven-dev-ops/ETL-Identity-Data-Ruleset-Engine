@@ -4,6 +4,10 @@ The runtime now supports named environment profiles so operators can
 switch between development, test, and production defaults without
 editing committed YAML files in place.
 
+The default catalog now also includes a `container` environment for the
+single-host deployment baseline shipped in
+[container-deployment.md](container-deployment.md).
+
 ## Environment File
 
 The default environment catalog is:
@@ -50,6 +54,11 @@ The default production environment uses:
 If both API-key values resolve to blank strings, service auth is treated
 as unconfigured. `serve-api` then fails fast until the deployment
 environment provides both values.
+
+The `container` environment is different from `prod` in one important
+way: it provides default placeholder object-storage secret values so the
+local container topology can start without cloud credentials. Service
+API keys still must be supplied for `serve-api`.
 
 ## Config Overlays
 

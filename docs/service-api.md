@@ -23,6 +23,10 @@ configured through environment-backed secrets. The default production
 runtime environment reads those values from
 `config/runtime_environments.yml`.
 
+The container deployment baseline uses the dedicated `container`
+environment documented in
+[container-deployment.md](container-deployment.md).
+
 ## Authentication And Roles
 
 The current baseline uses API-key authentication.

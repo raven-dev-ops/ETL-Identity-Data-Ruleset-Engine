@@ -261,7 +261,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 76) Containerize the batch and service runtime with deployable environment manifests
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.6.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
 - Depends on: #70, #74, #75
@@ -350,12 +350,12 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#76`
+- Open child issues represented in this local active catalog: `#77`
   through `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
   - `v0.5.0` with epic `#59`
-  - `v0.6.0` with epic `#60` plus child issues `#76` through `#80`
+  - `v0.6.0` with epic `#60` plus child issues `#77` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
   `planning/post-v0.1.0-github-issues-backlog.md`
@@ -416,3 +416,6 @@ Snapshot date: 2026-03-13
   structured JSON logs, the service exposes authenticated `healthz`,
   `readyz`, and `/api/v1/metrics` endpoints, and privileged operator
   actions now persist audit events in SQLite.
+- Issue `#76` is complete in-repo: the repo now ships a shared
+  batch/service container image, a single-host compose deployment
+  baseline, and a reusable container smoke test wired into CI.

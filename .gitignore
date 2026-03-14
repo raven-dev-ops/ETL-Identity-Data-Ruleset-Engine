@@ -12,3 +12,6 @@ htmlcov/
 build/
 dist/
 *.zip
+deploy/runtime/
+deploy/container.env
+published/

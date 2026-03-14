@@ -129,3 +129,18 @@ jobs:
 
       - name: Run repo checks via documented bash path
         run: bash ./scripts/run_checks.sh
+
+  container-smoke:
+    name: container-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run container smoke test
+        run: python scripts/container_smoke_test.py --image-tag etl-identity-engine:ci --service-port 18080

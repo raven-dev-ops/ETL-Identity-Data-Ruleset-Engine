@@ -9,6 +9,17 @@ environments:
     description: Automated test and CI defaults.
     config_dir: .
     state_db: ../data/state/test/pipeline_state.sqlite
+  container:
+    description: Container-image defaults for single-host deployments.
+    config_dir: .
+    state_db: ${ETL_IDENTITY_STATE_DB:-/runtime/state/pipeline_state.sqlite}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
+    service_auth:
+      header_name: X-API-Key
+      reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
+      operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
   prod:
     description: Production defaults sourced from deployment environment variables.
     config_dir: ${ETL_IDENTITY_CONFIG_DIR:-.}

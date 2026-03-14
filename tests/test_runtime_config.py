@@ -636,6 +636,45 @@ def test_load_runtime_environment_allows_blank_service_auth_values(tmp_path: Pat
     assert environment.service_auth is None
 
 
+def test_load_runtime_environment_container_defaults_resolve_without_cloud_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: dev
+environments:
+  container:
+    config_dir: .
+    state_db: ${ETL_IDENTITY_STATE_DB:-/runtime/state/pipeline_state.sqlite}
+    secrets:
+      object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY:-disabled}
+      object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY:-disabled}
+    service_auth:
+      header_name: X-API-Key
+      reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
+      operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+""",
+    )
+    monkeypatch.delenv("ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("ETL_IDENTITY_SERVICE_READER_API_KEY", raising=False)
+    monkeypatch.delenv("ETL_IDENTITY_SERVICE_OPERATOR_API_KEY", raising=False)
+
+    environment = load_runtime_environment("container", runtime_config)
+
+    assert environment.name == "container"
+    assert environment.state_db is not None
+    assert environment.state_db.as_posix().endswith("/runtime/state/pipeline_state.sqlite")
+    assert environment.secrets == {
+        "object_storage_access_key": "disabled",
+        "object_storage_secret_key": "disabled",
+    }
+    assert environment.service_auth is None
+
+
 def test_load_runtime_environment_rejects_partial_service_auth_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
