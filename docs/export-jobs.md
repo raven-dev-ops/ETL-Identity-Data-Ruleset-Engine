@@ -65,6 +65,10 @@ python -m etl_identity_engine.cli export-job-history \
 The JSON payloads identify whether the command created a new export or
 reused a prior completed export for the same `export_key`.
 
+The documented command names, flags, audit states, and top-level JSON
+workflow shape are the stable operator automation surface for the
+current `0.x` line.
+
 ## Audit Model
 
 Export execution is tracked in the persisted `export_job_runs` table.
@@ -122,6 +126,10 @@ That means warehouse and data-product consumers currently receive:
 
 The file-level contract and pointer semantics are documented in
 [delivery-contracts.md](delivery-contracts.md).
+
+Shared versioning and deprecation expectations for those downstream
+surfaces are defined in
+[compatibility-policy.md](compatibility-policy.md).
 
 ## Current Boundary
 

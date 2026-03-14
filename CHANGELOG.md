@@ -41,6 +41,8 @@ All notable changes to this project will be documented in this file.
 - Named downstream export jobs for warehouse and data-product consumers,
   including audited SQLite export-run tracking and JSON operator
   commands for export execution and history.
+- A shared compatibility policy for external service, workflow, and
+  downstream delivery consumers.
 
 ### Changed
 
@@ -72,6 +74,9 @@ All notable changes to this project will be documented in this file.
 - The runtime now exposes `export-job-list`, `export-job-run`, and
   `export-job-history` so persisted runs can be materialized through
   configured downstream export locations with auditable reuse semantics.
+- Service, workflow, and downstream delivery docs now identify stable
+  versus internal surfaces and define shared versioning plus
+  deprecation expectations for external consumers.
 
 ## [0.1.4] - 2026-03-13
 

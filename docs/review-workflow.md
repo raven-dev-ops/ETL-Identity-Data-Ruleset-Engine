@@ -70,6 +70,23 @@ python -m etl_identity_engine.cli apply-review-decision \
 
 All three commands emit JSON so operators can script around them.
 
+## Compatibility
+
+The documented review lifecycle states and persisted operator commands
+are the stable workflow automation surface for the current `0.x` line.
+
+External operators should treat:
+
+- command names
+- documented flags
+- lifecycle states such as `pending`, `approved`, `rejected`, and
+  `deferred`
+
+as stable, while treating direct SQLite reads as internal.
+
+Shared versioning and deprecation expectations are defined in
+[compatibility-policy.md](compatibility-policy.md).
+
 ## Current Boundary
 
 This workflow now includes decision application on later persisted

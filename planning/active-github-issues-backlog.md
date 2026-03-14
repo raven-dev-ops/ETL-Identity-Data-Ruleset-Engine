@@ -217,7 +217,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 73) Define API and workflow compatibility contracts for external consumers
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.5.0`
 - Labels: `type:docs`, `area:docs`, `priority:p2`
 - Depends on: #70, #72
@@ -350,11 +350,11 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#73`
+- Open child issues represented in this local active catalog: `#74`
   through `#80`
 - Open milestones in GitHub for this backlog:
   - `v0.4.0` with epic `#58`
-  - `v0.5.0` with epic `#59` plus child issue `#73`
+  - `v0.5.0` with epic `#59`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
   `planning/github-issues-backlog.md` and
@@ -405,3 +405,7 @@ Snapshot date: 2026-03-13
   export jobs now materialize persisted golden/crosswalk snapshots
   through audited SQLite export-run records and JSON operator commands
   for export execution history.
+- Issue `#73` is complete in-repo: service, workflow, and delivery docs
+  now share an explicit compatibility policy covering stable versus
+  internal surfaces, versioning rules, and deprecation expectations for
+  external consumers.

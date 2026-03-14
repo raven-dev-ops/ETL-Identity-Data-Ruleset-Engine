@@ -48,6 +48,15 @@ The service uses explicit request and response validation:
 
 Missing rows return `404`. Invalid request parameters return `422`.
 
+## Compatibility
+
+The documented `GET /api/v1/...` endpoints are a stable external
+consumer surface for the current line.
+
+Compatibility expectations for path versioning, additive changes, and
+deprecation are defined in
+[compatibility-policy.md](compatibility-policy.md).
+
 ## Current Boundary
 
 This API is read-only in the current line.

@@ -170,6 +170,7 @@ is included in the repository.
 - [Data Model](docs/data-model.md)
 - [Normalization](docs/normalization.md)
 - [Production Batch Manifest](docs/production-batch-manifest.md)
+- [Compatibility Policy](docs/compatibility-policy.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
 - [Export Jobs](docs/export-jobs.md)
 - [Persistent State](docs/persistent-state.md)
@@ -302,6 +303,9 @@ Configured downstream export jobs now layer on top of the versioned
 delivery contract and can target distinct warehouse or data-product
 roots from `config/export_jobs.yml`. That operator surface is documented
 in [docs/export-jobs.md](docs/export-jobs.md).
+External service and workflow integrations should also follow the shared
+compatibility rules in
+[docs/compatibility-policy.md](docs/compatibility-policy.md).
 
 The standalone `golden` stage uses normalized records plus
 `data/matches/entity_clusters.csv` unless the input already includes

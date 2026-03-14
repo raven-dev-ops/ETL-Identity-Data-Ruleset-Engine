@@ -109,6 +109,15 @@ Artifact entries include:
 Header compatibility for those files is inherited from the stable CSV
 artifact contracts in [output-contracts.md](output-contracts.md).
 
+## Compatibility
+
+`golden_crosswalk_snapshot/v1` is the current stable downstream consumer
+contract.
+
+Compatibility expectations for contract version bumps, additive changes,
+and deprecation are defined in
+[compatibility-policy.md](compatibility-policy.md).
+
 ## Versioning Rule
 
 The contract version must be bumped when any consumer-visible behavior
