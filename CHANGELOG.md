@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Production batch-manifest support for `normalize` and `run-all`,
+  including a documented local landing-zone contract for manifest-driven
+  CSV and Parquet inputs.
+
+### Changed
+
+- The runtime now validates batch manifests, source IDs, and required
+  input columns before normalization starts, so invalid landed batches
+  fail fast without writing partial normalized outputs.
+
 ## [0.1.4] - 2026-03-13
 
 ### Changed

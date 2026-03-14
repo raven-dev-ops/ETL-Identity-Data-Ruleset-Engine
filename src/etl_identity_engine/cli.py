@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
+from etl_identity_engine.ingest.manifest import ResolvedBatchManifest, resolve_batch_manifest
 from etl_identity_engine.io.read import read_dict_rows
 from etl_identity_engine.io.write import write_csv_dicts, write_markdown
 from etl_identity_engine.matching.blocking import BlockingPassMetric, generate_candidates_with_metrics
@@ -101,6 +102,29 @@ def _resolve_normalize_input_paths(args: argparse.Namespace) -> tuple[Path, ...]
     if explicit_inputs:
         return explicit_inputs
     return _discover_normalize_input_paths(Path(args.input_dir))
+
+
+DEFAULT_NORMALIZE_INPUT_DIR = "data/synthetic_sources"
+
+
+def _resolve_manifest_inputs(manifest_path: str) -> ResolvedBatchManifest:
+    return resolve_batch_manifest(Path(manifest_path))
+
+
+def _resolve_normalize_inputs(
+    args: argparse.Namespace,
+) -> tuple[tuple[Path, ...], list[dict[str, str]], ResolvedBatchManifest | None]:
+    manifest_path = getattr(args, "manifest", None)
+    if manifest_path:
+        if args.input:
+            raise ValueError("normalize cannot combine --manifest with --input")
+        if args.input_dir != DEFAULT_NORMALIZE_INPUT_DIR:
+            raise ValueError("normalize cannot combine --manifest with --input-dir")
+        resolved_manifest = _resolve_manifest_inputs(manifest_path)
+        return resolved_manifest.input_paths, resolved_manifest.all_rows(), resolved_manifest
+
+    input_paths = _resolve_normalize_input_paths(args)
+    return input_paths, _read_rows(input_paths), None
 
 
 def _parse_formats(value: str) -> tuple[str, ...]:
@@ -565,11 +589,16 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
 def _cmd_normalize(args: argparse.Namespace) -> None:
     output_file = Path(args.output)
-    input_paths = _resolve_normalize_input_paths(args)
+    input_paths, rows, resolved_manifest = _resolve_normalize_inputs(args)
+    if resolved_manifest is not None:
+        print(
+            f"validated batch manifest: {resolved_manifest.manifest_path} "
+            f"(batch_id={resolved_manifest.manifest.batch_id})"
+        )
     print(f"normalizing {len(input_paths)} input file(s)")
     for path in input_paths:
         print(f" - {path}")
-    _write_normalized_output(output_file, _read_rows(input_paths), _load_config(args.config_dir))
+    _write_normalized_output(output_file, rows, _load_config(args.config_dir))
 
 
 def _cmd_match(args: argparse.Namespace) -> None:
@@ -621,8 +650,6 @@ def _cmd_report(args: argparse.Namespace) -> None:
 def _cmd_run_all(args: argparse.Namespace) -> None:
     base = Path(args.base_dir)
     config = _load_config(args.config_dir)
-    formats = _parse_formats(args.formats)
-    synthetic_dir = base / "data" / "synthetic_sources"
     normalized_file = base / "data" / "normalized" / "normalized_person_records.csv"
     matches_file = base / "data" / "matches" / "candidate_scores.csv"
     clusters_file = base / "data" / "matches" / "entity_clusters.csv"
@@ -631,18 +658,35 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     review_queue_file = base / "data" / "review_queue" / "manual_review_queue.csv"
     report_file = base / "data" / "exceptions" / "run_report.md"
 
-    generate_synthetic_sources(
-        output_dir=synthetic_dir,
-        profile=args.profile,
-        seed=args.seed,
-        duplicate_rate=args.duplicate_rate,
-        formats=formats,
-    )
-    normalized_rows = _write_normalized_output(
-        normalized_file,
-        _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
-        config,
-    )
+    manifest_path = getattr(args, "manifest", None)
+    if manifest_path:
+        resolved_manifest = _resolve_manifest_inputs(manifest_path)
+        print(
+            f"validated batch manifest: {resolved_manifest.manifest_path} "
+            f"(batch_id={resolved_manifest.manifest.batch_id})"
+        )
+        for path in resolved_manifest.input_paths:
+            print(f" - {path}")
+        normalized_rows = _write_normalized_output(
+            normalized_file,
+            resolved_manifest.all_rows(),
+            config,
+        )
+    else:
+        formats = _parse_formats(args.formats)
+        synthetic_dir = base / "data" / "synthetic_sources"
+        generate_synthetic_sources(
+            output_dir=synthetic_dir,
+            profile=args.profile,
+            seed=args.seed,
+            duplicate_rate=args.duplicate_rate,
+            formats=formats,
+        )
+        normalized_rows = _write_normalized_output(
+            normalized_file,
+            _read_rows(_resolve_generated_person_input_paths(synthetic_dir, formats=formats)),
+            config,
+        )
     match_rows, _ = _write_match_output(matches_file, normalized_rows, config)
     clustered_rows = _write_cluster_output(clusters_file, normalized_rows, match_rows)
     review_rows = _write_manual_review_output(review_queue_file, match_rows)
@@ -686,10 +730,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     normalize_parser.add_argument(
         "--input-dir",
-        default="data/synthetic_sources",
+        default=DEFAULT_NORMALIZE_INPUT_DIR,
         help=(
             "Directory to scan for person_source_*.csv files, or person_source_*.parquet "
             "when CSV files are absent, if --input is not provided."
+        ),
+    )
+    normalize_parser.add_argument(
+        "--manifest",
+        default=None,
+        help=(
+            "Path to a production batch manifest (.json, .yaml, or .yml). "
+            "When provided, manifest inputs are validated before normalization starts."
         ),
     )
     normalize_parser.add_argument(
@@ -771,6 +823,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--seed", default=42, type=int)
     run_all_parser.add_argument("--duplicate-rate", default=None, type=float)
     run_all_parser.add_argument("--formats", default="csv,parquet")
+    run_all_parser.add_argument(
+        "--manifest",
+        default=None,
+        help=(
+            "Path to a production batch manifest (.json, .yaml, or .yml). "
+            "When provided, run-all skips synthetic generation and uses the validated manifest inputs."
+        ),
+    )
     run_all_parser.add_argument("--config-dir", default=None)
     run_all_parser.set_defaults(func=_cmd_run_all)
 

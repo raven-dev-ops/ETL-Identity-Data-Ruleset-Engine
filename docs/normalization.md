@@ -7,6 +7,7 @@ combined artifact for downstream matching.
 
 - Input discovery defaults to `data/synthetic_sources/person_source_*.csv`
 - Explicit source files can be supplied with repeated `--input` flags
+- Production landed batches can be supplied through `--manifest`
 - Output is written to `data/normalized/normalized_person_records.csv`
 - Runtime rules are loaded from `config/normalization_rules.yml`
 - Address normalization now standardizes common street suffixes,
@@ -42,6 +43,26 @@ python -m etl_identity_engine.cli normalize \
   --input data/synthetic_sources/person_source_b.csv \
   --output data/normalized/normalized_person_records.csv
 ```
+
+Normalize a landed production-style batch through a manifest:
+
+```bash
+python -m etl_identity_engine.cli normalize \
+  --manifest manifests/inbound-batch.yml \
+  --output data/normalized/normalized_person_records.csv
+```
+
+The manifest contract requires:
+
+- `manifest_version: "1.0"`
+- `entity_type: person`
+- a local-filesystem `landing_zone`
+- one or more source entries with `source_id`, `path`, `format`,
+  `schema_version`, and `required_columns`
+
+The runtime validates the manifest, file presence, required columns, and
+`source_system` identifiers before normalization starts. Invalid
+manifests fail fast and do not write partial normalized output.
 
 ## Output Contract
 

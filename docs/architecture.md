@@ -1,15 +1,16 @@
 # Architecture
 
 The current prototype is a staged, file-based pipeline that turns
-synthetic multi-source person records into normalized records, scored
-candidate pairs, deterministic clusters, golden records, and reporting
-artifacts.
+synthetic or manifest-defined landed multi-source person records into
+normalized records, scored candidate pairs, deterministic clusters,
+golden records, and reporting artifacts.
 
 ## Public Scope Boundaries
 
-- The public repository is intentionally synthetic-only. Adding direct
-  adapters for operational or sensitive datasets is outside the
-  supported runtime surface for this line.
+- The current runtime supports synthetic generation plus manifest-driven
+  local landed batches. Object-storage ingestion, persisted state, and
+  service workflows are still tracked follow-on work rather than
+  implicit capabilities of the current line.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -22,8 +23,8 @@ artifacts.
    - Writes synthetic source datasets under `data/synthetic_sources/`
    - Supports CSV and Parquet outputs
 2. `normalize`
-   - Reads `person_source_*.csv` inputs, or `person_source_*.parquet`
-     when CSV inputs are absent
+   - Reads discovered synthetic inputs, explicit source files, or a
+     validated production batch manifest
    - Writes `data/normalized/normalized_person_records.csv`
 3. `match`
    - Reads normalized records
@@ -45,8 +46,8 @@ artifacts.
    - Writes under `data/exceptions/`
 8. `run-all`
    - Executes the end-to-end prototype path in one command
-   - Accepts the same synthetic output formats as `generate` and chooses
-     the generated normalization inputs accordingly
+   - Either generates synthetic inputs or uses a validated production
+     batch manifest
 
 ## Config Surfaces
 
@@ -60,6 +61,9 @@ The current runtime reads these repo config files at startup:
 
 Runtime config now fails fast when required sections, supported fields,
 or threshold semantics are invalid.
+
+The production batch manifest contract is documented separately in
+[production-batch-manifest.md](production-batch-manifest.md).
 
 ## Output Layout
 

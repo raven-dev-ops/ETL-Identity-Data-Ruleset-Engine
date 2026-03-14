@@ -47,7 +47,7 @@ Last synced to GitHub: 2026-03-13
 
 ### 61) Define production batch input manifest and landing-zone contract
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v0.4.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: none
@@ -350,10 +350,10 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-13
 
 - Active epic issues in GitHub for this backlog: `#58`, `#59`, `#60`
-- Open child issues represented in this local active catalog: `#61`
+- Open child issues represented in this local active catalog: `#62`
   through `#80`
 - Open milestones in GitHub for this backlog:
-  - `v0.4.0` with epic `#58` plus child issues `#61` through `#67`
+  - `v0.4.0` with epic `#58` plus child issues `#62` through `#67`
   - `v0.5.0` with epic `#59` plus child issues `#68` through `#73`
   - `v0.6.0` with epic `#60` plus child issues `#74` through `#80`
 - Closed issues and epics in historical local catalogs remain in:
@@ -362,3 +362,6 @@ Snapshot date: 2026-03-13
 - This backlog opens a new production-readiness cycle focused on moving
   the project from a file-based identity-resolution prototype toward a
   production MDM or enterprise data-product service.
+- Issue `#61` is complete in-repo: the runtime now supports
+  manifest-driven landed batch validation for `normalize` and `run-all`
+  before partial outputs are written.

@@ -13,12 +13,12 @@ duplicate records. These inconsistencies propagate downstream into
 reporting systems, analytics environments, and search interfaces,
 reducing trust in the data.
 
-This repository models those challenges using synthetic datasets and
-provides a reproducible ETL pipeline that addresses them.
-
-Because the project uses only synthetic data, it allows teams to explore
-identity-resolution techniques safely without exposing operational or
-sensitive records.
+This repository models those challenges using synthetic datasets and now
+also supports manifest-driven local batch inputs for production-style
+evaluation. Teams can still explore identity-resolution techniques
+safely with synthetic data, then validate the same staged runtime
+against landed CSV or Parquet batches under an explicit manifest
+contract.
 
 ## Core Concepts
 
@@ -130,9 +130,11 @@ is included in the repository.
 
 ## Scope Boundaries
 
-- The public repository remains synthetic-only by design. External data
-  import adapters and production-data connectors are out of scope for
-  the supported public runtime surface.
+- The runtime now supports two input modes: synthetic generation for
+  safe experimentation and manifest-driven local landed batches for
+  production-style evaluation. Object-storage ingestion, persisted state,
+  and service workflows remain follow-on work rather than implicit
+  capabilities of the current line.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
@@ -162,6 +164,7 @@ is included in the repository.
 - [Architecture](docs/architecture.md)
 - [Data Model](docs/data-model.md)
 - [Normalization](docs/normalization.md)
+- [Production Batch Manifest](docs/production-batch-manifest.md)
 - [Matching and Thresholds](docs/matching-and-thresholds.md)
 - [Survivorship](docs/survivorship.md)
 - [Evaluation and Metrics](docs/evaluation-and-metrics.md)
