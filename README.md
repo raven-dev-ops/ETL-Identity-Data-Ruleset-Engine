@@ -128,10 +128,23 @@ All datasets used in this project are synthetic and generated for
 demonstration purposes only. No operational, personal, or sensitive data
 is included in the repository.
 
+## Scope Boundaries
+
+- The public repository remains synthetic-only by design. External data
+  import adapters and production-data connectors are out of scope for
+  the supported public runtime surface.
+- The supported matching track for the current `0.x` line is
+  deterministic and explainable: exact matches plus heuristic partial
+  and phonetic signals. ML-assisted scoring is intentionally out of
+  scope for the supported public line.
+- The supported manual-review operating model for the current `0.x` line
+  is a CSV handoff via `data/review_queue/manual_review_queue.csv`.
+  Persisted in-app review workflow state is out of scope.
+
 ## Future Enhancements
 
 - Configurable identity matching rules
-- Machine-learning assisted duplicate scoring
+- Additional explainable heuristic signals and richer offline evaluation
 - Address standardization using geocoding services
 - Streaming ETL support
 - Real-time identity resolution pipelines
@@ -167,6 +180,11 @@ python scripts/package_release_sample.py --output-dir dist/release-samples --pro
 The release process treats that script as the authoritative bundle
 entrypoint, and the resulting zip should be attached to the GitHub
 release for the matching tag.
+
+For a fixed clean commit, the bundle is byte-stable across reruns. The
+packaging script derives `generated_at_utc` from the HEAD commit
+timestamp by default and also honors `SOURCE_DATE_EPOCH` when you need a
+reproducible rebuild timestamp override.
 
 ## Governance and Safety
 
@@ -225,6 +243,11 @@ used per run.
 The stable output shapes for those files are documented in
 [docs/output-contracts.md](docs/output-contracts.md).
 
+The current matcher remains rules-based, but it now includes exact,
+partial, and lightweight phonetic-name signals. Candidate outputs expose
+those derived signals explicitly through `matched_fields` and
+`reason_trace`.
+
 The current manual-review operating model is a CSV handoff via
 `data/review_queue/manual_review_queue.csv`; the project does not yet
 implement a persisted review workflow.
@@ -243,7 +266,14 @@ is not part of the requested format set.
 Prerequisite: Python 3.11+ installed and available on `PATH`.
 The virtual environment installs Python dependencies and the local
 `gh` CLI only. It does not provision shell runtimes such as `bash` or
-PowerShell.
+PowerShell, but the repo provides Python-native `scripts/run_checks.py`
+and `scripts/run_pipeline.py` entrypoints when you want shell-free local
+validation and pipeline execution.
+
+Maintained CI support currently covers:
+
+- Python `3.11` baseline validation on Linux and Windows
+- Python `3.12` compatibility validation on Linux, Windows, and macOS
 
 ### Windows (PowerShell)
 
@@ -257,6 +287,12 @@ Use the PowerShell path on Windows. Do not expect the venv to provide a
 python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 --formats csv,parquet
 ./scripts/run_pipeline.ps1
 ```
+
+`run_checks.ps1` now covers the same local validation surface as the
+documented CI baseline: `ruff`, `pytest`, the active-backlog dry-run,
+and release-sample packaging. That packaging validation uses a temporary
+output directory, so the wrapper does not leave release bundles under
+`dist/`.
 
 `run_pipeline.ps1` forwards any additional `run-all` CLI arguments, for
 example `./scripts/run_pipeline.ps1 --base-dir tmp --config-dir config`.
@@ -275,6 +311,12 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 ./scripts/run_pipeline.sh
 ```
 
+`run_checks.sh` covers the same local validation surface as the
+documented CI baseline: `ruff`, `pytest`, the active-backlog dry-run,
+and release-sample packaging. That packaging validation uses a temporary
+output directory, so the wrapper does not leave release bundles under
+`dist/`.
+
 `run_pipeline.sh` forwards any additional `run-all` CLI arguments, for
 example `./scripts/run_pipeline.sh --base-dir tmp --config-dir config`.
 
@@ -284,6 +326,7 @@ example `./scripts/run_pipeline.sh --base-dir tmp --config-dir config`.
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip setuptools wheel
 .venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python scripts/run_checks.py
 .venv/bin/python -m ruff check .
 .venv/bin/python -m pytest
 .venv/bin/python -m etl_identity_engine.cli run-all
@@ -313,11 +356,16 @@ The default backlog source is
 `planning/active-github-issues-backlog.md`. The bootstrap backlog at
 `planning/github-issues-backlog.md` and the completed
 `planning/post-v0.1.0-github-issues-backlog.md` file are historical and
-should be used only when re-syncing closed tracker history:
+should be used only when re-syncing closed tracker history with
+`--include-closed`:
 
 ```powershell
-python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --backlog-path planning/github-issues-backlog.md --dry-run
+python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --backlog-path planning/github-issues-backlog.md --include-closed --dry-run
 ```
+
+By default, the backlog automation ignores catalog entries marked
+`Status: closed` so the active backlog file can remain a historical
+record after a cycle is complete without recreating closed GitHub work.
 
 When filing new work manually, use the GitHub issue forms for `bug`,
 `feature`, `docs`, `chore`, and `epic` so issues stay aligned with the
@@ -335,10 +383,15 @@ The bootstrap scripts install both Python dependencies and a venv-scoped
 GitHub CLI, so local checks do not require a global `gh` installation.
 They do not install OS shell runtimes; Windows users should run the
 PowerShell entrypoints locally, while Linux CI validates the documented
-bash path.
-The local `pytest` suite is the authoritative pre-push validation path
-for unpushed issue-template files. The remote metadata check validates
-only what GitHub currently sees on the pushed default branch.
+bash path. The Python-native `scripts/run_checks.py` and
+`scripts/run_pipeline.py` entrypoints remain available on every
+platform.
+The local `run_checks` wrappers are the authoritative pre-push
+validation path. They include the local `pytest` suite plus the
+active-backlog dry-run and release-sample packaging checks, and they use
+temporary packaging output so pre-push validation does not leave release
+artifacts behind. The remote metadata check validates only what GitHub
+currently sees on the pushed default branch.
 
 ## License
 

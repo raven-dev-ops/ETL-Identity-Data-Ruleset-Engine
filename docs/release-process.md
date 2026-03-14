@@ -16,6 +16,9 @@ ruleset because they cannot be stored fully in git:
 - Require these status checks:
   - `CI / test-linux`
   - `CI / test-windows`
+  - compatibility jobs for Python `3.12` and macOS should remain green
+    even if branch protection keeps the baseline required-check list
+    narrower
   - `Issue Metadata / verify-github-issue-metadata` when the change
     touches `.github/ISSUE_TEMPLATE/**`,
     `scripts/verify_github_issue_metadata.py`, or
@@ -28,6 +31,8 @@ check baseline.
 
 - `CI / test-linux` and `CI / test-windows` are green on the release
   commit.
+- Compatibility jobs for Linux `3.12`, Windows `3.12`, and macOS `3.12`
+  are green on the release commit.
 - Coverage remains at or above `85%`.
 - Artifact contract tests pass for the documented pipeline outputs.
 - `README.md`, `CHANGELOG.md`, and the release notes reflect the current
@@ -48,18 +53,27 @@ check baseline.
 - If a defect is discovered after a tag is pushed, keep the existing tag
   immutable and queue the correction for the next patch release.
 
-## Known Limitations
+## Supported Boundaries And Constraints
 
-- Matching remains rules-based and intentionally lightweight; it does
-  not include phonetic or ML-based scoring.
-- The manual review queue is a CSV handoff, not a persistent workflow.
+- The public repository remains synthetic-only by design; direct
+  adapters for operational or sensitive datasets are outside the
+  supported public release surface.
+- Matching remains rules-based and intentionally explainable; it
+  includes exact, heuristic partial, and lightweight phonetic-name
+  scoring. ML-assisted scoring is intentionally out of scope for the
+  supported public line.
+- The manual review queue remains a CSV handoff for the supported public
+  line rather than a persisted workflow.
 - Output contracts are stable for the documented CSV and summary
   artifacts only; synthetic generator outputs are not versioned as a
   release contract.
-- CI currently targets Python `3.11` on Linux and Windows only.
-- The Python venv bootstrap does not install shell runtimes; local
-  Windows validation should use PowerShell, while Linux CI validates the
-  bash path.
+- CI validates a maintained support matrix of Python `3.11` baseline
+  jobs on Linux and Windows plus Python `3.12` compatibility jobs on
+  Linux, Windows, and macOS, including the documented release-bundle
+  packaging path.
+- The Python venv bootstrap does not install shell runtimes, but the
+  repo now provides Python-native `scripts/run_checks.py` and
+  `scripts/run_pipeline.py` entrypoints for shell-free local execution.
 
 ## Sample Output Set
 
@@ -71,6 +85,11 @@ python scripts/package_release_sample.py --output-dir dist/release-samples --pro
 
 The script writes a zip archive named like
 `etl-identity-engine-vX.Y.Z-sample-small.zip`.
+
+For a fixed clean commit, rerunning the script produces a byte-stable
+zip archive. The manifest timestamp defaults to the HEAD commit
+timestamp and the script also honors `SOURCE_DATE_EPOCH` when you need a
+reproducible rebuild timestamp override.
 
 That bundle should include at least:
 
@@ -98,8 +117,16 @@ shapes.
 - Run the local validation path:
   - `./scripts/run_checks.ps1` on Windows
   - `./scripts/run_checks.sh` on systems that already provide `bash`
+  - `python scripts/run_checks.py` on any platform when you want the
+    shell-free equivalent path
+- Those wrappers cover `ruff`, `pytest`, the active-backlog dry-run, and
+  release-sample packaging.
+- The wrapper packaging check uses a temporary output directory; the
+  explicit `package_release_sample.py --output-dir dist/release-samples`
+  command remains the maintainer path when you want a retained bundle.
 - Run the backlog dry-run:
   - `python scripts/create_github_backlog.py --repo "<OWNER/REPO>" --dry-run`
+  - For historical backlog validation, use `--include-closed`.
 - Build the packaged release sample:
   - `python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet`
 - Review the packaged output set against

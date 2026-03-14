@@ -5,7 +5,7 @@ Param(
 
 $venvPython = Join-Path ".venv" "Scripts\python.exe"
 if (Test-Path $venvPython) {
-    & $venvPython -m etl_identity_engine.cli run-all @CliArgs
+    & $venvPython "scripts\run_pipeline.py" @CliArgs
     exit $LASTEXITCODE
 }
 

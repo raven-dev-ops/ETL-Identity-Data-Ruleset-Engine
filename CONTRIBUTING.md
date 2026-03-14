@@ -36,6 +36,7 @@ source .venv/bin/activate
 
 - `python -m venv .venv`
 - `.venv/bin/python -m pip install -r requirements-dev.txt`
+- `.venv/bin/python scripts/run_checks.py`
 - `.venv/bin/python -m ruff check .`
 - `.venv/bin/python -m pytest`
 - `.venv/bin/gh --version`
@@ -71,6 +72,9 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 - Keep issue reports limited to synthetic data, local repro steps, and project artifacts.
 - Report security issues privately through the repository security advisory flow, not in public issues.
 - `./scripts/run_checks.ps1` or `./scripts/run_checks.sh` is the authoritative pre-push local check path and uses the venv's Python tooling plus the host shell runtime for the platform-specific wrapper.
+- Those wrappers now cover `ruff`, `pytest`, the active-backlog dry-run, and release-sample packaging so local validation stays aligned with the documented CI baseline.
+- The wrapper packaging check uses a temporary output directory, so routine local validation does not leave release artifacts behind under `dist/`.
+- `python scripts/run_checks.py` is the shell-free equivalent local validation path when contributors do not want to depend on PowerShell or bash.
 - `./scripts/run_checks.ps1 -IncludeRemoteGitHubChecks` or `./scripts/run_checks.sh --include-remote-github-checks` is an optional post-push deployed-state check that uses the venv's bundled Python and `gh`.
 - Windows contributors should use the PowerShell scripts locally; the bash path is exercised in Linux CI and is not installed by the venv bootstrap.
 - Your unpushed local issue-template files are validated by the local `pytest` issue-template tests instead of the remote metadata query.
@@ -81,7 +85,8 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe` and `.ven
 - Authenticate once with the venv-scoped GitHub CLI: `gh auth login`.
 - Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --dry-run` to preview backlog creation from the active backlog.
 - Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine` to apply labels, milestones, epics, and issues from the active backlog.
-- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --dry-run` only when re-syncing the completed bootstrap backlog.
+- Closed catalog entries are skipped by default. Use `--include-closed` only when you intentionally re-sync a historical closed backlog.
+- Use `python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --include-closed --dry-run` only when re-syncing the completed bootstrap backlog.
 - Treat `planning/active-github-issues-backlog.md` as the only issue-sync
   source of truth. `planning/remaining-work-task-list.md` is a short
   maintainer mirror and should not diverge from the tracked GitHub issue

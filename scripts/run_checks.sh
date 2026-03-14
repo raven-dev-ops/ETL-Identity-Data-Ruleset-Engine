@@ -30,23 +30,13 @@ if [[ ! -x ".venv/bin/python" ]]; then
   exit 1
 fi
 
-.venv/bin/python -m ruff check .
-.venv/bin/python -m pytest
+ARGS=(
+  "scripts/run_checks.py"
+  "--repo" "${REPO}"
+)
 
-if [[ "${INCLUDE_REMOTE_GITHUB_CHECKS}" != "1" ]]; then
-  exit 0
+if [[ "${INCLUDE_REMOTE_GITHUB_CHECKS}" == "1" ]]; then
+  ARGS+=("--include-remote-github-checks")
 fi
 
-if [[ ! -x ".venv/bin/gh" ]]; then
-  echo "No venv gh executable found at .venv/bin/gh. Run ./scripts/bootstrap_venv.sh first." >&2
-  exit 1
-fi
-
-GH_TOKEN="$(".venv/bin/gh" auth token)"
-if [[ -z "${GH_TOKEN}" ]]; then
-  echo "Unable to read a GitHub token from the venv gh CLI. Run .venv/bin/gh auth login first." >&2
-  exit 1
-fi
-
-export GH_TOKEN
-.venv/bin/python scripts/verify_github_issue_metadata.py --repo "${REPO}"
+.venv/bin/python "${ARGS[@]}"

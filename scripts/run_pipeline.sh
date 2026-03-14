@@ -6,5 +6,5 @@ if [[ ! -x ".venv/bin/python" ]]; then
   exit 1
 fi
 
-.venv/bin/python -m etl_identity_engine.cli run-all "$@"
+.venv/bin/python scripts/run_pipeline.py "$@"
 

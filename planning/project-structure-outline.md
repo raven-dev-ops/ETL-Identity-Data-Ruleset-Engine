@@ -70,6 +70,7 @@ ETL-Identity-Data-Ruleset-Engine/
     create_github_backlog.py
     create_github_backlog.ps1
     package_release_sample.py
+    run_checks.py
     run_checks.ps1
     run_checks.sh
     run_pipeline.ps1
@@ -94,6 +95,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_package_release_sample.py
     test_pipeline_e2e.py
     test_quality.py
+    test_repo_scripts.py
     test_runtime_config.py
     test_survivorship.py
     test_create_github_backlog.py
@@ -108,14 +110,16 @@ ETL-Identity-Data-Ruleset-Engine/
   SECURITY.md
 ```
 
-## Next Structure Expansion
+## Current Direction
 
-The following are planned to deepen implementation layers:
+The current public line is now explicitly scoped around:
 
-- richer normalization and matching strategies beyond the current
-  prototype heuristics
-- operational workflow support beyond file-based manual review handoff
-- post-release planning and tracker synchronization maintenance
+- synthetic-only public inputs
+- deterministic explainable matching and survivorship
+- CSV manual-review handoff
+- Python-native plus shell-wrapper maintainer entrypoints
+- a Python `3.11`/`3.12` CI support matrix with macOS compatibility
+  validation
 
 ## Build Order
 

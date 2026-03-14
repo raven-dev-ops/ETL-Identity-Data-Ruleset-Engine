@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Lightweight phonetic-name scoring for explainable candidate matching.
+- Deterministic release-sample bundle packaging tests, including a
+  byte-stability check for fixed metadata.
+- A cross-platform Python-native `scripts/run_checks.py` entrypoint for
+  shell-free local validation.
+
+### Changed
+
+- Release-sample packaging now writes deterministic zip entry metadata
+  and derives the manifest timestamp from `SOURCE_DATE_EPOCH` or the
+  HEAD commit timestamp so rebuilds are reproducible for a fixed commit.
+- Active-backlog sync now skips entries marked `Status: closed` by
+  default, with explicit `--include-closed` support for historical
+  re-syncs.
+- Local `run_checks` wrappers now validate the active backlog dry-run
+  and release-sample packaging in addition to lint and tests, and CI now
+  uses `--include-closed` for the historical bootstrap-backlog dry-run.
+- Local `run_checks` release-sample validation now uses temporary output
+  directories so routine pre-push checks do not leave retained bundles
+  under `dist/`.
+- `run_checks` and `run_pipeline` shell wrappers now delegate to the
+  Python entrypoints so local maintenance behavior stays aligned across
+  platforms.
+- CI now validates Python `3.12` compatibility on Linux and Windows and
+  adds a macOS `3.12` compatibility job alongside the existing Linux and
+  Windows Python `3.11` baseline jobs.
+- Public scope documentation now treats the synthetic-only boundary,
+  deterministic heuristic matching strategy, and CSV manual-review model
+  as explicit supported boundaries rather than open product ambiguity.
+- The PowerShell backlog wrapper now delegates to the Python backlog
+  script so both entrypoints stay behaviorally aligned.
+
 ## [0.1.1] - 2026-03-13
 
 ### Added

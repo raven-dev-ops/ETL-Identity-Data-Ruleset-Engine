@@ -178,6 +178,27 @@ def test_explain_pair_score_awards_partial_phone_signal_for_country_code_variant
     assert detail.reason_trace == ("canonical_phone_partial:0.08",)
 
 
+def test_explain_pair_score_awards_phonetic_name_signal_for_soundalike_full_names() -> None:
+    left = {
+        "canonical_name": "STEVEN SMITH",
+        "canonical_dob": "",
+        "canonical_phone": "",
+        "canonical_address": "",
+    }
+    right = {
+        "canonical_name": "STEPHEN SMYTH",
+        "canonical_dob": "",
+        "canonical_phone": "",
+        "canonical_address": "",
+    }
+
+    detail = explain_pair_score(left, right)
+
+    assert detail.score == 0.25
+    assert detail.matched_fields == ("canonical_name_phonetic",)
+    assert detail.reason_trace == ("canonical_name_phonetic:0.25",)
+
+
 def test_partial_name_signal_does_not_auto_merge_without_other_supporting_signals() -> None:
     left = {
         "canonical_name": "JOHN SMITH",
@@ -229,6 +250,21 @@ def test_threshold_tuning_fixture_cases_cover_manual_review_boundaries() -> None
             },
             {
                 "canonical_name": "J SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_phone": "5551234567",
+                "canonical_address": "",
+            },
+            "manual_review",
+        ),
+        (
+            {
+                "canonical_name": "STEVEN SMITH",
+                "canonical_dob": "1985-03-12",
+                "canonical_phone": "15551234567",
+                "canonical_address": "",
+            },
+            {
+                "canonical_name": "STEPHEN SMYTH",
                 "canonical_dob": "1985-03-12",
                 "canonical_phone": "5551234567",
                 "canonical_address": "",

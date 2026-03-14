@@ -3,6 +3,10 @@
 The current runtime path uses external YAML config for blocking passes,
 field weights, and threshold bands.
 
+The supported matching strategy for the public `0.x` line remains a
+deterministic, explainable heuristic scorer. ML-assisted scoring is
+intentionally out of scope for the supported runtime surface.
+
 ## Blocking
 
 Configured in `config/blocking_rules.yml`.
@@ -44,6 +48,9 @@ nickname-family equivalent.
 
 The scorer also emits:
 
+- `canonical_name_phonetic` when two records have soundalike first and
+  last name tokens under a lightweight Soundex-style comparison even
+  though they are not exact or nickname/initial matches
 - `canonical_phone_partial` when two phone values share the same trailing
   10 digits but differ in formatting or country-code prefix shape
 - `canonical_address_partial` when two addresses share the same house
@@ -65,9 +72,10 @@ score. `reason_trace` includes those signals annotated with their
 applied weights. Derived signals such as `canonical_name_partial` are
 reported explicitly rather than being folded into exact-match labels.
 
-Current derived partial-signal weight ratios:
+Current derived heuristic-signal weight ratios:
 
 - `canonical_name_partial`: `70%` of the configured name weight
+- `canonical_name_phonetic`: `50%` of the configured name weight
 - `canonical_phone_partial`: `80%` of the configured phone weight
 - `canonical_address_partial`: `60%` of the configured address weight
 
@@ -86,6 +94,7 @@ The test suite now includes threshold-boundary fixtures that exercise:
 
 - exact matches
 - partial-name plus exact-DOB cases
+- phonetic-name plus supporting-signal cases
 - exact-name plus partial-address cases
 - partial-phone country-code variants
 - low-signal cases that must remain below `manual_review_min`

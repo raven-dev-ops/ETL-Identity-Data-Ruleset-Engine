@@ -56,6 +56,7 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     crosswalk_rows = _read_csv_rows(tmp_path / "data" / "golden" / "source_to_golden_crosswalk.csv")
     review_queue_rows = _read_csv_rows(tmp_path / "data" / "review_queue" / "manual_review_queue.csv")
     summary = json.loads((tmp_path / "data" / "exceptions" / "run_summary.json").read_text(encoding="utf-8"))
+    report_text = (tmp_path / "data" / "exceptions" / "run_report.md").read_text(encoding="utf-8")
 
     assert len(normalized_rows) == 48
     assert match_rows
@@ -83,6 +84,8 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     assert summary["before_after_completeness"]["name"]["after"] == summary["completeness"]["canonical_name_present"]
     assert summary["duplicate_reduction"]["after_record_count"] == len(golden_rows)
     assert summary["duplicate_reduction"]["records_consolidated"] == len(normalized_rows) - len(golden_rows)
+    assert "- Input file: `../normalized/normalized_person_records.csv`" in report_text
+    assert str(tmp_path).replace("\\", "/") not in report_text
     if review_queue_rows:
         assert {"reason_codes", "top_contributing_match_signals"} <= set(review_queue_rows[0])
 

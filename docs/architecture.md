@@ -5,6 +5,17 @@ synthetic multi-source person records into normalized records, scored
 candidate pairs, deterministic clusters, golden records, and reporting
 artifacts.
 
+## Public Scope Boundaries
+
+- The public repository is intentionally synthetic-only. Adding direct
+  adapters for operational or sensitive datasets is outside the
+  supported runtime surface for this line.
+- The supported matching engine remains deterministic and explainable:
+  exact signals plus heuristic partial and phonetic-name scoring. The
+  public `0.x` line does not introduce an ML-assisted scorer.
+- The supported manual-review model remains the CSV handoff documented
+  below rather than a persisted in-app workflow.
+
 ## Runtime Stages
 
 1. `generate`
@@ -79,6 +90,20 @@ A persisted review workflow is intentionally out of scope for the
 current supported runtime surface. Any future expansion beyond the CSV
 handoff should be introduced as a new tracked backlog item instead of as
 an implicit behavior change.
+
+## Support Matrix
+
+The current maintained support matrix is:
+
+- Python `3.11` and `3.12`
+- Linux and Windows validation in the main CI baseline
+- additional macOS compatibility validation through a Python `3.12`
+  smoke job
+
+The repository still ships shell wrappers for PowerShell and bash, but
+Python-native `scripts/run_checks.py` and `scripts/run_pipeline.py`
+entrypoints are also supported so local validation and pipeline runs do
+not depend on shell runtime provisioning.
 
 ## Command Example
 

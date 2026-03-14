@@ -17,6 +17,9 @@ PARTIAL_MATCH_WEIGHT_RATIO = {
     "canonical_phone": 0.8,
     "canonical_address": 0.6,
 }
+PHONETIC_MATCH_WEIGHT_RATIO = {
+    "canonical_name": 0.5,
+}
 NICKNAME_GROUPS = (
     frozenset({"JOHN", "JON", "JOHNNY", "JONATHAN"}),
     frozenset({"KATE", "KATIE", "KATHERINE", "KATHY"}),
@@ -27,6 +30,14 @@ NICKNAME_INDEX = {
     alias: index
     for index, group in enumerate(NICKNAME_GROUPS)
     for alias in group
+}
+_SOUNDEX_GROUPS = {
+    **dict.fromkeys(("B", "F", "P", "V"), "1"),
+    **dict.fromkeys(("C", "G", "J", "K", "Q", "S", "X", "Z"), "2"),
+    **dict.fromkeys(("D", "T"), "3"),
+    "L": "4",
+    **dict.fromkeys(("M", "N"), "5"),
+    "R": "6",
 }
 
 
@@ -48,6 +59,26 @@ def _nickname_group(value: str) -> int | None:
     return NICKNAME_INDEX.get(value.strip().upper())
 
 
+def _soundex(value: str) -> str:
+    letters = "".join(character for character in value.strip().upper() if character.isalpha())
+    if not letters:
+        return ""
+
+    first_letter = letters[0]
+    encoded_digits: list[str] = []
+    previous_digit = _SOUNDEX_GROUPS.get(first_letter, "")
+    for character in letters[1:]:
+        current_digit = _SOUNDEX_GROUPS.get(character, "")
+        if current_digit:
+            if current_digit != previous_digit:
+                encoded_digits.append(current_digit)
+            previous_digit = current_digit
+            continue
+        previous_digit = ""
+
+    return (first_letter + "".join(encoded_digits) + "000")[:4]
+
+
 def _is_partial_name_match(left_value: str, right_value: str) -> bool:
     left_tokens = _name_tokens(left_value)
     right_tokens = _name_tokens(right_value)
@@ -67,6 +98,33 @@ def _is_partial_name_match(left_value: str, right_value: str) -> bool:
     left_group = _nickname_group(left_first)
     right_group = _nickname_group(right_first)
     return left_group is not None and left_group == right_group
+
+
+def _is_phonetic_name_match(left_value: str, right_value: str) -> bool:
+    left_tokens = _name_tokens(left_value)
+    right_tokens = _name_tokens(right_value)
+    if len(left_tokens) < 2 or len(right_tokens) < 2:
+        return False
+
+    left_first = left_tokens[0]
+    right_first = right_tokens[0]
+    left_last = left_tokens[-1]
+    right_last = right_tokens[-1]
+    if not left_first or not right_first or not left_last or not right_last:
+        return False
+
+    left_first_code = _soundex(left_first)
+    right_first_code = _soundex(right_first)
+    left_last_code = _soundex(left_last)
+    right_last_code = _soundex(right_last)
+    if not left_first_code or not right_first_code or not left_last_code or not right_last_code:
+        return False
+
+    first_name_codes_match = left_first_code == right_first_code
+    last_name_codes_match = left_last_code == right_last_code
+    if not first_name_codes_match or not last_name_codes_match:
+        return False
+    return (left_first, left_last) != (right_first, right_last)
 
 
 def _partial_field_match_weight(
@@ -95,6 +153,26 @@ def _partial_field_match_weight(
     if partial_weight <= 0.0:
         return None
     return (f"{field_name}_partial", partial_weight)
+
+
+def _phonetic_field_match_weight(
+    left: dict[str, str],
+    right: dict[str, str],
+    field_name: str,
+    weight: float,
+) -> tuple[str, float] | None:
+    if field_name != "canonical_name":
+        return None
+
+    left_value = left.get(field_name, "").strip()
+    right_value = right.get(field_name, "").strip()
+    if not left_value or not right_value or not _is_phonetic_name_match(left_value, right_value):
+        return None
+
+    phonetic_weight = round(weight * PHONETIC_MATCH_WEIGHT_RATIO[field_name], 4)
+    if phonetic_weight <= 0.0:
+        return None
+    return (f"{field_name}_phonetic", phonetic_weight)
 
 
 def _phone_digits(value: str) -> str:
@@ -185,6 +263,14 @@ def explain_pair_score(
             score += partial_weight
             matched_fields.append(partial_field_name)
             reason_trace.append(f"{partial_field_name}:{partial_weight:g}")
+            continue
+
+        phonetic_match = _phonetic_field_match_weight(left, right, field_name, weight)
+        if phonetic_match is not None:
+            phonetic_field_name, phonetic_weight = phonetic_match
+            score += phonetic_weight
+            matched_fields.append(phonetic_field_name)
+            reason_trace.append(f"{phonetic_field_name}:{phonetic_weight:g}")
 
     if not reason_trace:
         reason_trace.append("no_weighted_matches")

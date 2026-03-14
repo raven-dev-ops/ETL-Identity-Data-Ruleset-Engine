@@ -86,9 +86,58 @@ def read_project_version(pyproject_path: Path = REPO_ROOT / "pyproject.toml") ->
     return version
 
 
+def _normalize_utc_timestamp(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"Invalid UTC timestamp: {value}") from exc
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def resolve_generated_at_utc(
+    *,
+    repo_root: Path = REPO_ROOT,
+    explicit_value: str | None = None,
+    environ: dict[str, str] | None = None,
+) -> str:
+    if explicit_value is not None:
+        return _normalize_utc_timestamp(explicit_value)
+
+    effective_environ = environ if environ is not None else os.environ
+    source_date_epoch = effective_environ.get("SOURCE_DATE_EPOCH", "").strip()
+    if source_date_epoch:
+        try:
+            epoch_seconds = int(source_date_epoch)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid SOURCE_DATE_EPOCH value: {source_date_epoch}"
+            ) from exc
+        return (
+            datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+
+    completed = subprocess.run(
+        ["git", "show", "-s", "--format=%cI", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0 and completed.stdout.strip():
+        return _normalize_utc_timestamp(completed.stdout.strip())
+
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def resolve_source_commit(repo_root: Path = REPO_ROOT) -> str:
     completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["git", "describe", "--always", "--dirty", "--broken"],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -127,6 +176,19 @@ def build_manifest(
 
 def _artifact_names() -> tuple[str, ...]:
     return tuple(path.as_posix() for path in RELEASE_ARTIFACTS)
+
+
+def _zip_entry_timestamp(generated_at_utc: str) -> tuple[int, int, int, int, int, int]:
+    normalized = _normalize_utc_timestamp(generated_at_utc)
+    parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    return (
+        parsed.year,
+        parsed.month,
+        parsed.day,
+        parsed.hour,
+        parsed.minute,
+        parsed.second - (parsed.second % 2),
+    )
 
 
 def _build_pythonpath(repo_root: Path) -> str:
@@ -182,22 +244,26 @@ def package_release_sample(
     formats: Sequence[str],
     version: str,
     repo_root: Path = REPO_ROOT,
+    generated_at_utc: str | None = None,
+    source_commit: str | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = output_dir / build_bundle_name(version, profile)
     artifact_names = _artifact_names()
-    generated_at_utc = (
-        datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    resolved_generated_at_utc = resolve_generated_at_utc(
+        repo_root=repo_root,
+        explicit_value=generated_at_utc,
     )
     manifest = build_manifest(
         version=version,
         profile=profile,
         seed=seed,
         formats=formats,
-        generated_at_utc=generated_at_utc,
-        source_commit=resolve_source_commit(repo_root),
+        generated_at_utc=resolved_generated_at_utc,
+        source_commit=source_commit or resolve_source_commit(repo_root),
         artifacts=artifact_names,
     )
+    zip_timestamp = _zip_entry_timestamp(resolved_generated_at_utc)
 
     with tempfile.TemporaryDirectory(prefix="etl-release-sample-") as temp_dir:
         base_dir = Path(temp_dir)
@@ -214,9 +280,16 @@ def package_release_sample(
                 source_path = base_dir / relative_artifact
                 if not source_path.exists():
                     raise FileNotFoundError(f"Missing expected release artifact: {source_path}")
-                archive.write(source_path, arcname=relative_artifact.as_posix())
+                zip_info = zipfile.ZipInfo(relative_artifact.as_posix(), date_time=zip_timestamp)
+                zip_info.compress_type = zipfile.ZIP_DEFLATED
+                zip_info.external_attr = 0o100644 << 16
+                archive.writestr(zip_info, source_path.read_bytes())
+
+            manifest_info = zipfile.ZipInfo(MANIFEST_NAME, date_time=zip_timestamp)
+            manifest_info.compress_type = zipfile.ZIP_DEFLATED
+            manifest_info.external_attr = 0o100644 << 16
             archive.writestr(
-                MANIFEST_NAME,
+                manifest_info,
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n",
             )
 

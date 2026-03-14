@@ -49,6 +49,8 @@ echo "Then run:"
 echo "  ruff check ."
 echo "  pytest"
 echo "  python -m etl_identity_engine.cli run-all"
+echo "  python scripts/run_checks.py"
+echo "  python scripts/run_pipeline.py"
 echo "  gh --version"
 echo "  ./scripts/run_checks.sh"
 echo

@@ -55,6 +55,62 @@ def test_build_manifest_contains_expected_fields() -> None:
     }
 
 
+def test_resolve_generated_at_utc_uses_source_date_epoch() -> None:
+    resolved = MODULE.resolve_generated_at_utc(
+        explicit_value=None,
+        environ={"SOURCE_DATE_EPOCH": "1773360000"},
+    )
+
+    assert resolved == "2026-03-13T00:00:00Z"
+
+
+def test_package_release_sample_is_byte_stable_for_fixed_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fake_run_pipeline(
+        *,
+        base_dir: Path,
+        profile: str,
+        seed: int,
+        formats: tuple[str, ...],
+        repo_root: Path,
+    ) -> None:
+        for relative_artifact in MODULE.RELEASE_ARTIFACTS:
+            destination = base_dir / relative_artifact
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                f"{profile}|{seed}|{','.join(formats)}|{relative_artifact.as_posix()}\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(MODULE, "_run_pipeline", fake_run_pipeline)
+
+    bundle_one = MODULE.package_release_sample(
+        output_dir=tmp_path / "first",
+        profile="small",
+        seed=42,
+        formats=("csv", "parquet"),
+        version="0.1.1",
+        generated_at_utc="2026-03-13T00:00:00Z",
+        source_commit="abc123",
+    )
+    bundle_two = MODULE.package_release_sample(
+        output_dir=tmp_path / "second",
+        profile="small",
+        seed=42,
+        formats=("csv", "parquet"),
+        version="0.1.1",
+        generated_at_utc="2026-03-13T00:00:00Z",
+        source_commit="abc123",
+    )
+
+    assert bundle_one.read_bytes() == bundle_two.read_bytes()
+
+    with zipfile.ZipFile(bundle_one) as archive:
+        assert all(info.date_time == (2026, 3, 13, 0, 0, 0) for info in archive.infolist())
+
+
 def test_package_release_sample_builds_expected_zip(tmp_path: Path) -> None:
     version = MODULE.read_project_version()
     bundle_path = MODULE.package_release_sample(

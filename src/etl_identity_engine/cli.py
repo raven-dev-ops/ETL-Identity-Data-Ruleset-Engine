@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Sequence
@@ -526,7 +527,13 @@ def _write_quality_outputs(
         golden_record_count=golden_record_count,
         review_queue_count=review_queue_count,
     )
-    write_markdown(output_file, build_run_report_markdown(str(input_file), summary))
+
+    try:
+        display_input_path = os.path.relpath(input_file, output_file.parent).replace("\\", "/")
+    except ValueError:
+        display_input_path = str(input_file).replace("\\", "/")
+
+    write_markdown(output_file, build_run_report_markdown(display_input_path, summary))
 
     summary_path = output_file.with_name("run_summary.json")
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")

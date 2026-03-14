@@ -27,6 +27,7 @@ class IssueItem:
     description_items: tuple[str, ...]
     acceptance_items: tuple[str, ...]
     catalog_number: int | None = None
+    status: str = "open"
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Print the operations that would run without calling GitHub.",
+    )
+    parser.add_argument(
+        "--include-closed",
+        action="store_true",
+        help="Include backlog items marked closed. Use only for historical tracker re-syncs.",
     )
     return parser.parse_args()
 
@@ -150,6 +156,7 @@ def parse_backlog(backlog_text: str, *, source_label: str) -> ParsedBacklog:
     for match in ISSUE_PATTERN.finditer(backlog_text):
         body = match.group("body")
         milestone_match = re.search(r"-\s+Milestone:\s+`([^`]+)`", body)
+        status_match = re.search(r"-\s+Status:\s+`?([^`\r\n]+)`?", body)
         labels_match = re.search(r"-\s+Labels:\s+(.+)", body)
         depends_match = re.search(r"-\s+Depends on:\s+(.+)", body)
         description_match = re.search(
@@ -173,6 +180,7 @@ def parse_backlog(backlog_text: str, *, source_label: str) -> ParsedBacklog:
                 description_items=description_items,
                 acceptance_items=acceptance_items,
                 catalog_number=int(match.group("number")),
+                status=status_match.group(1).strip().casefold() if status_match else "open",
             )
         )
 
@@ -194,6 +202,22 @@ def parse_backlog(backlog_text: str, *, source_label: str) -> ParsedBacklog:
         labels=labels,
         epics=epics,
         issues=tuple(issues),
+    )
+
+
+def select_sync_backlog(parsed: ParsedBacklog, *, include_closed: bool) -> ParsedBacklog:
+    if include_closed:
+        return parsed
+
+    active_issues = tuple(issue for issue in parsed.issues if issue.status != "closed")
+    active_milestones = {issue.milestone for issue in active_issues if issue.milestone}
+    active_epics = tuple(epic for epic in parsed.epics if epic.milestone in active_milestones)
+
+    return ParsedBacklog(
+        milestones=tuple(milestone for milestone in parsed.milestones if milestone in active_milestones),
+        labels=parsed.labels,
+        epics=active_epics,
+        issues=active_issues,
     )
 
 
@@ -729,6 +753,12 @@ def main() -> int:
     print(f"parsed epics: {len(parsed.epics)}")
     print(f"parsed issues: {len(parsed.issues)}")
 
+    sync_backlog = select_sync_backlog(parsed, include_closed=args.include_closed)
+    if not args.include_closed:
+        print(f"sync milestones: {len(sync_backlog.milestones)}")
+        print(f"sync epics: {len(sync_backlog.epics)}")
+        print(f"sync issues: {len(sync_backlog.issues)}")
+
     gh_exe = ""
     if not args.dry_run:
         gh_exe = resolve_gh_executable()
@@ -736,28 +766,28 @@ def main() -> int:
         invoke_gh(gh_exe, "auth", "status")
 
     ensure_labels(gh_exe, args.repo, parsed.labels, args.dry_run)
-    ensure_milestones(gh_exe, args.repo, parsed.milestones, args.dry_run)
-    epic_issue_map = ensure_issues(gh_exe, args.repo, parsed.epics, args.dry_run)
-    existing_issue_map = ensure_issues(gh_exe, args.repo, parsed.issues, args.dry_run)
+    ensure_milestones(gh_exe, args.repo, sync_backlog.milestones, args.dry_run)
+    epic_issue_map = ensure_issues(gh_exe, args.repo, sync_backlog.epics, args.dry_run)
+    existing_issue_map = ensure_issues(gh_exe, args.repo, sync_backlog.issues, args.dry_run)
 
     combined_issue_map = dict(epic_issue_map)
     combined_issue_map.update(existing_issue_map)
     catalog_number_map = build_catalog_number_map(parsed.issues, combined_issue_map)
-    epic_issue_number_map = build_epic_issue_number_map(parsed.epics, combined_issue_map)
+    epic_issue_number_map = build_epic_issue_number_map(sync_backlog.epics, combined_issue_map)
     epic_reference_map = build_epic_reference_map(epic_issue_number_map)
 
     sync_epic_bodies(
         gh_exe,
         args.repo,
-        parsed.epics,
-        issues=parsed.issues,
+        sync_backlog.epics,
+        issues=sync_backlog.issues,
         existing_issue_map=combined_issue_map,
         dry_run=args.dry_run,
     )
     sync_issue_bodies(
         gh_exe,
         args.repo,
-        parsed.issues,
+        sync_backlog.issues,
         existing_issue_map=combined_issue_map,
         catalog_number_map=catalog_number_map,
         epic_reference_map=epic_reference_map,
@@ -766,7 +796,7 @@ def main() -> int:
     sync_sub_issue_links(
         gh_exe,
         args.repo,
-        parsed.issues,
+        sync_backlog.issues,
         existing_issue_map=combined_issue_map,
         epic_issue_number_map=epic_issue_number_map,
         dry_run=args.dry_run,

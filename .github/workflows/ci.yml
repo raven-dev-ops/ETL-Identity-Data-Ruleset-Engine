@@ -25,11 +25,8 @@ jobs:
       - name: Run repo checks via documented bash path
         run: bash ./scripts/run_checks.sh
 
-      - name: Validate active backlog sync dry-run
-        run: .venv/bin/python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --dry-run
-
       - name: Validate bootstrap backlog sync dry-run
-        run: .venv/bin/python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --dry-run
+        run: .venv/bin/python scripts/create_github_backlog.py --repo raven-dev-ops/ETL-Identity-Data-Ruleset-Engine --backlog-path planning/github-issues-backlog.md --include-closed --dry-run
 
       - name: Generate coverage report
         run: |
@@ -41,6 +38,26 @@ jobs:
           name: coverage-linux
           path: coverage.xml
           if-no-files-found: error
+
+  compat-linux-312:
+    name: compat-linux-312
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap venv via documented bash path
+        env:
+          INSTALL_GH: "0"
+        run: bash ./scripts/bootstrap_venv.sh
+
+      - name: Run repo checks via documented bash path
+        run: bash ./scripts/run_checks.sh
 
   test-windows:
     name: test-windows
@@ -72,3 +89,43 @@ jobs:
           name: coverage-windows
           path: coverage.xml
           if-no-files-found: error
+
+  compat-windows-312:
+    name: compat-windows-312
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap venv via documented PowerShell path
+        shell: pwsh
+        run: ./scripts/bootstrap_venv.ps1 -InstallGh:$false
+
+      - name: Run repo checks via documented PowerShell path
+        shell: pwsh
+        run: ./scripts/run_checks.ps1
+
+  compat-macos-312:
+    name: compat-macos-312
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap venv via documented bash path
+        env:
+          INSTALL_GH: "0"
+        run: bash ./scripts/bootstrap_venv.sh
+
+      - name: Run repo checks via documented bash path
+        run: bash ./scripts/run_checks.sh
