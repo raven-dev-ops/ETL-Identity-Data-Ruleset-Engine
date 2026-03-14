@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, HTTPException, Path as ApiPath, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Path as ApiPath, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from etl_identity_engine import __version__
+from etl_identity_engine.operator_actions import (
+    apply_review_decision_operation,
+    replay_run_operation,
+)
+from etl_identity_engine.runtime_config import ServiceAuthConfig
 from etl_identity_engine.storage.sqlite_store import (
     PersistedReviewCase,
     PipelineRunRecord,
@@ -19,6 +25,12 @@ from etl_identity_engine.storage.sqlite_store import (
 
 ReviewCaseStatus = Literal["pending", "approved", "rejected", "deferred"]
 RunStatus = Literal["running", "completed", "failed"]
+ServiceRole = Literal["reader", "operator"]
+
+
+@dataclass(frozen=True)
+class AuthenticatedPrincipal:
+    role: ServiceRole
 
 
 class HealthResponse(BaseModel):
@@ -112,6 +124,42 @@ class ReviewCaseResponse(BaseModel):
     resolved_at_utc: str
 
 
+class ReviewDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: ReviewCaseStatus
+    assigned_to: str | None = None
+    notes: str | None = None
+
+
+class ReviewDecisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["noop", "updated"]
+    case: ReviewCaseResponse
+
+
+class ReplayRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_dir: str | None = None
+    refresh_mode: Literal["full", "incremental"] | None = None
+
+
+class ReplayRunResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["replayed", "reused_completed_run"]
+    requested_run_id: str
+    result_run_id: str
+    state_db: str
+    base_dir: str
+    refresh_mode: Literal["full", "incremental"]
+    replay_command: list[str]
+    source_run: RunStatusResponse
+    result_run: RunStatusResponse
+
+
 def _serialize_run(record: PipelineRunRecord) -> RunStatusResponse:
     return RunStatusResponse.model_validate(asdict(record))
 
@@ -124,7 +172,15 @@ def _resolve_not_found(error: FileNotFoundError) -> None:
     raise HTTPException(status_code=404, detail=str(error)) from error
 
 
-def create_service_app(state_db_path: Path | str) -> FastAPI:
+def _resolve_operation_conflict(error: ValueError) -> None:
+    raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+def create_service_app(
+    state_db_path: Path | str,
+    *,
+    service_auth: ServiceAuthConfig,
+) -> FastAPI:
     state_db = Path(state_db_path)
     if not state_db.exists():
         raise FileNotFoundError(f"Persisted state database not found: {state_db}")
@@ -133,15 +189,51 @@ def create_service_app(state_db_path: Path | str) -> FastAPI:
     app = FastAPI(
         title="ETL Identity Engine Operator API",
         version=__version__,
-        summary="Read-only operator and consumer service over persisted pipeline state.",
+        summary="Authenticated operator and consumer service over persisted pipeline state.",
     )
 
+    def require_roles(*allowed_roles: ServiceRole):
+        allowed = set(allowed_roles)
+
+        def dependency(
+            api_key: str | None = Header(default=None, alias=service_auth.header_name),
+        ) -> AuthenticatedPrincipal:
+            if api_key is None or not api_key.strip():
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Missing API key in header {service_auth.header_name}",
+                )
+
+            normalized_key = api_key.strip()
+            if normalized_key == service_auth.reader_api_key:
+                principal = AuthenticatedPrincipal(role="reader")
+            elif normalized_key == service_auth.operator_api_key:
+                principal = AuthenticatedPrincipal(role="operator")
+            else:
+                raise HTTPException(status_code=401, detail="Invalid API key")
+
+            if principal.role not in allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Role {principal.role!r} is not permitted for this operation",
+                )
+            return principal
+
+        return dependency
+
+    read_access = require_roles("reader", "operator")
+    operator_access = require_roles("operator")
+
     @app.get("/healthz", response_model=HealthResponse, tags=["health"])
-    def healthz() -> HealthResponse:
+    def healthz(
+        _principal: AuthenticatedPrincipal = Depends(read_access),
+    ) -> HealthResponse:
         return HealthResponse(status="ok", state_db=str(state_db.resolve()), api_version=__version__)
 
     @app.get("/api/v1/runs/latest", response_model=RunStatusResponse, tags=["runs"])
-    def get_latest_completed_run() -> RunStatusResponse:
+    def get_latest_completed_run(
+        _principal: AuthenticatedPrincipal = Depends(read_access),
+    ) -> RunStatusResponse:
         run_id = store.latest_completed_run_id()
         if run_id is None:
             raise HTTPException(status_code=404, detail=f"No completed persisted runs found in {state_db}")
@@ -150,6 +242,7 @@ def create_service_app(state_db_path: Path | str) -> FastAPI:
     @app.get("/api/v1/runs/{run_id}", response_model=RunStatusResponse, tags=["runs"])
     def get_run(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        _principal: AuthenticatedPrincipal = Depends(read_access),
     ) -> RunStatusResponse:
         try:
             return _serialize_run(store.load_run_record(run_id))
@@ -164,6 +257,7 @@ def create_service_app(state_db_path: Path | str) -> FastAPI:
     def get_golden_record(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         golden_id: Annotated[str, ApiPath(min_length=1, pattern=r"^G-.+")],
+        _principal: AuthenticatedPrincipal = Depends(read_access),
     ) -> GoldenRecordResponse:
         try:
             return GoldenRecordResponse.model_validate(
@@ -180,6 +274,7 @@ def create_service_app(state_db_path: Path | str) -> FastAPI:
     def get_crosswalk_record_for_source(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         source_record_id: Annotated[str, ApiPath(min_length=1)],
+        _principal: AuthenticatedPrincipal = Depends(read_access),
     ) -> CrosswalkLookupResponse:
         try:
             return CrosswalkLookupResponse.model_validate(
@@ -200,6 +295,7 @@ def create_service_app(state_db_path: Path | str) -> FastAPI:
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         status: Annotated[ReviewCaseStatus | None, Query()] = None,
         assigned_to: Annotated[str | None, Query(min_length=1)] = None,
+        _principal: AuthenticatedPrincipal = Depends(read_access),
     ) -> list[ReviewCaseResponse]:
         return [
             _serialize_review_case(case)
@@ -218,11 +314,72 @@ def create_service_app(state_db_path: Path | str) -> FastAPI:
     def get_review_case(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         review_id: Annotated[str, ApiPath(min_length=1, pattern=r"^REV-.+")],
+        _principal: AuthenticatedPrincipal = Depends(read_access),
     ) -> ReviewCaseResponse:
         try:
             return _serialize_review_case(store.load_review_case(run_id=run_id, review_id=review_id))
         except FileNotFoundError as error:
             _resolve_not_found(error)
 
-    return app
+    @app.post(
+        "/api/v1/runs/{run_id}/review-cases/{review_id}/decision",
+        response_model=ReviewDecisionResponse,
+        tags=["review-cases"],
+    )
+    def apply_review_decision(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        review_id: Annotated[str, ApiPath(min_length=1, pattern=r"^REV-.+")],
+        request: ReviewDecisionRequest,
+        _principal: AuthenticatedPrincipal = Depends(operator_access),
+    ) -> ReviewDecisionResponse:
+        try:
+            result = apply_review_decision_operation(
+                store=store,
+                run_id=run_id,
+                review_id=review_id,
+                decision=request.decision,
+                assigned_to=request.assigned_to,
+                notes=request.notes,
+            )
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        return ReviewDecisionResponse(action=result.action, case=_serialize_review_case(result.case))
 
+    @app.post(
+        "/api/v1/runs/{run_id}/replay",
+        response_model=ReplayRunResponse,
+        tags=["runs"],
+    )
+    def replay_run(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        request: ReplayRunRequest,
+        _principal: AuthenticatedPrincipal = Depends(operator_access),
+    ) -> ReplayRunResponse:
+        try:
+            from etl_identity_engine.cli import main as cli_main
+
+            result = replay_run_operation(
+                store=store,
+                state_db=state_db,
+                source_run_id=run_id,
+                base_dir=Path(request.base_dir) if request.base_dir else None,
+                refresh_mode=request.refresh_mode,
+                runner=cli_main,
+            )
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        except ValueError as error:
+            _resolve_operation_conflict(error)
+        return ReplayRunResponse(
+            action=result.action,
+            requested_run_id=result.requested_run.run_id,
+            result_run_id=result.result_run.run_id,
+            state_db=str(result.state_db),
+            base_dir=str(result.base_dir),
+            refresh_mode=result.refresh_mode,
+            replay_command=list(result.replay_command),
+            source_run=_serialize_run(result.requested_run),
+            result_run=_serialize_run(result.result_run),
+        )
+
+    return app

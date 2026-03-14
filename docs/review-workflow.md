@@ -70,6 +70,18 @@ python -m etl_identity_engine.cli apply-review-decision \
 
 All three commands emit JSON so operators can script around them.
 
+The authenticated service surface now also supports operator-only review
+decisions:
+
+```bash
+curl \
+  -X POST \
+  -H "X-API-Key: $ETL_IDENTITY_SERVICE_OPERATOR_API_KEY" \
+  -H "Content-Type: application/json" \
+  http://127.0.0.1:8000/api/v1/runs/RUN-20260314T000000Z-ABC12345/review-cases/REV-00001/decision \
+  -d '{"decision":"approved","notes":"Approved after verification"}'
+```
+
 ## Compatibility
 
 The documented review lifecycle states and persisted operator commands
@@ -98,7 +110,7 @@ manifest reruns:
 
 It does not yet:
 
-- expose write-side review workflow APIs
-- expose authenticated review controls
+- expose finer-grained review roles beyond the current `operator` API key
+- expose publication or export-job triggers over the service API
 
 Those remain tracked in the active backlog.

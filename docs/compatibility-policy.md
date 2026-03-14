@@ -23,7 +23,8 @@ A surface is stable when it is both:
 
 The current stable surfaces are:
 
-- `GET /api/v1/...` endpoints documented in [service-api.md](service-api.md)
+- documented `/api/v1/...` endpoints plus the current `reader` and
+  `operator` service-role split in [service-api.md](service-api.md)
 - the `golden_crosswalk_snapshot/v1` delivery contract documented in
   [delivery-contracts.md](delivery-contracts.md)
 - the documented export-job commands and audit states in
@@ -53,7 +54,7 @@ prototype working files directly.
 
 ### HTTP API
 
-The current read-only API is versioned by path prefix under `/api/v1`.
+The current authenticated API is versioned by path prefix under `/api/v1`.
 
 Within `v1`, the runtime may:
 
@@ -67,6 +68,7 @@ Within `v1`, the runtime does not change without a new API version:
 - existing HTTP methods
 - required request parameters
 - documented response field meaning
+- documented role requirements for an existing endpoint
 
 Breaking API changes require a new versioned path such as `/api/v2`.
 
@@ -127,7 +129,8 @@ the deprecation.
 
 For the current line:
 
-- use `GET /api/v1/...` for service integrations
+- use the documented authenticated `/api/v1/...` endpoints for service
+  integrations
 - use `golden_crosswalk_snapshot/v1` for published downstream data
 - use the documented operator workflow commands for automation
 - treat undocumented fields and direct SQLite access as internal

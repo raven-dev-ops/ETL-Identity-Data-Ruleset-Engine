@@ -111,6 +111,10 @@ environments:
     state_db: ${TEST_STATE_DB}
     secrets:
       object_storage_access_key: ${TEST_OBJECT_STORAGE_ACCESS_KEY}
+    service_auth:
+      header_name: X-API-Key
+      reader_api_key: ${TEST_SERVICE_READER_API_KEY:-}
+      operator_api_key: ${TEST_SERVICE_OPERATOR_API_KEY:-}
 """,
     )
 
@@ -588,6 +592,8 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     _write_runtime_environment_file(runtime_config)
     monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
     monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY", "reader-key")
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY", "operator-key")
 
     environment = load_runtime_environment("prod", runtime_config)
 
@@ -595,6 +601,10 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     assert environment.config_dir == (tmp_path / "config").resolve()
     assert environment.state_db == (tmp_path / "state" / "prod.sqlite").resolve()
     assert environment.secrets == {"object_storage_access_key": "access-key"}
+    assert environment.service_auth is not None
+    assert environment.service_auth.header_name == "X-API-Key"
+    assert environment.service_auth.reader_api_key == "reader-key"
+    assert environment.service_auth.operator_api_key == "operator-key"
 
 
 def test_load_runtime_environment_requires_declared_secret_env_vars(
@@ -609,6 +619,37 @@ def test_load_runtime_environment_requires_declared_secret_env_vars(
     with pytest.raises(
         ValueError,
         match=r"runtime_environments\.yml: configuration references required environment variable TEST_STATE_DB",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
+def test_load_runtime_environment_allows_blank_service_auth_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.delenv("TEST_SERVICE_READER_API_KEY", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_OPERATOR_API_KEY", raising=False)
+
+    environment = load_runtime_environment("prod", runtime_config)
+
+    assert environment.service_auth is None
+
+
+def test_load_runtime_environment_rejects_partial_service_auth_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY", "reader-key")
+    monkeypatch.delenv("TEST_SERVICE_OPERATOR_API_KEY", raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.service_auth must define both reader_api_key and operator_api_key",
     ):
         load_runtime_environment("prod", runtime_config)
 

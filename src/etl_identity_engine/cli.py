@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout
 from dataclasses import asdict
-from io import StringIO
 import json
 import os
 from collections import Counter
@@ -31,6 +29,10 @@ from etl_identity_engine.normalize.addresses import normalize_address
 from etl_identity_engine.normalize.dates import normalize_date
 from etl_identity_engine.normalize.names import normalize_name
 from etl_identity_engine.normalize.phones import normalize_phone
+from etl_identity_engine.operator_actions import (
+    apply_review_decision_operation,
+    replay_run_operation,
+)
 from etl_identity_engine.output_contracts import (
     BLOCKING_METRICS_HEADERS,
     CROSSWALK_HEADERS,
@@ -1063,35 +1065,21 @@ def _cmd_review_case_update(args: argparse.Namespace) -> None:
 def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
-    run_id = _resolve_review_case_run_id(args, store)
-    existing = store.load_review_case(run_id=run_id, review_id=args.review_id)
-
-    target_assigned_to = existing.assigned_to if args.assigned_to is None else args.assigned_to.strip()
-    target_notes = existing.operator_notes if args.notes is None else args.notes.strip()
-    is_noop = (
-        existing.queue_status == args.decision
-        and existing.assigned_to == target_assigned_to
-        and existing.operator_notes == target_notes
+    result = apply_review_decision_operation(
+        store=store,
+        run_id=args.run_id,
+        review_id=args.review_id,
+        decision=args.decision,
+        assigned_to=args.assigned_to,
+        notes=args.notes,
     )
-    if is_noop:
-        updated = existing
-        action = "noop"
-    else:
-        updated = store.update_review_case(
-            run_id=run_id,
-            review_id=args.review_id,
-            queue_status=args.decision,
-            assigned_to=args.assigned_to,
-            operator_notes=args.notes,
-        )
-        action = "updated"
 
     print(
         json.dumps(
             {
-                "action": action,
+                "action": result.action,
                 "state_db": str(state_db.resolve()),
-                "case": _serialize_review_case(updated),
+                "case": _serialize_review_case(result.case),
             },
             indent=2,
             sort_keys=True,
@@ -1258,88 +1246,26 @@ def _cmd_export_job_history(args: argparse.Namespace) -> None:
 def _cmd_replay_run(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     store = SQLitePipelineStore(state_db)
-    source_run_id = _resolve_completed_run_id(args, store)
-    source_run = store.load_run_record(source_run_id)
-
-    if source_run.input_mode != "manifest":
-        raise ValueError(
-            f"replay-run currently supports persisted manifest runs only; "
-            f"run_id={source_run.run_id} input_mode={source_run.input_mode!r}"
-        )
-    if not source_run.manifest_path:
-        raise ValueError(f"Persisted run {source_run.run_id} is missing manifest_path and cannot be replayed")
-
-    manifest_path = Path(source_run.manifest_path)
-    if not manifest_path.exists():
-        raise FileNotFoundError(
-            f"Cannot replay run_id={source_run.run_id} because manifest_path no longer exists: {manifest_path}"
-        )
-
-    refresh_mode = args.refresh_mode or str(
-        source_run.summary.get("run_context", {}).get("refresh_mode", "full")
-    )
-    replay_base_dir = Path(args.base_dir) if args.base_dir else Path(source_run.base_dir)
-    resolved_manifest_path = str(manifest_path.resolve())
-    run_key = build_run_key(
-        input_mode="manifest",
-        manifest_path=resolved_manifest_path,
-        batch_id=peek_manifest_batch_id(manifest_path),
-        config_dir=source_run.config_dir,
-        profile=None,
-        seed=None,
-        duplicate_rate=None,
-        formats=None,
-        refresh_mode=refresh_mode,
-    )
-    prior_completed = store.latest_completed_run_for_run_key(run_key)
-
-    replay_argv = [
-        "run-all",
-        "--base-dir",
-        str(replay_base_dir),
-        "--manifest",
-        resolved_manifest_path,
-        "--state-db",
-        str(state_db),
-        "--refresh-mode",
-        refresh_mode,
-    ]
-    if source_run.config_dir:
-        replay_argv.extend(["--config-dir", source_run.config_dir])
-
-    replay_output = StringIO()
-    try:
-        with redirect_stdout(replay_output):
-            main(replay_argv)
-    except Exception as exc:
-        rendered_command = " ".join(replay_argv)
-        replay_logs = replay_output.getvalue().strip()
-        failure_detail = f"Replay failed for run_id={source_run.run_id} via `{rendered_command}`: {exc}"
-        if replay_logs:
-            failure_detail = f"{failure_detail}. Captured pipeline output: {replay_logs}"
-        raise RuntimeError(failure_detail) from exc
-
-    result_run = store.latest_completed_run_for_run_key(run_key)
-    if result_run is None:
-        raise RuntimeError(f"Replay completed but no persisted run was found for run_key={run_key}")
-
-    action = (
-        "reused_completed_run"
-        if prior_completed is not None and prior_completed.run_id == result_run.run_id
-        else "replayed"
+    result = replay_run_operation(
+        store=store,
+        state_db=state_db,
+        source_run_id=args.run_id,
+        base_dir=Path(args.base_dir) if args.base_dir else None,
+        refresh_mode=args.refresh_mode,
+        runner=main,
     )
     print(
         json.dumps(
             {
-                "action": action,
-                "requested_run_id": source_run.run_id,
-                "result_run_id": result_run.run_id,
-                "state_db": str(state_db.resolve()),
-                "base_dir": str(replay_base_dir.resolve()),
-                "refresh_mode": refresh_mode,
-                "replay_command": replay_argv,
-                "source_run": _serialize_run_record(source_run),
-                "result_run": _serialize_run_record(result_run),
+                "action": result.action,
+                "requested_run_id": result.requested_run.run_id,
+                "result_run_id": result.result_run.run_id,
+                "state_db": str(result.state_db),
+                "base_dir": str(result.base_dir),
+                "refresh_mode": result.refresh_mode,
+                "replay_command": list(result.replay_command),
+                "source_run": _serialize_run_record(result.requested_run),
+                "result_run": _serialize_run_record(result.result_run),
             },
             indent=2,
             sort_keys=True,
@@ -1351,7 +1277,12 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
     import uvicorn
 
     state_db = _require_state_db(args)
-    app = create_service_app(state_db)
+    runtime_environment = _resolve_runtime_environment(args)
+    if runtime_environment is None or runtime_environment.service_auth is None:
+        raise ValueError(
+            "serve-api requires a runtime environment with service_auth configured via environment-backed secrets"
+        )
+    app = create_service_app(state_db, service_auth=runtime_environment.service_auth)
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
 
 

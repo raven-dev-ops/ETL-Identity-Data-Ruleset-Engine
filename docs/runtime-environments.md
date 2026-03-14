@@ -16,6 +16,7 @@ It defines:
 - `environments.<name>.config_dir`
 - `environments.<name>.state_db`
 - `environments.<name>.secrets`
+- `environments.<name>.service_auth`
 
 Relative paths are resolved from the directory that contains the runtime
 environment file.
@@ -31,6 +32,24 @@ Both runtime environment files and per-environment YAML overlays support
 
 This is the supported mechanism for secret-backed values in the current
 line. Secrets should not be committed directly into the repo config.
+
+## Service Auth Settings
+
+Runtime environments can also define service authentication defaults
+under:
+
+- `environments.<name>.service_auth.header_name`
+- `environments.<name>.service_auth.reader_api_key`
+- `environments.<name>.service_auth.operator_api_key`
+
+The default production environment uses:
+
+- `ETL_IDENTITY_SERVICE_READER_API_KEY`
+- `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY`
+
+If both API-key values resolve to blank strings, service auth is treated
+as unconfigured. `serve-api` then fails fast until the deployment
+environment provides both values.
 
 ## Config Overlays
 

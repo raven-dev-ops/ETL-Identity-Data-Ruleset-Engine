@@ -9,9 +9,10 @@ golden records, and reporting artifacts.
 
 - The current runtime supports synthetic generation plus manifest-driven
   local and object-storage-compatible landed batches. Persisted SQLite
-  state is now supported, and a read-only operator service API now
-  exposes persisted run, golden, crosswalk, and review-case lookups.
-  Write-side service workflows remain tracked follow-on work.
+  state is now supported, and an authenticated operator service API now
+  exposes persisted run, golden, crosswalk, and review-case lookups
+  plus operator-only review-decision and replay actions. Publication
+  and export orchestration remain CLI-driven follow-on service work.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
   public `0.x` line does not introduce an ML-assisted scorer.
@@ -63,8 +64,9 @@ golden records, and reporting artifacts.
      versioned delivery-contract root
 10. `serve-api`
    - Reads persisted SQLite state through a local HTTP service
-   - Exposes run status, golden-record lookup, source-to-golden
-     crosswalk lookup, and review-case retrieval
+   - Exposes authenticated run status, golden-record lookup,
+     source-to-golden crosswalk lookup, and review-case retrieval
+   - Supports operator-only review decision and replay actions
 11. `export-job-run`
    - Reads a completed persisted run from SQLite
    - Materializes a named warehouse or data-product export under the
@@ -159,6 +161,8 @@ The current manual-review model now has two surfaces:
 - operators can inspect and update persisted cases through
   `review-case-list` and `review-case-update`
 - service consumers can retrieve persisted cases through `serve-api`
+- authenticated operator clients can apply review decisions and replay
+  manifest-backed runs through `serve-api`
 - approved review decisions force future merge outcomes and rejected
   review decisions block future merges on persisted reruns of the same
   manifest lineage

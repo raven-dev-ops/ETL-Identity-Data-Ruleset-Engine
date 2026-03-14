@@ -97,6 +97,14 @@ class RuntimeEnvironmentConfig:
     config_dir: Path
     state_db: Path | None
     secrets: dict[str, str]
+    service_auth: ServiceAuthConfig | None
+
+
+@dataclass(frozen=True)
+class ServiceAuthConfig:
+    header_name: str
+    reader_api_key: str
+    operator_api_key: str
 
 
 @dataclass(frozen=True)
@@ -349,7 +357,7 @@ def load_runtime_environment(
         )
     _validate_allowed_keys(
         selected,
-        allowed_keys={"description", "config_dir", "state_db", "secrets"},
+        allowed_keys={"description", "config_dir", "state_db", "secrets", "service_auth"},
         path=config_path,
         context=f"environments.{default_environment}",
     )
@@ -399,11 +407,58 @@ def load_runtime_environment(
             )
         secrets[key.strip()] = value.strip()
 
+    raw_service_auth = selected.get("service_auth")
+    service_auth: ServiceAuthConfig | None
+    if raw_service_auth in (None, {}):
+        service_auth = None
+    else:
+        if not isinstance(raw_service_auth, Mapping):
+            raise _config_error(
+                config_path,
+                f"environments.{default_environment}.service_auth must be a mapping",
+            )
+        _validate_allowed_keys(
+            raw_service_auth,
+            allowed_keys={"header_name", "reader_api_key", "operator_api_key"},
+            path=config_path,
+            context=f"environments.{default_environment}.service_auth",
+        )
+        header_name = _optional_non_empty_string(
+            raw_service_auth,
+            "header_name",
+            path=config_path,
+            context=f"environments.{default_environment}.service_auth",
+            default="X-API-Key",
+        )
+        reader_api_key = str(raw_service_auth.get("reader_api_key", "") or "").strip()
+        operator_api_key = str(raw_service_auth.get("operator_api_key", "") or "").strip()
+        if not reader_api_key and not operator_api_key:
+            service_auth = None
+        else:
+            if not reader_api_key or not operator_api_key:
+                raise _config_error(
+                    config_path,
+                    f"environments.{default_environment}.service_auth must define both "
+                    "reader_api_key and operator_api_key",
+                )
+            if reader_api_key == operator_api_key:
+                raise _config_error(
+                    config_path,
+                    f"environments.{default_environment}.service_auth must use distinct API keys "
+                    "for reader and operator access",
+                )
+            service_auth = ServiceAuthConfig(
+                header_name=header_name,
+                reader_api_key=reader_api_key,
+                operator_api_key=operator_api_key,
+            )
+
     return RuntimeEnvironmentConfig(
         name=default_environment,
         config_dir=config_dir,
         state_db=state_db,
         secrets=secrets,
+        service_auth=service_auth,
     )
 
 

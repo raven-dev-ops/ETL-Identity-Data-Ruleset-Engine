@@ -134,9 +134,10 @@ is included in the repository.
   safe experimentation and manifest-driven landed batches for
   production-style evaluation. Local filesystem and object-storage-
   compatible landing zones are supported. Persisted SQLite state,
-  manifest-driven incremental refresh, and a read-only operator service
-  API are now available. Write-side service actions remain follow-on
-  work rather than implicit capabilities of the current line.
+  manifest-driven incremental refresh, and an authenticated operator
+  service API are now available. The current service line supports
+  read-only lookups plus operator-only review decision and replay
+  actions; publication and export orchestration remain CLI-driven.
 - The supported matching track for the current `0.x` line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
@@ -284,11 +285,13 @@ support durable review-case state through `review-case-list` and
 to later persisted reruns, forcing merge or non-merge outcomes before
 cluster and golden rebuilds.
 
-Persisted SQLite state can also now be served through a read-only
+Persisted SQLite state can also now be served through an authenticated
 operator API with `serve-api`. That surface exposes run status, golden
 record lookups, source-to-golden crosswalk lookups, and persisted
-review-case retrieval for downstream systems and operators. The service
-contract is documented in [docs/service-api.md](docs/service-api.md).
+review-case retrieval for downstream systems and operators, and it now
+supports operator-only review decision and replay actions behind
+separate API-key roles. The service contract is documented in
+[docs/service-api.md](docs/service-api.md).
 
 For operator workflows, the CLI now also exposes:
 

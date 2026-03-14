@@ -12,7 +12,7 @@ truth for tracked work; this file is the short maintainer view.
 - A new backlog cycle is open to move the project beyond prototype scope
   toward a production MDM or enterprise data-product service.
 - GitHub sync is complete with open epics `#58`, `#59`, and `#60`, plus
-  open child issues `#74` through `#80`.
+  open child issues `#75` through `#80`.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
 - The current public `0.1.x` line remains a production-hardened
@@ -55,6 +55,9 @@ truth for tracked work; this file is the short maintainer view.
 - Issue `#73` is complete: service, workflow, and delivery docs now
   share an explicit compatibility policy covering stable versus
   internal surfaces, versioning rules, and deprecation expectations.
+- Issue `#74` is complete: the service now requires API-key
+  authentication, distinguishes `reader` versus `operator` access, and
+  loads service secrets through environment-backed runtime config.
 
 ## Open Task Groups
 
@@ -65,7 +68,7 @@ truth for tracked work; this file is the short maintainer view.
   - Open issues: none. `v0.5.0` implementation work is complete in the
     active backlog catalog.
 - [ ] `v0.6.0` Security, operations, and deployment hardening
-  - Open issues: `#74` through `#80` in the active backlog catalog.
+  - Open issues: `#75` through `#80` in the active backlog catalog.
 
 ## Production-Readiness Gaps Now Explicitly Tracked
 
@@ -82,10 +85,11 @@ truth for tracked work; this file is the short maintainer view.
   lookups
 - [x] Downstream publication contracts for warehouse and data-product
   consumers
-- [ ] Authentication, authorization, observability, deployment, and
-  recovery runbooks
+- [x] Authentication, authorization, and environment-backed service
+  secrets
+- [ ] Observability, deployment, and recovery runbooks
 
 ## Next Step
 
 - Execute the new milestone cycle in order: `v0.4.0`, then `v0.5.0`,
-  then `v0.6.0`, starting with issue `#74`.
+  then `v0.6.0`, starting with issue `#75`.

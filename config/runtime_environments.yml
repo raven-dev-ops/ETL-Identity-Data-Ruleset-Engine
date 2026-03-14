@@ -16,3 +16,7 @@ environments:
     secrets:
       object_storage_access_key: ${ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY}
       object_storage_secret_key: ${ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY}
+    service_auth:
+      header_name: X-API-Key
+      reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
+      operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}

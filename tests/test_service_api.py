@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from etl_identity_engine.cli import main
 from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
+from etl_identity_engine.runtime_config import ServiceAuthConfig
 from etl_identity_engine.service_api import create_service_app
 from etl_identity_engine.storage.sqlite_store import SQLitePipelineStore
 
@@ -148,47 +149,63 @@ def _create_persisted_manifest_run(tmp_path: Path) -> tuple[Path, str, SQLitePip
     return db_path, run_id, store
 
 
+def _service_auth() -> ServiceAuthConfig:
+    return ServiceAuthConfig(
+        header_name="X-API-Key",
+        reader_api_key="reader-secret",
+        operator_api_key="operator-secret",
+    )
+
+
+def _auth_headers(api_key: str) -> dict[str, str]:
+    return {"X-API-Key": api_key}
+
+
 def test_service_api_exposes_run_golden_crosswalk_and_review_state(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
     bundle = store.load_run_bundle(run_id)
     crosswalk_row = bundle.crosswalk_rows[0]
     review_row = bundle.review_rows[0]
 
-    client = TestClient(create_service_app(db_path))
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
 
-    health_response = client.get("/healthz")
+    health_response = client.get("/healthz", headers=reader_headers)
     assert health_response.status_code == 200
     assert health_response.json()["status"] == "ok"
 
-    latest_run_response = client.get("/api/v1/runs/latest")
+    latest_run_response = client.get("/api/v1/runs/latest", headers=reader_headers)
     assert latest_run_response.status_code == 200
     assert latest_run_response.json()["run_id"] == run_id
     assert latest_run_response.json()["status"] == "completed"
 
-    run_response = client.get(f"/api/v1/runs/{run_id}")
+    run_response = client.get(f"/api/v1/runs/{run_id}", headers=reader_headers)
     assert run_response.status_code == 200
     assert run_response.json()["summary"]["run_context"]["input_mode"] == "manifest"
 
     crosswalk_response = client.get(
-        f"/api/v1/runs/{run_id}/crosswalk/source-records/{crosswalk_row['source_record_id']}"
+        f"/api/v1/runs/{run_id}/crosswalk/source-records/{crosswalk_row['source_record_id']}",
+        headers=reader_headers,
     )
     assert crosswalk_response.status_code == 200
     assert crosswalk_response.json() == crosswalk_row
 
     golden_response = client.get(
-        f"/api/v1/runs/{run_id}/golden-records/{crosswalk_row['golden_id']}"
+        f"/api/v1/runs/{run_id}/golden-records/{crosswalk_row['golden_id']}",
+        headers=reader_headers,
     )
     assert golden_response.status_code == 200
     assert golden_response.json()["golden_id"] == crosswalk_row["golden_id"]
     assert golden_response.json()["cluster_id"] == crosswalk_row["cluster_id"]
 
-    review_list_response = client.get(f"/api/v1/runs/{run_id}/review-cases")
+    review_list_response = client.get(f"/api/v1/runs/{run_id}/review-cases", headers=reader_headers)
     assert review_list_response.status_code == 200
     assert review_list_response.json()[0]["review_id"] == review_row["review_id"]
     assert review_list_response.json()[0]["queue_status"] == "pending"
 
     review_detail_response = client.get(
-        f"/api/v1/runs/{run_id}/review-cases/{review_row['review_id']}"
+        f"/api/v1/runs/{run_id}/review-cases/{review_row['review_id']}",
+        headers=reader_headers,
     )
     assert review_detail_response.status_code == 200
     assert review_detail_response.json()["left_id"] == review_row["left_id"]
@@ -199,24 +216,89 @@ def test_service_api_validates_request_inputs_and_returns_not_found_for_missing_
     tmp_path: Path,
 ) -> None:
     db_path, run_id, _store = _create_persisted_manifest_run(tmp_path)
-    client = TestClient(create_service_app(db_path))
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
 
     invalid_status_response = client.get(
         f"/api/v1/runs/{run_id}/review-cases",
         params={"status": "not-a-valid-status"},
+        headers=reader_headers,
     )
     assert invalid_status_response.status_code == 422
 
-    invalid_run_id_response = client.get("/api/v1/runs/not-a-run-id")
+    invalid_run_id_response = client.get("/api/v1/runs/not-a-run-id", headers=reader_headers)
     assert invalid_run_id_response.status_code == 422
 
-    missing_golden_response = client.get(f"/api/v1/runs/{run_id}/golden-records/G-99999")
+    missing_golden_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records/G-99999",
+        headers=reader_headers,
+    )
     assert missing_golden_response.status_code == 404
 
     missing_crosswalk_response = client.get(
-        f"/api/v1/runs/{run_id}/crosswalk/source-records/UNKNOWN-RECORD"
+        f"/api/v1/runs/{run_id}/crosswalk/source-records/UNKNOWN-RECORD",
+        headers=reader_headers,
     )
     assert missing_crosswalk_response.status_code == 404
 
     with pytest.raises(FileNotFoundError, match="Persisted state database not found"):
-        create_service_app(tmp_path / "missing.sqlite")
+        create_service_app(tmp_path / "missing.sqlite", service_auth=_service_auth())
+
+
+def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    manifest_path = tmp_path / "manifest.yml"
+    review_row = store.list_review_cases(run_id=run_id)[0]
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
+    operator_headers = _auth_headers("operator-secret")
+
+    missing_auth_response = client.get("/healthz")
+    assert missing_auth_response.status_code == 401
+
+    invalid_auth_response = client.get("/healthz", headers=_auth_headers("wrong-secret"))
+    assert invalid_auth_response.status_code == 401
+
+    reader_forbidden_response = client.post(
+        f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
+        headers=reader_headers,
+        json={"decision": "approved", "notes": "reader should not mutate"},
+    )
+    assert reader_forbidden_response.status_code == 403
+
+    operator_review_response = client.post(
+        f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
+        headers=operator_headers,
+        json={
+            "decision": "approved",
+            "assigned_to": "analyst.api",
+            "notes": "Approved via authenticated API",
+        },
+    )
+    assert operator_review_response.status_code == 200
+    assert operator_review_response.json()["action"] == "updated"
+    assert operator_review_response.json()["case"]["queue_status"] == "approved"
+
+    updated_manifest = manifest_path.read_text(encoding="utf-8").replace(
+        "batch_id: service-api-001",
+        "batch_id: service-api-002",
+    )
+    manifest_path.write_text(updated_manifest, encoding="utf-8")
+
+    reader_replay_response = client.post(
+        f"/api/v1/runs/{run_id}/replay",
+        headers=reader_headers,
+        json={"base_dir": str(tmp_path / "reader-replay"), "refresh_mode": "incremental"},
+    )
+    assert reader_replay_response.status_code == 403
+
+    operator_replay_response = client.post(
+        f"/api/v1/runs/{run_id}/replay",
+        headers=operator_headers,
+        json={"base_dir": str(tmp_path / "operator-replay"), "refresh_mode": "incremental"},
+    )
+    assert operator_replay_response.status_code == 200
+    assert operator_replay_response.json()["action"] == "replayed"
+    assert operator_replay_response.json()["requested_run_id"] == run_id
+    assert operator_replay_response.json()["result_run_id"] != run_id
+    assert operator_replay_response.json()["refresh_mode"] == "incremental"

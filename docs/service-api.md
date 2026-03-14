@@ -1,21 +1,46 @@
 # Service API
 
-The runtime now ships a read-only operator API over persisted SQLite
-state.
+The runtime now ships an authenticated operator API over persisted
+SQLite state.
 
 ## Local Run
 
 Start the API with:
 
 ```bash
+export ETL_IDENTITY_STATE_DB=data/state/pipeline_state.sqlite
+export ETL_IDENTITY_SERVICE_READER_API_KEY=reader-secret
+export ETL_IDENTITY_SERVICE_OPERATOR_API_KEY=operator-secret
+
 python -m etl_identity_engine.cli serve-api \
-  --state-db data/state/pipeline_state.sqlite \
+  --environment prod \
   --host 127.0.0.1 \
   --port 8000
 ```
 
-The service requires an existing `--state-db` created by persisted
-`run-all` usage.
+`serve-api` now requires a runtime environment with `service_auth`
+configured through environment-backed secrets. The default production
+runtime environment reads those values from
+`config/runtime_environments.yml`.
+
+## Authentication And Roles
+
+The current baseline uses API-key authentication.
+
+- Default header: `X-API-Key`
+- `reader` key:
+  - may call `GET` lookup endpoints and `GET /healthz`
+- `operator` key:
+  - may call all `reader` endpoints
+  - may also execute privileged review-decision and replay actions
+
+The default production environment expects:
+
+- `ETL_IDENTITY_SERVICE_READER_API_KEY`
+- `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY`
+
+Those values should be supplied by the deployment environment rather
+than committed into repo config.
 
 ## Endpoint Surface
 
@@ -35,6 +60,10 @@ The service requires an existing `--state-db` created by persisted
   - Supports `status` and `assigned_to` query filters.
 - `GET /api/v1/runs/{run_id}/review-cases/{review_id}`
   - Returns one persisted review case.
+- `POST /api/v1/runs/{run_id}/review-cases/{review_id}/decision`
+  - Applies an operator review decision to a persisted review case.
+- `POST /api/v1/runs/{run_id}/replay`
+  - Replays a persisted manifest-backed run through `run-all`.
 
 ## Validation Model
 
@@ -45,13 +74,19 @@ The service uses explicit request and response validation:
   values
 - response bodies are validated against explicit typed models for runs,
   golden records, crosswalk rows, and review cases
+- privileged action bodies are validated before review updates or replay
+  execution begins
 
 Missing rows return `404`. Invalid request parameters return `422`.
+Missing or invalid API keys return `401`. Authenticated callers without
+the required role return `403`. Unsupported replay operations such as
+non-manifest source runs return `409`.
 
 ## Compatibility
 
-The documented `GET /api/v1/...` endpoints are a stable external
-consumer surface for the current line.
+The documented `/api/v1/...` endpoints and the `reader` / `operator`
+role split are the stable external consumer surface for the current
+line.
 
 Compatibility expectations for path versioning, additive changes, and
 deprecation are defined in
@@ -59,12 +94,11 @@ deprecation are defined in
 
 ## Current Boundary
 
-This API is read-only in the current line.
-
 It does not yet:
 
-- apply review decisions over HTTP
-- trigger replay or publication actions
-- expose authentication or authorization controls
+- expose publish or export-job triggers over HTTP
+- integrate with an external identity provider
+- support finer-grained authorization than the current `reader` and
+  `operator` roles
 
 Those remain tracked in the active backlog.

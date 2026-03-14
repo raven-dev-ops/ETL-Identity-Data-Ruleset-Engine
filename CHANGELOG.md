@@ -43,6 +43,9 @@ All notable changes to this project will be documented in this file.
   commands for export execution and history.
 - A shared compatibility policy for external service, workflow, and
   downstream delivery consumers.
+- API-key authentication and role-based service authorization for
+  persisted operator APIs, including operator-only review decision and
+  replay actions.
 
 ### Changed
 
@@ -77,6 +80,9 @@ All notable changes to this project will be documented in this file.
 - Service, workflow, and downstream delivery docs now identify stable
   versus internal surfaces and define shared versioning plus
   deprecation expectations for external consumers.
+- `serve-api` now requires environment-backed service auth
+  configuration, and the production runtime environment now defines
+  `reader` and `operator` API-key slots through runtime config.
 
 ## [0.1.4] - 2026-03-13
 
