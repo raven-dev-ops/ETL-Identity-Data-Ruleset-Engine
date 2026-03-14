@@ -1,7 +1,8 @@
 # Release Process
 
 This document defines the maintainer checklist for tagged release lines
-starting with `v0.1.0`, including later patch and hotfix releases.
+starting with `v0.1.0`, including later feature, patch, and hotfix
+releases.
 
 ## Required Checks For `main`
 
@@ -53,9 +54,10 @@ check baseline.
 ## Release Line Guidance
 
 - `v0.1.0` established the initial public release line for the project.
-- Later fixes should ship as new patch tags such as `v0.1.1` or
-  `v0.1.2`; do not retag or silently replace an existing published
-  release.
+- Feature-complete milestone cycles may advance the minor version for
+  the pre-`1.0` line; patch and hotfix changes should advance the patch
+  version from the latest published tag.
+- Do not retag or silently replace an existing published release.
 - Hotfixes follow the same process as patch releases: land the fix on a
   reviewed green commit, update `CHANGELOG.md`, then cut the next patch
   tag from that commit.
@@ -64,15 +66,17 @@ check baseline.
 
 ## Supported Boundaries And Constraints
 
-- The public repository remains synthetic-only by design; direct
-  adapters for operational or sensitive datasets are outside the
-  supported public release surface.
+- The public repository remains synthetic-only by design, but the
+  runtime supports manifest-driven landed batches in controlled
+  deployments outside the repository. Operational or sensitive data must
+  not be committed back into the repo or release artifacts.
 - Matching remains rules-based and intentionally explainable; it
   includes exact, heuristic partial, and lightweight phonetic-name
   scoring. ML-assisted scoring is intentionally out of scope for the
   supported public line.
-- The manual review queue remains a CSV handoff for the supported public
-  line rather than a persisted workflow.
+- The supported manual-review model includes both the portable CSV queue
+  artifact and the persisted SQLite review workflow documented in
+  [review-workflow.md](review-workflow.md).
 - Output contracts are stable for the documented CSV and summary
   artifacts only; synthetic generator outputs are not versioned as a
   release contract.
@@ -134,6 +138,10 @@ That command writes:
 - `dependency_inventory.json`
 - `dependency_audit.json`
 - `release_hardening_summary.json`
+
+The script clears stale files under the selected `artifacts/`
+subdirectory before building, so rerunning it against the documented
+output directory does not fail because of older wheel or sdist files.
 
 The CI `release-hardening` job publishes the same directory as the
 `release-hardening-inventory` artifact.

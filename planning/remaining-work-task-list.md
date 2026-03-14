@@ -16,9 +16,8 @@ truth for tracked work; this file is the short maintainer view.
   for this catalog.
 - The active tracked work is organized into three milestone groups:
   `v0.4.0`, `v0.5.0`, and `v0.6.0`.
-- The current `main` branch now includes the completed
-  production-readiness implementation set; the next maintainer action is
-  release or new-scope planning.
+- The current `main` branch now matches the published `v0.6.0` release
+  baseline. The next maintainer action is new-scope planning.
 - Issue `#61` is complete: the runtime now validates a stable landed
   batch manifest contract before `normalize` or manifest-driven
   `run-all` reads real input files.
@@ -122,5 +121,4 @@ truth for tracked work; this file is the short maintainer view.
 ## Next Step
 
 - The tracked production-readiness cycle is complete. The next step is
-  to cut a release from the current green `main` state or open a new
-  backlog cycle for net-new scope.
+  to open a new backlog cycle for net-new scope.

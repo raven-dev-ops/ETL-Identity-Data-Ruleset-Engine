@@ -10,7 +10,8 @@ Define and track the repository structure for implementing the ETL Identity Data
 ## Current Status
 
 `M1` through `M6` are implemented in-repo, the `v0.1.x` prototype line
-has been hardened and published through `v0.1.4`, and the
+has now advanced to the published `v0.6.0` production-readiness
+baseline, and the
 production-readiness backlog cycle is now implemented in-repo and
 recorded in the active backlog.
 
@@ -123,6 +124,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_package_release_sample.py
     test_pipeline_e2e.py
     test_quality.py
+    test_release_hardening_check.py
     test_repo_scripts.py
     test_runtime_config.py
     test_survivorship.py
@@ -159,7 +161,6 @@ The current public line is now explicitly scoped around:
 
 ## Post-Release Focus
 
-- cut the next release from the current green `main` state
 - keep the shipped container image and compose topology aligned with the
   documented single-host deployment path
 - keep benchmark fixtures, capacity targets, and the persisted

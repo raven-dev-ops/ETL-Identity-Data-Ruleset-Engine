@@ -59,6 +59,8 @@ def _read_project_version(pyproject_path: Path = REPO_ROOT / "pyproject.toml") -
 
 
 def _build_artifacts(python_executable: str, artifact_dir: Path) -> list[Path]:
+    if artifact_dir.exists():
+        shutil.rmtree(artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     repo_build_dir = REPO_ROOT / "build"
     build_dir_existed = repo_build_dir.exists()

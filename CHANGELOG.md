@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-14
+
 ### Added
 
 - Production batch-manifest support for `normalize` and `run-all`,
@@ -118,6 +120,9 @@ All notable changes to this project will be documented in this file.
 - The architecture, safety, and security docs now link to a single
   production operating-model reference instead of scattering rollout and
   governance boundaries across separate notes.
+- `scripts/release_hardening_check.py` now clears stale artifact files
+  in its output directory before building, so the documented retained
+  release path is rerun-safe on `dist/release-hardening`.
 
 ## [0.1.4] - 2026-03-13
 
