@@ -65,6 +65,14 @@ from etl_identity_engine.output_contracts import (
     MANUAL_REVIEW_HEADERS,
     MATCH_SCORE_HEADERS,
     NORMALIZED_HEADERS,
+    PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS,
+    PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS,
+)
+from etl_identity_engine.public_safety_demo import (
+    build_public_safety_demo,
+    build_public_safety_demo_dashboard_html,
+    build_public_safety_demo_report_markdown,
+    build_public_safety_demo_walkthrough_markdown,
 )
 from etl_identity_engine.review_cases import REVIEW_CASE_STATUSES
 from etl_identity_engine.review_cases import (
@@ -292,6 +300,122 @@ def _resolve_generated_person_input_paths(
     raise ValueError(
         "run-all requires a supported input format for normalization: csv or parquet"
     )
+
+
+def _resolve_optional_dataset_path(
+    dataset_dir: Path,
+    dataset_name: str,
+    *,
+    explicit_path: str | None = None,
+    missing_ok: bool = False,
+) -> Path | None:
+    if explicit_path:
+        path = Path(explicit_path)
+        if path.exists():
+            return path
+        if missing_ok:
+            return None
+        raise FileNotFoundError(f"Input file not found: {path}")
+
+    csv_path = dataset_dir / f"{dataset_name}.csv"
+    if csv_path.exists():
+        return csv_path
+
+    parquet_path = dataset_dir / f"{dataset_name}.parquet"
+    if parquet_path.exists():
+        return parquet_path
+
+    if missing_ok:
+        return None
+    raise FileNotFoundError(
+        f"No input files found for {dataset_name} in {dataset_dir} matching *.csv or *.parquet"
+    )
+
+
+def _write_public_safety_demo_outputs(
+    *,
+    base_dir: Path,
+    incident_records_path: str | None = None,
+    incident_links_path: str | None = None,
+    golden_file_path: str | None = None,
+    crosswalk_file_path: str | None = None,
+    output_dir_path: str | None = None,
+    missing_ok: bool = False,
+) -> bool:
+    synthetic_dir = base_dir / "data" / "synthetic_sources"
+    incident_records_file = _resolve_optional_dataset_path(
+        synthetic_dir,
+        "incident_records",
+        explicit_path=incident_records_path,
+        missing_ok=missing_ok,
+    )
+    incident_links_file = _resolve_optional_dataset_path(
+        synthetic_dir,
+        "incident_person_links",
+        explicit_path=incident_links_path,
+        missing_ok=missing_ok,
+    )
+    if incident_records_file is None or incident_links_file is None:
+        return False
+
+    golden_file = Path(golden_file_path) if golden_file_path else base_dir / "data" / "golden" / "golden_person_records.csv"
+    crosswalk_file = (
+        Path(crosswalk_file_path)
+        if crosswalk_file_path
+        else base_dir / "data" / "golden" / "source_to_golden_crosswalk.csv"
+    )
+    output_dir = Path(output_dir_path) if output_dir_path else base_dir / "data" / "public_safety_demo"
+
+    result = build_public_safety_demo(
+        incident_rows=read_dict_rows(incident_records_file),
+        incident_link_rows=read_dict_rows(incident_links_file),
+        golden_rows=read_dict_rows(golden_file),
+        crosswalk_rows=read_dict_rows(crosswalk_file),
+    )
+
+    incident_identity_path = output_dir / "incident_identity_view.csv"
+    golden_activity_path = output_dir / "golden_person_activity.csv"
+    dashboard_path = output_dir / "public_safety_demo_dashboard.html"
+    report_path = output_dir / "public_safety_demo_report.md"
+    scenarios_path = output_dir / "public_safety_demo_scenarios.json"
+    summary_path = output_dir / "public_safety_demo_summary.json"
+    walkthrough_path = output_dir / "public_safety_demo_walkthrough.md"
+
+    write_csv_dicts(
+        incident_identity_path,
+        result.incident_identity_rows,
+        fieldnames=PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS,
+    )
+    write_csv_dicts(
+        golden_activity_path,
+        result.golden_person_activity_rows,
+        fieldnames=PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS,
+    )
+    write_markdown(
+        dashboard_path,
+        build_public_safety_demo_dashboard_html(
+            summary=result.summary,
+            golden_person_activity_rows=result.golden_person_activity_rows,
+            incident_identity_rows=result.incident_identity_rows,
+        ),
+    )
+    write_markdown(report_path, build_public_safety_demo_report_markdown(result.summary))
+    scenarios_path.write_text(
+        json.dumps(result.summary.get("demo_scenarios", []), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(result.summary, indent=2, sort_keys=True), encoding="utf-8")
+    write_markdown(walkthrough_path, build_public_safety_demo_walkthrough_markdown(result.summary))
+
+    print(f"public safety incident view written: {incident_identity_path}")
+    print(f"public safety activity view written: {golden_activity_path}")
+    print(f"public safety dashboard written: {dashboard_path}")
+    print(f"public safety demo report written: {report_path}")
+    print(f"public safety demo scenarios written: {scenarios_path}")
+    print(f"public safety demo summary written: {summary_path}")
+    print(f"public safety demo walkthrough written: {walkthrough_path}")
+    return True
 
 
 def _default_data_root(input_file: Path) -> Path:
@@ -1073,6 +1197,7 @@ def _restore_persisted_run_outputs(base: Path, bundle) -> None:
         json.dumps(bundle.run.summary, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    _write_public_safety_demo_outputs(base_dir=base, missing_ok=True)
 
 
 def _cmd_generate(args: argparse.Namespace) -> None:
@@ -1139,6 +1264,20 @@ def _cmd_golden(args: argparse.Namespace) -> None:
         _resolve_golden_input_rows(args),
         _load_config(args.config_dir, args.environment),
     )
+
+
+def _cmd_public_safety_demo(args: argparse.Namespace) -> None:
+    wrote_outputs = _write_public_safety_demo_outputs(
+        base_dir=Path(args.base_dir),
+        incident_records_path=args.incident_records,
+        incident_links_path=args.incident_links,
+        golden_file_path=args.golden_file,
+        crosswalk_file_path=args.crosswalk_file,
+        output_dir_path=args.output_dir,
+        missing_ok=False,
+    )
+    if not wrote_outputs:
+        raise FileNotFoundError("No public-safety demo inputs were found")
 
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
@@ -2426,6 +2565,8 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     refresh_summary["recalculated_cluster_count"] = _cluster_count(clustered_rows)
                     refresh_summary["reused_record_count"] = 0
 
+        _write_public_safety_demo_outputs(base_dir=base, missing_ok=True)
+
         resume_summary = _build_resume_summary(
             resumed_from_run_id=resumed_from_run_id,
             resumed_from_stage=resumed_from_stage,
@@ -3548,6 +3689,38 @@ def build_parser() -> argparse.ArgumentParser:
     golden_parser.add_argument("--runtime-config", default=None)
     golden_parser.add_argument("--config-dir", default=None)
     golden_parser.set_defaults(func=_cmd_golden)
+
+    public_safety_demo_parser = subparsers.add_parser(
+        "public-safety-demo",
+        help="Build the synthetic CAD/RMS incident-to-identity demo views.",
+    )
+    public_safety_demo_parser.add_argument("--base-dir", default=".")
+    public_safety_demo_parser.add_argument(
+        "--incident-records",
+        default=None,
+        help="Path to incident_records.csv or .parquet. Defaults under data/synthetic_sources/.",
+    )
+    public_safety_demo_parser.add_argument(
+        "--incident-links",
+        default=None,
+        help="Path to incident_person_links.csv or .parquet. Defaults under data/synthetic_sources/.",
+    )
+    public_safety_demo_parser.add_argument(
+        "--golden-file",
+        default=None,
+        help="Path to golden_person_records.csv. Defaults under data/golden/.",
+    )
+    public_safety_demo_parser.add_argument(
+        "--crosswalk-file",
+        default=None,
+        help="Path to source_to_golden_crosswalk.csv. Defaults under data/golden/.",
+    )
+    public_safety_demo_parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory for the public-safety demo artifacts. Defaults under data/public_safety_demo/.",
+    )
+    public_safety_demo_parser.set_defaults(func=_cmd_public_safety_demo)
 
     report_parser = subparsers.add_parser("report", help="Produce run report.")
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")

@@ -22,6 +22,52 @@ data rows.
 | Malformed phone exceptions | `data/exceptions/malformed_phones.csv` | `source_record_id`, `person_entity_id`, `source_system`, `field_name`, `raw_value`, `canonical_value`, `reason_code` | `reason_code` is `malformed_phone` when populated. |
 | Normalization failures | `data/exceptions/normalization_failures.csv` | `source_record_id`, `person_entity_id`, `source_system`, `field_name`, `raw_value`, `canonical_value`, `reason_code` | Used for canonical-name and canonical-address failures. |
 
+## Synthetic Public-Safety Demo Artifacts
+
+When `run-all` executes against the shipped synthetic generator inputs,
+the runtime also writes a concrete mock CAD/RMS demo slice.
+
+| Artifact | Relative path | Required columns | Notes |
+| --- | --- | --- | --- |
+| Incident identity view | `data/public_safety_demo/incident_identity_view.csv` | `incident_id`, `incident_source_system`, `occurred_at`, `incident_location`, `incident_city`, `incident_state`, `incident_role`, `person_entity_id`, `source_record_id`, `person_source_system`, `golden_id`, `cluster_id`, `golden_first_name`, `golden_last_name`, `golden_dob`, `golden_address`, `golden_phone` | Joins mock CAD/RMS incident activity back to the crosswalk and golden-person outputs. |
+| Golden person activity | `data/public_safety_demo/golden_person_activity.csv` | `golden_id`, `cluster_id`, `person_entity_id`, `golden_first_name`, `golden_last_name`, `cad_incident_count`, `rms_incident_count`, `total_incident_count`, `linked_source_record_count`, `roles`, `latest_incident_at` | One row per golden person with linked incident activity. |
+
+### `data/public_safety_demo/public_safety_demo_summary.json`
+
+The summary records the high-level demo counts:
+
+- `incident_count`
+- `incident_person_link_count`
+- `cad_incident_count`
+- `rms_incident_count`
+- `resolved_link_count`
+- `unresolved_link_count`
+- `linked_golden_person_count`
+- `cross_system_golden_person_count`
+
+### `data/public_safety_demo/public_safety_demo_dashboard.html`
+
+The generated dashboard begins with the `Public Safety Identity Demo`
+HTML title and provides a single-file presentation layer for the mock
+CAD/RMS demo outputs.
+
+### `data/public_safety_demo/public_safety_demo_scenarios.json`
+
+The scenarios file contains the auto-selected demo walkthrough cases and
+matches the `demo_scenarios` key embedded in
+`public_safety_demo_summary.json`.
+
+### `data/public_safety_demo/public_safety_demo_report.md`
+
+The markdown report begins with `# Public Safety Demo Report` and
+summarizes how the mock CAD and RMS incident feeds roll up to the
+golden-person outputs.
+
+### `data/public_safety_demo/public_safety_demo_walkthrough.md`
+
+The walkthrough begins with `# Public Safety Demo Walkthrough` and
+packages the recommended scenario order and talk track for a live demo.
+
 ## Summary Artifacts
 
 ### `data/exceptions/run_summary.json`

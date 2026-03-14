@@ -55,6 +55,7 @@ ETL-Identity-Data-Ruleset-Engine/
     golden/
     matches/
     normalized/
+    public_safety_demo/
     synthetic_sources/
   docs/
     architecture.md
@@ -74,6 +75,7 @@ ETL-Identity-Data-Ruleset-Engine/
     persistent-state.md
     production-batch-manifest.md
     production-operating-model.md
+    public-safety-demo.md
     recovery-runbooks.md
     release-process.md
     review-workflow.md
@@ -91,12 +93,14 @@ ETL-Identity-Data-Ruleset-Engine/
   scripts/
     bootstrap_venv.ps1
     bootstrap_venv.sh
+    build_public_safety_demo_site.py
     container_smoke_test.py
     container_supply_chain_check.py
     create_github_backlog.py
     create_github_backlog.ps1
     kubernetes_manifest_smoke.py
     package_release_sample.py
+    package_public_safety_demo.py
     persisted_state_recovery_smoke.py
     release_hardening_check.py
     run_checks.py
@@ -105,24 +109,28 @@ ETL-Identity-Data-Ruleset-Engine/
     run_pipeline.ps1
     run_pipeline.py
     run_pipeline.sh
+    run_public_safety_demo_shell.py
     verify_github_issue_metadata.py
   src/
     etl_identity_engine/
       benchmarking.py
       benchmark_runtime.py
       cli.py
+      demo_shell/
       generate/
       ingest/
       io/
       matching/
       normalize/
       observability.py
+      public_safety_demo.py
       quality/
       storage/
       survivorship/
       streaming.py
   tests/
     test_benchmarking.py
+    test_build_public_safety_demo_site.py
     conftest.py
     test_generate.py
     test_io_read.py
@@ -130,7 +138,10 @@ ETL-Identity-Data-Ruleset-Engine/
     test_normalize.py
     test_output_contracts.py
     test_package_release_sample.py
+    test_package_public_safety_demo.py
     test_pipeline_e2e.py
+    test_public_safety_demo_django.py
+    test_public_safety_demo.py
     test_quality.py
     test_release_hardening_check.py
     test_repo_scripts.py
@@ -144,6 +155,7 @@ ETL-Identity-Data-Ruleset-Engine/
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
   LICENSE
+  manage_public_safety_demo.py
   pyproject.toml
   README.md
   SAFETY.md

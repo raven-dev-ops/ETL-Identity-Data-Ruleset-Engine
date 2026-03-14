@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ scenario.title }} | ID Network Buyer Demo</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI Variable Text", "Aptos", sans-serif; color: #11213b; background: linear-gradient(160deg, #fcfaf5 0%, #f4efe6 65%, #ece1cc 100%); }
+    main { width: min(1100px, calc(100vw - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; display: grid; gap: 1rem; }
+    .panel { background: rgba(255, 255, 255, 0.94); border: 1px solid rgba(17, 33, 59, 0.12); border-radius: 20px; box-shadow: 0 18px 44px rgba(17, 33, 59, 0.12); padding: 1.1rem; }
+    h1, h2, p { margin: 0; }
+    h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
+    .meta { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.8rem; color: #4a5873; }
+    .meta span { padding: 0.45rem 0.65rem; border-radius: 999px; background: rgba(17, 33, 59, 0.05); }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.85rem; }
+    a { color: #163f8c; text-decoration: none; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    .table-wrap { overflow-x: auto; }
+    th, td { padding: 0.7rem 0.72rem; border-bottom: 1px solid rgba(17, 33, 59, 0.12); text-align: left; vertical-align: top; }
+    th { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em; color: #4a5873; }
+    tbody tr:nth-child(even) { background: rgba(17, 33, 59, 0.025); }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <p><a href="/">Back to overview</a></p>
+      <h1>{{ scenario.title }}</h1>
+      <div class="meta">
+        <span>Master Person {{ scenario.golden_id }}</span>
+        <span>{{ scenario.golden_name }}</span>
+        <span>Total {{ scenario.total_incident_count }}</span>
+        <span>CAD {{ scenario.cad_incident_count }}</span>
+        <span>RMS {{ scenario.rms_incident_count }}</span>
+        <span>Latest {{ scenario.latest_incident_at }}</span>
+      </div>
+      <p style="margin-top: 0.9rem; color: #4a5873; line-height: 1.55;">
+        {{ scenario.narrative }} This is the focused ID Network-style talk track for showing one master person behind
+        both CAD calls and RMS reports.
+      </p>
+      <div class="actions">
+        <a href="/golden/{{ scenario.golden_id }}/">Open master-person detail</a>
+        <a href="/artifacts/{{ artifacts.incident_identity }}">Download incident identity CSV</a>
+      </div>
+    </section>
+    {% if activity_row %}
+    <section class="panel">
+      <h2>Resolved Golden Person</h2>
+      <div class="meta">
+        <span>{{ activity_row.golden_name }}</span>
+        <span>Cluster {{ activity_row.cluster_id }}</span>
+        <span>Entity {{ activity_row.person_entity_id }}</span>
+        <span>Agency Footprint {{ activity_row.agency_footprint }}</span>
+        <span>Linked Records {{ activity_row.linked_source_record_count }}</span>
+        <span>Roles {{ activity_row.roles }}</span>
+      </div>
+    </section>
+    {% endif %}
+    <section class="panel">
+      <h2>Incident Rows Behind This Scenario</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Occurred At</th>
+              <th>Agency</th>
+              <th>Type</th>
+              <th>Call/Report Number</th>
+              <th>Role</th>
+              <th>Master Person</th>
+              <th>Resolved Person</th>
+              <th>Source Record</th>
+              <th>Location</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in incident_rows %}
+            <tr>
+              <td>{{ row.occurred_at }}</td>
+              <td>{{ row.agency_name }}</td>
+              <td>{{ row.system_record_type }}</td>
+              <td>{{ row.incident_reference_value }}</td>
+              <td>{{ row.incident_role }}</td>
+              <td>{{ row.master_person_id }}</td>
+              <td>{{ row.golden_name }}</td>
+              <td>{{ row.source_record_id }}</td>
+              <td>{{ row.incident_location }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

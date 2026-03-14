@@ -48,12 +48,20 @@ golden records, and reporting artifacts.
    - Builds golden records from normalized records plus cluster
      assignments, or from already-clustered full rows
    - Writes `data/golden/golden_person_records.csv`
-7. `report`
+7. `public-safety-demo`
+   - Reads synthetic `incident_records` and `incident_person_links`
+     plus the current golden records and source-to-golden crosswalk
+   - Writes a joined CAD/RMS incident-to-identity view, a per-golden
+     person activity rollup, and a static demo dashboard under
+     `data/public_safety_demo/`
+   - Those artifacts can then be loaded into the standalone Django
+     + SQLite demo shell for a read-only buyer walkthrough
+8. `report`
    - Builds markdown and JSON quality summaries from normalized records
      plus match, cluster, golden, and review-queue artifacts, or reloads
      a completed persisted run from the configured state store
    - Writes under `data/exceptions/`
-8. `run-all`
+9. `run-all`
    - Executes the end-to-end prototype path in one command
    - Either generates synthetic inputs or uses a validated production
      batch manifest
@@ -63,20 +71,20 @@ golden records, and reporting artifacts.
      replay bundles containing the manifest plus landed-input snapshot
    - Supports manifest-driven incremental refresh when paired with
      `--state-db --refresh-mode incremental`
-9. `stream-refresh`
+10. `stream-refresh`
    - Reads a completed persisted predecessor run plus an ordered JSONL
      event batch
    - Applies the event batch deterministically in sequence order
    - Reuses the incremental refresh path to rebuild only affected
      entities and golden outputs
    - Copies the processed event batch under `data/events/`
-10. `publish-delivery`
+11. `publish-delivery`
    - Reads a completed persisted run from the configured state store
    - Publishes immutable downstream snapshots for golden records and the
      source-to-golden crosswalk
    - Updates an atomic `current.json` consumer pointer under the
      versioned delivery-contract root
-11. `serve-api`
+12. `serve-api`
    - Reads persisted SQL state through a local HTTP service
    - Exposes authenticated paginated run, golden-record, and
      review-case collections plus direct run, golden-record, crosswalk,
@@ -85,12 +93,12 @@ golden records, and reporting artifacts.
      export-trigger actions
    - Exposes authenticated `healthz`, `readyz`, and `/api/v1/metrics`
      endpoints for service and batch observability
-12. `export-job-run`
+13. `export-job-run`
    - Reads a completed persisted run from the configured state store
    - Materializes a named warehouse or data-product export under the
      configured output root
    - Records auditable export execution and reuse in the state store
-13. `benchmark-run`
+14. `benchmark-run`
    - Executes the real persisted `run-all` path against a named
      large-batch fixture, or a seed `run-all` plus repeated
      `stream-refresh` batches for continuous-ingest fixtures
@@ -191,6 +199,8 @@ The current end-to-end path writes:
 - `data/matches/entity_clusters.csv`
 - `data/golden/golden_person_records.csv`
 - `data/golden/source_to_golden_crosswalk.csv`
+- `data/public_safety_demo/` when synthetic CAD/RMS demo inputs are
+  present
 - `data/review_queue/manual_review_queue.csv`
 - `data/exceptions/run_report.md`
 - `data/exceptions/run_summary.json`

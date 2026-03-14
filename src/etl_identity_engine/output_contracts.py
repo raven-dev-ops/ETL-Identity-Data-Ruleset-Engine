@@ -84,6 +84,40 @@ CROSSWALK_HEADERS = (
     "golden_id",
 )
 
+PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS = (
+    "incident_id",
+    "incident_source_system",
+    "occurred_at",
+    "incident_location",
+    "incident_city",
+    "incident_state",
+    "incident_role",
+    "person_entity_id",
+    "source_record_id",
+    "person_source_system",
+    "golden_id",
+    "cluster_id",
+    "golden_first_name",
+    "golden_last_name",
+    "golden_dob",
+    "golden_address",
+    "golden_phone",
+)
+
+PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS = (
+    "golden_id",
+    "cluster_id",
+    "person_entity_id",
+    "golden_first_name",
+    "golden_last_name",
+    "cad_incident_count",
+    "rms_incident_count",
+    "total_incident_count",
+    "linked_source_record_count",
+    "roles",
+    "latest_incident_at",
+)
+
 EXCEPTION_HEADERS = (
     "source_record_id",
     "person_entity_id",
@@ -105,6 +139,11 @@ PIPELINE_CSV_ARTIFACT_HEADERS = {
     Path("data/exceptions/invalid_dobs.csv"): EXCEPTION_HEADERS,
     Path("data/exceptions/malformed_phones.csv"): EXCEPTION_HEADERS,
     Path("data/exceptions/normalization_failures.csv"): EXCEPTION_HEADERS,
+}
+
+PUBLIC_SAFETY_DEMO_CSV_ARTIFACT_HEADERS = {
+    Path("data/public_safety_demo/incident_identity_view.csv"): PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS,
+    Path("data/public_safety_demo/golden_person_activity.csv"): PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS,
 }
 
 DELIVERY_CONTRACT_NAME = "golden_crosswalk_snapshot"
@@ -139,6 +178,17 @@ PIPELINE_ARTIFACT_PATHS = tuple(
     + [
         Path("data/exceptions/run_report.md"),
         Path("data/exceptions/run_summary.json"),
+    ]
+)
+
+PUBLIC_SAFETY_DEMO_ARTIFACT_PATHS = tuple(
+    list(PUBLIC_SAFETY_DEMO_CSV_ARTIFACT_HEADERS)
+    + [
+        Path("data/public_safety_demo/public_safety_demo_dashboard.html"),
+        Path("data/public_safety_demo/public_safety_demo_report.md"),
+        Path("data/public_safety_demo/public_safety_demo_scenarios.json"),
+        Path("data/public_safety_demo/public_safety_demo_summary.json"),
+        Path("data/public_safety_demo/public_safety_demo_walkthrough.md"),
     ]
 )
 

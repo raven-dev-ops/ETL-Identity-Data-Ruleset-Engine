@@ -10,6 +10,8 @@ from etl_identity_engine.output_contracts import (
     DELIVERY_CURRENT_POINTER_KEYS,
     DELIVERY_MANIFEST_KEYS,
     MATCH_DECISIONS,
+    PUBLIC_SAFETY_DEMO_ARTIFACT_PATHS,
+    PUBLIC_SAFETY_DEMO_CSV_ARTIFACT_HEADERS,
     PIPELINE_ARTIFACT_PATHS,
     PIPELINE_CSV_ARTIFACT_HEADERS,
     SUMMARY_BEFORE_AFTER_FIELDS,
@@ -114,6 +116,26 @@ def test_run_all_outputs_follow_documented_contracts(tmp_path: Path) -> None:
     assert report_text.startswith("# Pipeline Report\n")
     assert "## Performance" in report_text
     assert "## Duplicate Reduction" in report_text
+
+
+def test_run_all_writes_public_safety_demo_contracts_for_synthetic_inputs(tmp_path: Path) -> None:
+    assert main(["run-all", "--base-dir", str(tmp_path), "--profile", "small"]) == 0
+
+    expected_paths = {tmp_path / relative_path for relative_path in PUBLIC_SAFETY_DEMO_ARTIFACT_PATHS}
+    assert expected_paths <= {path for path in tmp_path.rglob("*") if path.is_file()}
+
+    for relative_path, expected_header in PUBLIC_SAFETY_DEMO_CSV_ARTIFACT_HEADERS.items():
+        artifact_path = tmp_path / relative_path
+        assert _read_header(artifact_path) == list(expected_header)
+        for row in _read_rows(artifact_path):
+            for numeric_field in (
+                "cad_incident_count",
+                "rms_incident_count",
+                "total_incident_count",
+                "linked_source_record_count",
+            ):
+                if numeric_field in row:
+                    assert _is_int_like(row[numeric_field])
 
 
 def test_delivery_contract_constants_are_versioned_and_complete() -> None:

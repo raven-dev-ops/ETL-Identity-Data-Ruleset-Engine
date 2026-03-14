@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ID Network Buyer Demo Shell</title>
+  <style>
+    :root {
+      --ink: #11213b;
+      --ink-soft: #4a5873;
+      --paper: #f4efe6;
+      --panel: rgba(255, 255, 255, 0.94);
+      --line: rgba(17, 33, 59, 0.12);
+      --accent: #8b3a13;
+      --accent-soft: rgba(139, 58, 19, 0.12);
+      --shadow: 0 18px 44px rgba(17, 33, 59, 0.12);
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI Variable Text", "Aptos", "Trebuchet MS", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(17, 33, 59, 0.14), transparent 24rem),
+        radial-gradient(circle at bottom right, rgba(139, 58, 19, 0.15), transparent 20rem),
+        linear-gradient(160deg, #fcfaf5 0%, var(--paper) 62%, #ece1cc 100%);
+      min-height: 100vh;
+    }
+    main {
+      width: min(1240px, calc(100vw - 2rem));
+      margin: 0 auto;
+      padding: 1.5rem 0 3rem;
+      display: grid;
+      gap: 1rem;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 1.6rem;
+      display: grid;
+      gap: 1rem;
+    }
+    .kicker {
+      width: fit-content;
+      padding: 0.35rem 0.7rem;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      line-height: 0.96;
+      max-width: 12ch;
+    }
+    .hero-copy {
+      max-width: 72ch;
+      color: var(--ink-soft);
+      line-height: 1.55;
+      font-size: 1.02rem;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+    }
+    .meta span {
+      padding: 0.45rem 0.65rem;
+      border-radius: 999px;
+      background: rgba(17, 33, 59, 0.05);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.85rem;
+    }
+    .metric-card {
+      padding: 0.95rem;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(17, 33, 59, 0.08);
+    }
+    .metric-label {
+      color: var(--ink-soft);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .metric-value {
+      font-size: 1.95rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 1rem;
+    }
+    .panel {
+      padding: 1.1rem;
+      display: grid;
+      gap: 0.85rem;
+    }
+    .panel-header {
+      display: grid;
+      gap: 0.25rem;
+    }
+    .panel-header p {
+      color: var(--ink-soft);
+      line-height: 1.5;
+    }
+    .link-list, .scenario-list {
+      display: grid;
+      gap: 0.65rem;
+    }
+    .link-list a, .scenario-card a, .table-wrap a {
+      color: #163f8c;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .scenario-card {
+      padding: 0.95rem;
+      border-radius: 16px;
+      background: rgba(17, 33, 59, 0.045);
+      border: 1px solid rgba(17, 33, 59, 0.08);
+      display: grid;
+      gap: 0.45rem;
+    }
+    .scenario-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      color: var(--ink-soft);
+      font-size: 0.9rem;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 0.7rem 0.72rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-size: 0.93rem;
+      vertical-align: top;
+    }
+    th {
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-soft);
+    }
+    tbody tr:nth-child(even) {
+      background: rgba(17, 33, 59, 0.025);
+    }
+    .footer-note {
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    @media (max-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 720px) {
+      main {
+        width: min(100vw - 1rem, 1240px);
+        padding-top: 1rem;
+      }
+      .hero, .panel {
+        border-radius: 16px;
+      }
+      .hero, .panel {
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="kicker">ID Network Buyer Demo</div>
+      <div>
+        <h1>See CAD calls and RMS reports collapse into one master person.</h1>
+        <p class="hero-copy">
+          This standalone shell is tuned for an ID Network-style buyer walkthrough. It loads a synthetic CAD/RMS demo
+          bundle into SQLite, then shows how dispatch calls, records reports, and source person records resolve to a
+          single master person for safer downstream search and review.
+        </p>
+      </div>
+      <div class="meta">
+        <span>Bundle: {{ demo_run.bundle_name }}</span>
+        <span>Profile: {{ demo_run.profile }}</span>
+        <span>Seed: {{ demo_run.seed }}</span>
+        <span>Generated: {{ demo_run.generated_at_utc }}</span>
+        <span>Version: {{ demo_run.version }}</span>
+      </div>
+      <section class="metrics">
+        <article class="metric-card"><p class="metric-label">Incidents</p><p class="metric-value">{{ demo_run.incident_count }}</p></article>
+        <article class="metric-card"><p class="metric-label">CAD Incidents</p><p class="metric-value">{{ demo_run.cad_incident_count }}</p></article>
+        <article class="metric-card"><p class="metric-label">RMS Incidents</p><p class="metric-value">{{ demo_run.rms_incident_count }}</p></article>
+        <article class="metric-card"><p class="metric-label">Resolved Links</p><p class="metric-value">{{ demo_run.resolved_link_count }}</p></article>
+        <article class="metric-card"><p class="metric-label">Linked Golden People</p><p class="metric-value">{{ demo_run.linked_golden_person_count }}</p></article>
+        <article class="metric-card"><p class="metric-label">Cross-System People</p><p class="metric-value">{{ demo_run.cross_system_golden_person_count }}</p></article>
+      </section>
+    </section>
+
+    <section class="layout">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Demo Scenarios</h2>
+          <p>Use these first in the ID Network buyer conversation when you need to show the point quickly.</p>
+        </div>
+        <div class="scenario-list">
+          {% for scenario in scenarios %}
+          <article class="scenario-card">
+            <h3><a href="/scenarios/{{ scenario.scenario_id }}/">{{ scenario.title }}</a></h3>
+            <div class="scenario-meta">
+              <span>{{ scenario.golden_name }}</span>
+              <span>Golden ID {{ scenario.golden_id }}</span>
+              <span>Total {{ scenario.total_incident_count }}</span>
+              <span>CAD {{ scenario.cad_incident_count }}</span>
+              <span>RMS {{ scenario.rms_incident_count }}</span>
+            </div>
+            <p>{{ scenario.narrative }}</p>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Raw Artifacts</h2>
+          <p>The Django shell stays standalone, but every underlying artifact behind the buyer story is still inspectable.</p>
+        </div>
+        <div class="link-list">
+          <a href="/artifacts/{{ artifacts.summary }}">Summary JSON</a>
+          <a href="/artifacts/{{ artifacts.scenarios }}">Scenarios JSON</a>
+          <a href="/artifacts/{{ artifacts.dashboard }}">Generated HTML dashboard</a>
+          <a href="/artifacts/{{ artifacts.incident_identity }}">Incident identity CSV</a>
+          <a href="/artifacts/{{ artifacts.golden_activity }}">Golden activity CSV</a>
+          <a href="/artifacts/{{ artifacts.walkthrough }}">Walkthrough markdown</a>
+          <a href="/artifacts/{{ artifacts.report }}">Report markdown</a>
+          <a href="/artifacts/{{ artifacts.bundle_zip }}">Original demo bundle zip</a>
+        </div>
+        <p class="footer-note">
+          The bundle and SQLite database both live under the local standalone demo directory. Nothing here requires
+          a separate database server.
+        </p>
+      </section>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Top Golden People By Activity</h2>
+        <p>These are the quickest examples when you want to show master-person resolution with multi-incident activity.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Master Person</th>
+              <th>Name</th>
+              <th>Agency Footprint</th>
+              <th>Total</th>
+              <th>CAD</th>
+              <th>RMS</th>
+              <th>Roles</th>
+              <th>Latest Incident</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in top_activity_rows %}
+            <tr>
+              <td><a href="/golden/{{ row.golden_id }}/">{{ row.master_person_id }}</a></td>
+              <td>{{ row.golden_name }}</td>
+              <td>{{ row.agency_footprint }}</td>
+              <td>{{ row.total_incident_count }}</td>
+              <td>{{ row.cad_incident_count }}</td>
+              <td>{{ row.rms_incident_count }}</td>
+              <td>{{ row.roles }}</td>
+              <td>{{ row.latest_incident_at }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Recent Incident-to-Identity Rows</h2>
+        <p>These rows show dispatch and records activity tied back to the resolved master person.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Occurred At</th>
+              <th>Agency</th>
+              <th>Type</th>
+              <th>Call/Report Number</th>
+              <th>Role</th>
+              <th>Master Person</th>
+              <th>Resolved Person</th>
+              <th>Source Record</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in recent_incident_rows %}
+            <tr>
+              <td>{{ row.occurred_at }}</td>
+              <td>{{ row.agency_name }}</td>
+              <td>{{ row.system_record_type }}</td>
+              <td>{{ row.incident_reference_value }}</td>
+              <td>{{ row.incident_role }}</td>
+              <td><a href="/golden/{{ row.golden_id }}/">{{ row.master_person_id }}</a></td>
+              <td>{{ row.golden_name }}</td>
+              <td>{{ row.source_record_id }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="footer-note">
+        Synthetic demo only. This demonstrates the identity-resolution pattern and a buyer-friendly read model, not live CAD/RMS integration or CJIS compliance by itself.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-14
+
+- Added a concrete synthetic CAD/RMS public-safety demo stage and
+  output slice, including `public-safety-demo`, a joined
+  incident-to-identity view, a per-golden-person activity rollup, and
+  dedicated demo dashboard, report, and summary artifacts.
+- Added a deterministic `package_public_safety_demo.py` script for
+  producing a single zipped mock CAD/RMS demo handoff bundle.
+- Added a standalone Django + SQLite public-safety demo shell, plus a
+  `run_public_safety_demo_shell.py` bootstrap path that loads the
+  packaged mock CAD/RMS bundle into a self-contained read-only local
+  walkthrough.
+- Added a `build_public_safety_demo_site.py` script that turns the demo
+  bundle into a hostable static shell with an overview page, scenario
+  cards, embedded dashboard, and direct artifact links.
 - Added PostgreSQL-backed persisted-state support alongside SQLite,
   normalized state-store URL handling, and PostgreSQL dialect coverage
   for the migration/runtime path.

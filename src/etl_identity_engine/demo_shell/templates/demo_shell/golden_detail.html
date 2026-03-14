@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ activity_row.golden_name }} | ID Network Buyer Demo</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI Variable Text", "Aptos", sans-serif; color: #11213b; background: linear-gradient(160deg, #fcfaf5 0%, #f4efe6 65%, #ece1cc 100%); }
+    main { width: min(1100px, calc(100vw - 2rem)); margin: 0 auto; padding: 1.5rem 0 3rem; display: grid; gap: 1rem; }
+    .panel { background: rgba(255, 255, 255, 0.94); border: 1px solid rgba(17, 33, 59, 0.12); border-radius: 20px; box-shadow: 0 18px 44px rgba(17, 33, 59, 0.12); padding: 1.1rem; }
+    h1, h2, p { margin: 0; }
+    h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
+    .meta { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.8rem; color: #4a5873; }
+    .meta span { padding: 0.45rem 0.65rem; border-radius: 999px; background: rgba(17, 33, 59, 0.05); }
+    a { color: #163f8c; text-decoration: none; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    .table-wrap { overflow-x: auto; }
+    th, td { padding: 0.7rem 0.72rem; border-bottom: 1px solid rgba(17, 33, 59, 0.12); text-align: left; vertical-align: top; }
+    th { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em; color: #4a5873; }
+    tbody tr:nth-child(even) { background: rgba(17, 33, 59, 0.025); }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <p><a href="/">Back to overview</a></p>
+      <h1>{{ activity_row.golden_name }}</h1>
+      <div class="meta">
+        <span>Master Person {{ activity_row.master_person_id }}</span>
+        <span>Cluster {{ activity_row.cluster_id }}</span>
+        <span>Entity {{ activity_row.person_entity_id }}</span>
+        <span>{{ activity_row.agency_footprint }}</span>
+        <span>Total {{ activity_row.total_incident_count }}</span>
+        <span>CAD {{ activity_row.cad_incident_count }}</span>
+        <span>RMS {{ activity_row.rms_incident_count }}</span>
+        <span>Roles {{ activity_row.roles }}</span>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Linked Incident Rows</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Occurred At</th>
+              <th>Agency</th>
+              <th>Type</th>
+              <th>Call/Report Number</th>
+              <th>Role</th>
+              <th>Master Person</th>
+              <th>Source Record</th>
+              <th>Location</th>
+              <th>City</th>
+              <th>State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in incident_rows %}
+            <tr>
+              <td>{{ row.occurred_at }}</td>
+              <td>{{ row.agency_name }}</td>
+              <td>{{ row.system_record_type }}</td>
+              <td>{{ row.incident_reference_value }}</td>
+              <td>{{ row.incident_role }}</td>
+              <td>{{ row.master_person_id }}</td>
+              <td>{{ row.source_record_id }}</td>
+              <td>{{ row.incident_location }}</td>
+              <td>{{ row.incident_city }}</td>
+              <td>{{ row.incident_state }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

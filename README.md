@@ -6,6 +6,8 @@ project demonstrates how an ETL pipeline can normalize inconsistent
 records, detect likely duplicate identities through probabilistic
 matching, and generate trusted "golden records" using deterministic
 survivorship rules.
+It also now exposes a concrete mock public-safety slice that joins CAD
+and RMS incident activity back to the golden-person outputs.
 
 Many operational systems ingest identity data from multiple sources that
 store information with inconsistent formatting, partial identifiers, and
@@ -203,6 +205,7 @@ is included in the repository.
 - [Survivorship](docs/survivorship.md)
 - [Evaluation and Metrics](docs/evaluation-and-metrics.md)
 - [Output Contracts](docs/output-contracts.md)
+- [Public Safety Demo](docs/public-safety-demo.md)
 - [Production Operating Model](docs/production-operating-model.md)
 - [Release Process](docs/release-process.md)
 - [Standards Mapping](docs/standards-mapping.md)
@@ -238,9 +241,10 @@ This repository now includes a working `M1` scaffold:
 
 - Python package skeleton under `src/etl_identity_engine/`
 - stage CLI commands: `generate`, `normalize`, `match`, `cluster`,
-  `review-queue`, `golden`, `report`, `publish-delivery`, `publish-run`,
-  `review-case-list`, `review-case-update`, `apply-review-decision`,
-  `replay-run`, `stream-refresh`, `benchmark-run`, `export-job-list`,
+  `review-queue`, `golden`, `public-safety-demo`, `report`,
+  `publish-delivery`, `publish-run`, `review-case-list`,
+  `review-case-update`, `apply-review-decision`, `replay-run`,
+  `stream-refresh`, `benchmark-run`, `export-job-list`,
   `export-job-run`, `export-job-history`, `serve-api`, `run-all`
 - base test suite under `tests/`
 - CI and issue templates under `.github/`
@@ -278,6 +282,7 @@ used per run.
   `data/golden/golden_person_records.csv`
 - a source-to-golden crosswalk in
   `data/golden/source_to_golden_crosswalk.csv`
+- a CAD/RMS incident-to-identity demo slice in `data/public_safety_demo/`
 - a manual review queue in `data/review_queue/manual_review_queue.csv`
 - exception artifacts and summary outputs under `data/exceptions/`
 - phase timing and throughput metrics in `data/exceptions/run_summary.json`
@@ -355,6 +360,49 @@ Benchmark fixture definitions, regression targets, and the
 [docs/benchmarking-and-capacity.md](docs/benchmarking-and-capacity.md).
 Container image attestation, provenance, and scan gates are documented
 in [docs/release-process.md](docs/release-process.md).
+
+For a concrete mock CAD/RMS demonstration, run the pipeline and inspect
+the synthetic public-safety demo outputs:
+
+```bash
+python -m etl_identity_engine.cli run-all --base-dir demo-output --profile small --seed 42
+python -m etl_identity_engine.cli public-safety-demo --base-dir demo-output
+```
+
+That produces:
+
+- `data/public_safety_demo/incident_identity_view.csv`
+- `data/public_safety_demo/golden_person_activity.csv`
+- `data/public_safety_demo/public_safety_demo_dashboard.html`
+- `data/public_safety_demo/public_safety_demo_report.md`
+- `data/public_safety_demo/public_safety_demo_scenarios.json`
+- `data/public_safety_demo/public_safety_demo_summary.json`
+- `data/public_safety_demo/public_safety_demo_walkthrough.md`
+
+To hand the demo to someone as one artifact:
+
+```bash
+python scripts/package_public_safety_demo.py --output-dir dist/public-safety-demo --profile small --seed 42 --formats csv,parquet
+```
+
+To prepare a standalone Django + SQLite demo shell around that bundle:
+
+```bash
+python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --profile small --seed 42 --formats csv,parquet --prepare-only
+python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --profile small --seed 42 --formats csv,parquet --host 127.0.0.1 --port 8000
+```
+
+That standalone shell uses Django's built-in SQLite backend and serves a
+read-only local walkthrough over the packaged bundle, so it stays
+self-contained for buyer demos. The copy and scenario flow are tuned
+for an ID Network-style CAD/RMS identity-resolution conversation.
+
+If you need a purely static handoff instead, the older static-site path
+is still available:
+
+```bash
+python scripts/build_public_safety_demo_site.py --bundle dist/public-safety-demo/etl-identity-engine-v<version>-public-safety-demo-small.zip --output-dir dist/public-safety-demo-site --site-title "Hosted Public Safety Identity Demo"
+```
 
 For scale validation, `benchmark-run` executes the real persisted
 pipeline against a named large-batch fixture from

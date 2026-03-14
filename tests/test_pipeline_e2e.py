@@ -38,6 +38,13 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
         tmp_path / "data" / "matches" / "entity_clusters.csv",
         tmp_path / "data" / "golden" / "golden_person_records.csv",
         tmp_path / "data" / "golden" / "source_to_golden_crosswalk.csv",
+        tmp_path / "data" / "public_safety_demo" / "incident_identity_view.csv",
+        tmp_path / "data" / "public_safety_demo" / "golden_person_activity.csv",
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_dashboard.html",
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_report.md",
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_scenarios.json",
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_summary.json",
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_walkthrough.md",
         tmp_path / "data" / "review_queue" / "manual_review_queue.csv",
         tmp_path / "data" / "exceptions" / "invalid_dobs.csv",
         tmp_path / "data" / "exceptions" / "malformed_phones.csv",
@@ -54,9 +61,26 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     cluster_rows = _read_csv_rows(tmp_path / "data" / "matches" / "entity_clusters.csv")
     golden_rows = _read_csv_rows(tmp_path / "data" / "golden" / "golden_person_records.csv")
     crosswalk_rows = _read_csv_rows(tmp_path / "data" / "golden" / "source_to_golden_crosswalk.csv")
+    incident_identity_rows = _read_csv_rows(tmp_path / "data" / "public_safety_demo" / "incident_identity_view.csv")
+    golden_activity_rows = _read_csv_rows(tmp_path / "data" / "public_safety_demo" / "golden_person_activity.csv")
     review_queue_rows = _read_csv_rows(tmp_path / "data" / "review_queue" / "manual_review_queue.csv")
     summary = json.loads((tmp_path / "data" / "exceptions" / "run_summary.json").read_text(encoding="utf-8"))
     report_text = (tmp_path / "data" / "exceptions" / "run_report.md").read_text(encoding="utf-8")
+    public_safety_summary = json.loads(
+        (tmp_path / "data" / "public_safety_demo" / "public_safety_demo_summary.json").read_text(encoding="utf-8")
+    )
+    public_safety_report_text = (
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_report.md"
+    ).read_text(encoding="utf-8")
+    public_safety_dashboard_text = (
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_dashboard.html"
+    ).read_text(encoding="utf-8")
+    public_safety_scenarios = json.loads(
+        (tmp_path / "data" / "public_safety_demo" / "public_safety_demo_scenarios.json").read_text(encoding="utf-8")
+    )
+    public_safety_walkthrough_text = (
+        tmp_path / "data" / "public_safety_demo" / "public_safety_demo_walkthrough.md"
+    ).read_text(encoding="utf-8")
 
     assert len(normalized_rows) == 48
     assert match_rows
@@ -77,6 +101,24 @@ def test_run_all_creates_expected_artifacts(tmp_path: Path) -> None:
     assert len(golden_rows) <= len(normalized_rows)
     assert {"cluster_id", "first_name_source_record_id", "first_name_rule_name"} <= set(golden_rows[0])
     assert len({row["golden_id"] for row in crosswalk_rows}) == len(golden_rows)
+    assert incident_identity_rows
+    assert golden_activity_rows
+    assert all(row["incident_source_system"] in {"cad", "rms"} for row in incident_identity_rows)
+    assert all(row["golden_id"] for row in incident_identity_rows)
+    assert public_safety_summary["resolved_link_count"] == len(incident_identity_rows)
+    assert public_safety_summary["unresolved_link_count"] == 0
+    assert public_safety_summary["linked_golden_person_count"] == len(golden_activity_rows)
+    assert public_safety_summary["cad_incident_count"] + public_safety_summary["rms_incident_count"] == public_safety_summary["incident_count"]
+    assert public_safety_summary["demo_scenarios"] == public_safety_scenarios
+    assert len(public_safety_scenarios) >= 2
+    assert public_safety_report_text.startswith("# Public Safety Demo Report\n")
+    assert "## Suggested Demo Scenarios" in public_safety_report_text
+    assert "## What It Demonstrates" in public_safety_report_text
+    assert "<title>Public Safety Identity Demo</title>" in public_safety_dashboard_text
+    assert "Suggested Demo Scenarios" in public_safety_dashboard_text
+    assert public_safety_walkthrough_text.startswith("# Public Safety Demo Walkthrough\n")
+    assert "## Suggested Scenarios" in public_safety_walkthrough_text
+    assert "Mock CAD/RMS Identity Demo" in public_safety_dashboard_text
     assert summary["candidate_pair_count"] == len(match_rows)
     assert summary["cluster_count"] == len(golden_rows)
     assert summary["golden_record_count"] == len(golden_rows)
@@ -195,3 +237,5 @@ def test_run_all_supports_parquet_only_generation_inputs(tmp_path: Path) -> None
     assert not (tmp_path / "data" / "synthetic_sources" / "person_source_a.csv").exists()
     assert (tmp_path / "data" / "normalized" / "normalized_person_records.csv").exists()
     assert (tmp_path / "data" / "golden" / "golden_person_records.csv").exists()
+    assert (tmp_path / "data" / "public_safety_demo" / "incident_identity_view.csv").exists()
+    assert (tmp_path / "data" / "public_safety_demo" / "public_safety_demo_dashboard.html").exists()

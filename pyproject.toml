@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "etl-identity-engine"
-version = "0.6.0"
+version = "0.9.0"
 description = "Synthetic ETL identity resolution prototype."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,7 @@ authors = [
 ]
 dependencies = [
   "alembic>=1.14.0",
+  "Django>=5.2,<5.3",
   "fastapi>=0.115.0",
   "fsspec>=2024.6.0",
   "psycopg[binary]>=3.2.3",
@@ -46,6 +47,9 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"etl_identity_engine.demo_shell" = ["templates/demo_shell/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
