@@ -89,6 +89,35 @@ become an uncontrolled copy of sensitive request content.
 
 The script emits JSON and exits non-zero on failure.
 
+## Evidence Pack
+
+To package the current repo-side CJIS review evidence into one zip:
+
+```bash
+python scripts/package_cjis_evidence_pack.py --environment cjis --runtime-config config/runtime_environments.yml --output-dir dist/cjis-evidence
+```
+
+If your deployment material is stored in a local `KEY=VALUE` file, add:
+
+```bash
+python scripts/package_cjis_evidence_pack.py --environment cjis --runtime-config config/runtime_environments.yml --output-dir dist/cjis-evidence --env-file deploy/cjis.env
+```
+
+The pack includes:
+
+- the current CJIS preflight summary
+- a redacted runtime-environment summary
+- state-store backend and schema summary
+- operational metrics and recent audit events
+- an optional selected persisted run summary
+- `standards_mapping_index.json`
+- reference copies of the standards mapping, baseline doc, env template,
+  and runtime catalog
+
+The evidence pack supports review conversations and deployment
+verification. It does not, by itself, claim full operational CJIS
+compliance.
+
 ## Recommended Rollout Order
 
 1. Validate the runtime with synthetic data and the standalone demo.

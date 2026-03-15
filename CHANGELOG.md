@@ -26,6 +26,9 @@ All notable changes to this project will be documented in this file.
 - Added encrypted persisted-state backup and restore workflows, the
   shared encrypted-bundle format plus generic extract tooling, and
   optional encrypted customer-pilot delivery packaging.
+- Added `package_cjis_evidence_pack.py`, which builds a CJIS review zip
+  from runtime configuration, preflight output, persisted audit events,
+  operational metrics, and a machine-readable standards mapping index.
 
 ## [1.0.0] - 2026-03-14
 

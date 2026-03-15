@@ -179,7 +179,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 124) Generate a CJIS evidence pack from runtime config and audit artifacts
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.4.0`
 - Labels: `type:feature`, `area:docs`, `priority:p1`
 - Depends on: #122, #123

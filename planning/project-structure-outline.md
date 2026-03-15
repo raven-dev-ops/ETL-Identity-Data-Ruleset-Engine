@@ -13,9 +13,9 @@ Define and track the repository structure for implementing the ETL Identity Data
 advanced through the published `v1.0.0` release, the tracked
 `v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, and
 the current backlog cycle has completed the `v1.3.0` vendor-adapter
-slice and is now focused on secure operations evidence plus customer
-deployment supportability, with encrypted backup/export workflows now
-implemented in-repo.
+slice, has now also completed the `v1.4.0` secure-operations evidence
+slice, and is now focused on customer deployment supportability, with
+the CJIS evidence-pack workflow implemented in-repo.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -127,6 +127,7 @@ ETL-Identity-Data-Ruleset-Engine/
     package_release_sample.py
     package_public_safety_demo.py
     cjis_preflight_check.py
+    package_cjis_evidence_pack.py
     persisted_state_recovery_smoke.py
     release_hardening_check.py
     restore_encrypted_bundle.py
@@ -168,6 +169,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_normalize.py
     test_output_contracts.py
     test_package_release_sample.py
+    test_package_cjis_evidence_pack.py
     test_package_customer_pilot_bundle.py
     test_package_public_safety_demo.py
     test_pipeline_e2e.py

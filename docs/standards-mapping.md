@@ -22,6 +22,13 @@ external controls it is trying to support. It is not a certification.
 | MFA and personnel attestations | Required affirmative deployment attestations in the preflight | `deploy/cjis.env.example`, `scripts/cjis_preflight_check.py` |
 | Contractor / operator governance | Explicit operator boundary and Security Addendum acknowledgement flag | `SECURITY.md`, `deploy/cjis.env.example`, `scripts/cjis_preflight_check.py` |
 
+## Evidence-Pack Index
+
+`scripts/package_cjis_evidence_pack.py` copies this document into the
+generated review bundle and also writes `standards_mapping_index.json`
+with the same control areas and repo-surface pointers in machine-readable
+form.
+
 ## Scope Boundary
 
 The repo can only validate the controls it can see:

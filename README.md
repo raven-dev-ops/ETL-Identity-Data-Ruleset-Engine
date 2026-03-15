@@ -500,6 +500,15 @@ python -m etl_identity_engine.cli check-runtime-auth-material --environment prod
 That same age gate is available on `serve-api` and on the stricter
 `scripts/cjis_preflight_check.py` baseline for CJIS-aligned
 deployments.
+For a portable CJIS review artifact built from the runtime catalog,
+preflight output, store metrics, and recent audit events:
+
+```bash
+python scripts/package_cjis_evidence_pack.py --environment cjis --runtime-config config/runtime_environments.yml --output-dir dist/cjis-evidence
+```
+
+That evidence pack is a review and deployment-verification artifact. It
+does not, by itself, claim full operational CJIS compliance.
 Persisted-state backup and restore can now also be handled through the
 encrypted operator workflow:
 
@@ -512,6 +521,10 @@ That workflow is documented in
 [docs/encrypted-backup-bundles.md](docs/encrypted-backup-bundles.md)
 and
 [docs/recovery-runbooks.md](docs/recovery-runbooks.md).
+The CJIS evidence-pack workflow is documented in
+[docs/cjis-deployment-baseline.md](docs/cjis-deployment-baseline.md)
+and
+[docs/standards-mapping.md](docs/standards-mapping.md).
 The operator/admin runbooks and the acceptance checklist are documented
 in [docs/customer-pilot-runbooks.md](docs/customer-pilot-runbooks.md)
 and
