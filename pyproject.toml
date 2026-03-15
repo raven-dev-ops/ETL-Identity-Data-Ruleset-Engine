@@ -50,7 +50,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "etl_identity_engine.demo_shell" = ["templates/demo_shell/*.html"]
-"etl_identity_engine.ingest" = ["vendor_profiles/cad/*.yml"]
+"etl_identity_engine.ingest" = ["vendor_profiles/cad/*.yml", "vendor_profiles/rms/*.yml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

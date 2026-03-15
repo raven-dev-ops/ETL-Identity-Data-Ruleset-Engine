@@ -456,6 +456,78 @@ def _build_packaged_profile_public_safety_bundle(
                 "participation_role": "SUBJECT",
             }
         ]
+    elif profile_name == "rms_case_management_v1":
+        person_rows = [
+            {
+                "rms_person_key": "RMS-1",
+                "master_subject_id": "PS-10",
+                "subject_first_name": "Jordan",
+                "subject_last_name": "Mills",
+                "birth_date": "1985-03-12",
+                "residence_line1": "700 WEST TOWN STREET",
+                "residence_city": "Columbus",
+                "residence_state": "OH",
+                "residence_postal_code": "43004",
+                "contact_phone": "(555) 123-4567",
+                "row_last_modified_at": "2026-03-14T00:00:00Z",
+                "variant_flag": "false",
+                "variant_reason_codes": "",
+            }
+        ]
+        incident_rows = [
+            {
+                "report_key": "RMS-INC-1",
+                "report_received_at": "2026-03-14T12:00:00Z",
+                "offense_location": "700 WEST TOWN STREET",
+                "offense_city": "Columbus",
+                "offense_state": "OH",
+            }
+        ]
+        link_rows = [
+            {
+                "report_person_link_key": "RMS-LINK-1",
+                "report_key": "RMS-INC-1",
+                "master_subject_id": "PS-10",
+                "rms_person_key": "RMS-1",
+                "involvement_role": "WITNESS",
+            }
+        ]
+    elif profile_name == "rms_records_bureau_v1":
+        person_rows = [
+            {
+                "party_record_oid": "RMS-2",
+                "master_person_oid": "PS-20",
+                "given_name": "Casey",
+                "family_name": "Harper",
+                "dob_iso": "1979-11-05",
+                "address_text": "12 EAST STATE STREET",
+                "city_name": "Columbus",
+                "state_abbr": "OH",
+                "zip_code": "43004",
+                "phone_value": "5553334444",
+                "updated_timestamp": "2026-03-14T03:00:00Z",
+                "duplicate_flag": "false",
+                "duplicate_reason_codes": "",
+            }
+        ]
+        incident_rows = [
+            {
+                "report_number": "RMS-INC-2",
+                "incident_datetime": "2026-03-14T15:00:00Z",
+                "address_text": "12 EAST STATE STREET",
+                "city_name": "Columbus",
+                "state_abbr": "OH",
+            }
+        ]
+        link_rows = [
+            {
+                "report_party_oid": "RMS-LINK-2",
+                "report_number": "RMS-INC-2",
+                "master_person_oid": "PS-20",
+                "party_record_oid": "RMS-2",
+                "party_role": "SUSPECT",
+            }
+        ]
     else:
         raise AssertionError(f"Unsupported test vendor profile: {profile_name}")
 
@@ -464,7 +536,11 @@ def _build_packaged_profile_public_safety_bundle(
     _write_csv(root_dir / "vendor_incident_person_links.csv", link_rows)
 
     manifest_payload: dict[str, object] = {
-        "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        "contract_name": (
+            CAD_CALL_FOR_SERVICE_CONTRACT.contract_name
+            if profile_name.startswith("cad_")
+            else RMS_REPORT_PERSON_CONTRACT.contract_name
+        ),
         "contract_version": "v1",
         "files": {
             "person_records": "vendor_person_records.csv",
@@ -1061,6 +1137,54 @@ def test_run_all_supports_packaged_cad_vendor_profile_source_bundles(tmp_path: P
     assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
     public_safety_rows = _read_csv(base_dir / "data" / "public_safety_demo" / "incident_identity_view.csv")
     assert {row["incident_id"] for row in public_safety_rows} == {"CAD-INC-2", "RMS-INC-1"}
+
+
+def test_run_all_supports_packaged_rms_vendor_profile_source_bundles(tmp_path: Path) -> None:
+    landing_dir = tmp_path / "landing"
+    _write_csv(
+        landing_dir / "agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_parquet(
+        landing_dir / "agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    cad_bundle_dir = _build_public_safety_bundle(
+        landing_dir / "cad_bundle",
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+    )
+    rms_bundle_dir = _build_packaged_profile_public_safety_bundle(
+        landing_dir / "rms_vendor_profile_bundle",
+        profile_name="rms_records_bureau_v1",
+        include_marker_vendor_profile=False,
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "rms-vendor-profile-run-all-manifest.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            source_bundles_block=f"""
+source_bundles:
+  - bundle_id: cad_primary
+    source_class: cad
+    path: {cad_bundle_dir.name}
+    contract_name: cad_call_for_service
+    contract_version: v1
+  - bundle_id: rms_primary
+    source_class: rms
+    path: {rms_bundle_dir.name}
+    contract_name: rms_report_person
+    contract_version: v1
+    vendor_profile: rms_records_bureau_v1
+""",
+        ),
+    )
+    base_dir = tmp_path / "rms-vendor-profile-run"
+
+    assert main(["run-all", "--base-dir", str(base_dir), "--manifest", str(manifest_path)]) == 0
+
+    public_safety_rows = _read_csv(base_dir / "data" / "public_safety_demo" / "incident_identity_view.csv")
+    assert {row["incident_id"] for row in public_safety_rows} == {"CAD-INC-1", "RMS-INC-2"}
 
 
 def test_resolve_batch_manifest_supports_object_storage_memory_uris(tmp_path: Path) -> None:

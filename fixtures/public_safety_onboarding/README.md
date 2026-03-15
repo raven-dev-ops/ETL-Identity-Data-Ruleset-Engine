@@ -31,3 +31,8 @@ be applied during validation without a bundle-local overlay file:
 
 - `cad_county_dispatch_v1`
 - `cad_records_management_v1`
+
+It also now ships packaged RMS vendor profiles:
+
+- `rms_case_management_v1`
+- `rms_records_bureau_v1`

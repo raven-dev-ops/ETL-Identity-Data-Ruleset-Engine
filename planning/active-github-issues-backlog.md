@@ -70,7 +70,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 118) Add packaged vendor profile overlays for common RMS exports
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.3.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: none
@@ -294,6 +294,6 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#111`, `#112`, and `#113`
 - Open child issues represented in this local active catalog:
-  `#115` through `#125`
+  `#116` through `#125`
 - Open milestones in GitHub for this backlog:
   `v1.3.0`, `v1.4.0`, and `v1.5.0`

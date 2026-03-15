@@ -400,6 +400,82 @@ def _packaged_vendor_profile_rows(profile_name: str) -> tuple[list[dict[str, str
                 }
             ],
         )
+    if profile_name == "rms_case_management_v1":
+        return (
+            [
+                {
+                    "rms_person_key": "RMS-1",
+                    "master_subject_id": "P-10",
+                    "subject_first_name": "Morgan",
+                    "subject_last_name": "Lee",
+                    "birth_date": "1984-02-18",
+                    "residence_line1": "900 SOUTH FRONT STREET",
+                    "residence_city": "Columbus",
+                    "residence_state": "OH",
+                    "residence_postal_code": "43004",
+                    "contact_phone": "5551112222",
+                    "row_last_modified_at": "2026-03-14T02:00:00Z",
+                    "variant_flag": "false",
+                    "variant_reason_codes": "",
+                }
+            ],
+            [
+                {
+                    "report_key": "RMS-INC-1",
+                    "report_received_at": "2026-03-14T14:00:00Z",
+                    "offense_location": "900 SOUTH FRONT STREET",
+                    "offense_city": "Columbus",
+                    "offense_state": "OH",
+                }
+            ],
+            [
+                {
+                    "report_person_link_key": "RMS-LINK-1",
+                    "report_key": "RMS-INC-1",
+                    "master_subject_id": "P-10",
+                    "rms_person_key": "RMS-1",
+                    "involvement_role": "VICTIM",
+                }
+            ],
+        )
+    if profile_name == "rms_records_bureau_v1":
+        return (
+            [
+                {
+                    "party_record_oid": "RMS-2",
+                    "master_person_oid": "P-20",
+                    "given_name": "Avery",
+                    "family_name": "Brooks",
+                    "dob_iso": "1979-11-05",
+                    "address_text": "12 EAST STATE STREET",
+                    "city_name": "Columbus",
+                    "state_abbr": "OH",
+                    "zip_code": "43004",
+                    "phone_value": "5553334444",
+                    "updated_timestamp": "2026-03-14T03:00:00Z",
+                    "duplicate_flag": "false",
+                    "duplicate_reason_codes": "",
+                }
+            ],
+            [
+                {
+                    "report_number": "RMS-INC-2",
+                    "incident_datetime": "2026-03-14T15:00:00Z",
+                    "address_text": "12 EAST STATE STREET",
+                    "city_name": "Columbus",
+                    "state_abbr": "OH",
+                }
+            ],
+            [
+                {
+                    "report_party_oid": "RMS-LINK-2",
+                    "report_number": "RMS-INC-2",
+                    "master_person_oid": "P-20",
+                    "party_record_oid": "RMS-2",
+                    "party_role": "ARRESTEE",
+                }
+            ],
+        )
     raise AssertionError(f"Unsupported test vendor profile: {profile_name}")
 
 
@@ -418,7 +494,11 @@ def _build_packaged_vendor_profile_bundle(
     _write_csv(bundle_dir / "vendor_incident_person_links.csv", link_rows, tuple(link_rows[0]))
     _write_contract_manifest(
         bundle_dir,
-        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        contract_name=(
+            CAD_CALL_FOR_SERVICE_CONTRACT.contract_name
+            if profile_name.startswith("cad_")
+            else RMS_REPORT_PERSON_CONTRACT.contract_name
+        ),
         vendor_profile=profile_name if include_marker_vendor_profile else None,
         files={
             "person_records": "vendor_person_records.csv",
@@ -488,15 +568,18 @@ def test_validate_public_safety_contract_accepts_vendor_overlay_bundle(tmp_path:
 
 
 @pytest.mark.parametrize(
-    "profile_name,expected_source_record_id,expected_incident_id",
+    "profile_name,expected_contract_name,expected_source_record_id,expected_incident_id",
     [
-        ("cad_county_dispatch_v1", "CAD-1", "CAD-INC-1"),
-        ("cad_records_management_v1", "CAD-2", "CAD-INC-2"),
+        ("cad_county_dispatch_v1", CAD_CALL_FOR_SERVICE_CONTRACT.contract_name, "CAD-1", "CAD-INC-1"),
+        ("cad_records_management_v1", CAD_CALL_FOR_SERVICE_CONTRACT.contract_name, "CAD-2", "CAD-INC-2"),
+        ("rms_case_management_v1", RMS_REPORT_PERSON_CONTRACT.contract_name, "RMS-1", "RMS-INC-1"),
+        ("rms_records_bureau_v1", RMS_REPORT_PERSON_CONTRACT.contract_name, "RMS-2", "RMS-INC-2"),
     ],
 )
-def test_validate_public_safety_contract_accepts_packaged_cad_vendor_profiles(
+def test_validate_public_safety_contract_accepts_packaged_vendor_profiles(
     tmp_path: Path,
     profile_name: str,
+    expected_contract_name: str,
     expected_source_record_id: str,
     expected_incident_id: str,
 ) -> None:
@@ -504,7 +587,7 @@ def test_validate_public_safety_contract_accepts_packaged_cad_vendor_profiles(
 
     validated = validate_public_safety_contract_bundle(bundle_dir)
 
-    assert validated.contract_name == CAD_CALL_FOR_SERVICE_CONTRACT.contract_name
+    assert validated.contract_name == expected_contract_name
     assert validated.vendor_profile == profile_name
     assert validated.mapping_overlay_relative_path is None
     assert validated.files[0].fieldnames == PERSON_HEADERS
@@ -519,9 +602,11 @@ def test_validate_public_safety_contract_accepts_packaged_cad_vendor_profiles(
     [
         ("cad_county_dispatch_v1", "given_name"),
         ("cad_records_management_v1", "first"),
+        ("rms_case_management_v1", "subject_first_name"),
+        ("rms_records_bureau_v1", "given_name"),
     ],
 )
-def test_validate_public_safety_contract_rejects_invalid_packaged_cad_vendor_profiles(
+def test_validate_public_safety_contract_rejects_invalid_packaged_vendor_profiles(
     tmp_path: Path,
     profile_name: str,
     missing_column: str,
@@ -724,3 +809,32 @@ def test_validate_public_safety_contract_cli_accepts_packaged_vendor_profile(
     summary = json.loads(capsys.readouterr().out)
     assert summary["vendor_profile"] == "cad_county_dispatch_v1"
     assert summary["files"]["person_records"]["fieldnames"] == list(PERSON_HEADERS)
+
+
+def test_validate_public_safety_contract_cli_accepts_packaged_rms_vendor_profile(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bundle_dir = _build_packaged_vendor_profile_bundle(
+        tmp_path,
+        profile_name="rms_case_management_v1",
+        include_marker_vendor_profile=False,
+    )
+
+    assert (
+        main(
+            [
+                "validate-public-safety-contract",
+                "--bundle-dir",
+                str(bundle_dir),
+                "--vendor-profile",
+                "rms_case_management_v1",
+            ]
+        )
+        == 0
+    )
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["contract_name"] == RMS_REPORT_PERSON_CONTRACT.contract_name
+    assert summary["vendor_profile"] == "rms_case_management_v1"
+    assert summary["files"]["incident_records"]["fieldnames"] == list(INCIDENT_HEADERS)

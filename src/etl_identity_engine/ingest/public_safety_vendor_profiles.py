@@ -43,6 +43,22 @@ PACKAGED_PUBLIC_SAFETY_VENDOR_PROFILES = {
         description="Records-oriented CAD export with call and subject identifiers.",
         resource_path="vendor_profiles/cad/cad_records_management_v1.yml",
     ),
+    "rms_case_management_v1": PublicSafetyVendorProfile(
+        name="rms_case_management_v1",
+        contract_name="rms_report_person",
+        contract_version="v1",
+        source_system="rms",
+        description="Case-management RMS export with report, subject, and involvement identifiers.",
+        resource_path="vendor_profiles/rms/rms_case_management_v1.yml",
+    ),
+    "rms_records_bureau_v1": PublicSafetyVendorProfile(
+        name="rms_records_bureau_v1",
+        contract_name="rms_report_person",
+        contract_version="v1",
+        source_system="rms",
+        description="Records-bureau RMS export with report, party, and master-person references.",
+        resource_path="vendor_profiles/rms/rms_records_bureau_v1.yml",
+    ),
 }
 
 

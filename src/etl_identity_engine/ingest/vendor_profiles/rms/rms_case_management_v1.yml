@@ -1,0 +1,37 @@
+overlay_version: v1
+contract_name: rms_report_person
+contract_version: v1
+files:
+  person_records:
+    columns:
+      source_record_id: rms_person_key
+      person_entity_id: master_subject_id
+      first_name: subject_first_name
+      last_name: subject_last_name
+      dob: birth_date
+      address: residence_line1
+      city: residence_city
+      state: residence_state
+      postal_code: residence_postal_code
+      phone: contact_phone
+      updated_at: row_last_modified_at
+      is_conflict_variant: variant_flag
+      conflict_types: variant_reason_codes
+    defaults:
+      source_system: rms
+  incident_records:
+    columns:
+      incident_id: report_key
+      occurred_at: report_received_at
+      location: offense_location
+      city: offense_city
+      state: offense_state
+    defaults:
+      source_system: rms
+  incident_person_links:
+    columns:
+      incident_person_link_id: report_person_link_key
+      incident_id: report_key
+      person_entity_id: master_subject_id
+      source_record_id: rms_person_key
+      role: involvement_role

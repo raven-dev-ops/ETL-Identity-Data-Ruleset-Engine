@@ -32,7 +32,7 @@ of truth for tracked work; this file is the short maintainer view.
 ## Gaps Now Explicitly Tracked
 
 - [x] Packaged CAD vendor profile overlays
-- [ ] Packaged RMS vendor profile overlays
+- [x] Packaged RMS vendor profile overlays
 - [ ] Onboarding diff reports for unmapped columns and contract drift
 - [ ] Syntheticized vendor-batch example generation
 - [ ] Detached-signature support for customer handoff manifests
@@ -46,4 +46,4 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Next: implement local catalog `#118` / GitHub issue `#115`.
+- Next: implement local catalog `#119` / GitHub issue `#116`.

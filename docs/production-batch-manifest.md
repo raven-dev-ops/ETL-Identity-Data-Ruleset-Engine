@@ -100,7 +100,8 @@ For supported packaged onboarding profiles, a source bundle may instead
 declare `vendor_profile`. That lets operators select a shipped mapping
 profile without adding a bundle-local overlay file. `mapping_overlay`
 and `vendor_profile` are mutually exclusive for the same source bundle.
-The current shipped packaged profiles cover CAD onboarding only.
+The current shipped packaged profiles cover both CAD and RMS
+onboarding.
 
 ## Supported Schema
 
