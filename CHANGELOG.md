@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-14
+
 - Added versioned `cad_call_for_service` and `rms_report_person`
   public-safety source-bundle contracts, including a contract marker
   file, required file-role validation, referential integrity checks, and

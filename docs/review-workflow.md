@@ -93,7 +93,7 @@ In JWT mode, the caller must have:
 ## Compatibility
 
 The documented review lifecycle states and persisted operator commands
-are the stable workflow automation surface for the current `0.x` line.
+are the stable workflow automation surface for the current release line.
 
 External operators should treat:
 

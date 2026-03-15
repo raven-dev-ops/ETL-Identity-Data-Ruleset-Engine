@@ -67,9 +67,9 @@ prototype working files directly.
 The current authenticated API is versioned by path prefix under `/api/v1`.
 
 The operational health endpoints `GET /healthz` and `GET /readyz` are
-also part of the documented service surface for the current `0.x` line.
+also part of the documented service surface for the current release line.
 They are not path-versioned separately, so their paths and documented
-response meaning remain stable within the current `0.x` line.
+response meaning remain stable within the current release line.
 
 Within `v1`, the runtime may:
 
@@ -97,7 +97,7 @@ For documented paginated collection endpoints:
   current implementation uses offset-style tokens
 - a page token is only valid when reused with the same endpoint,
   filters, and sort order that produced it
-- documented sort names remain stable within the current `0.x` line
+- documented sort names remain stable within the current release line
 - adding new optional filters or sort names is additive; changing the
   meaning of an existing sort name is breaking
 
@@ -121,9 +121,9 @@ within the same contract version.
 The documented persisted operator workflow commands are unversioned, so
 their compatibility policy is narrower:
 
-- documented command names remain stable within the current `0.x` line
+- documented command names remain stable within the current release line
 - documented flags and lifecycle-state values remain stable within the
-  current `0.x` line
+  current release line
 - JSON responses may add new fields
 - existing documented JSON keys are not removed or renamed without a
   documented deprecation cycle

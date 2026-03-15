@@ -67,7 +67,7 @@ reused a prior completed export for the same `export_key`.
 
 The documented command names, flags, audit states, and top-level JSON
 workflow shape are the stable operator automation surface for the
-current `0.x` line.
+current release line.
 
 ## Audit Model
 

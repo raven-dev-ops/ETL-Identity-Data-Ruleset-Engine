@@ -166,11 +166,11 @@ is included in the repository.
   The current service line supports paginated read-side lists and
   lookups plus operator-only review decision, replay, publish, and
   export-trigger actions.
-- The supported matching track for the current `0.x` line is
+- The supported matching track for the current release line is
   deterministic and explainable: exact matches plus heuristic partial
   and phonetic signals. ML-assisted scoring is intentionally out of
   scope for the supported public line.
-- The supported manual-review operating model for the current `0.x` line
+- The supported manual-review operating model for the current release line
   now has two layers: the CSV queue artifact remains the portable file
   handoff, and persisted runs can also track review-case status,
   assignee, timestamps, and notes in the configured state store.

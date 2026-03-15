@@ -18,14 +18,14 @@ SPEC.loader.exec_module(MODULE)
 
 def test_build_bundle_name_uses_expected_pattern() -> None:
     assert (
-        MODULE.build_bundle_name("0.9.2", "public-safety-regressions")
-        == "etl-identity-engine-v0.9.2-customer-pilot-public-safety-regressions.zip"
+        MODULE.build_bundle_name("1.0.0", "public-safety-regressions")
+        == "etl-identity-engine-v1.0.0-customer-pilot-public-safety-regressions.zip"
     )
 
 
 def test_build_manifest_contains_expected_fields() -> None:
     manifest = MODULE.build_manifest(
-        version="0.9.2",
+        version="1.0.0",
         pilot_name="public-safety-regressions",
         generated_at_utc="2026-03-15T00:00:00Z",
         source_commit="abc123",
@@ -44,7 +44,7 @@ def test_build_manifest_contains_expected_fields() -> None:
     assert manifest == {
         "project": "etl-identity-engine",
         "bundle_type": "customer_pilot",
-        "version": "0.9.2",
+        "version": "1.0.0",
         "pilot_name": "public-safety-regressions",
         "generated_at_utc": "2026-03-15T00:00:00Z",
         "source_commit": "abc123",
@@ -63,7 +63,7 @@ def test_build_manifest_contains_expected_fields() -> None:
 
 def test_build_handoff_manifest_contains_expected_fields() -> None:
     manifest = MODULE.build_handoff_manifest(
-        version="0.9.2",
+        version="1.0.0",
         pilot_name="public-safety-regressions",
         generated_at_utc="2026-03-15T00:00:00Z",
         source_commit="abc123",
@@ -82,7 +82,7 @@ def test_build_handoff_manifest_contains_expected_fields() -> None:
     assert manifest == {
         "project": "etl-identity-engine",
         "bundle_type": "customer_pilot",
-        "version": "0.9.2",
+        "version": "1.0.0",
         "pilot_name": "public-safety-regressions",
         "generated_at_utc": "2026-03-15T00:00:00Z",
         "source_commit": "abc123",
@@ -104,7 +104,7 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
         output_dir=tmp_path,
         source_manifest=Path("fixtures/public_safety_regressions/manifest.yml"),
         pilot_name="public-safety-regressions",
-        version="0.9.2",
+        version="1.0.0",
     )
 
     assert bundle_path.exists()

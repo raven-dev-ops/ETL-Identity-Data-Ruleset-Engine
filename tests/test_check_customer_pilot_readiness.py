@@ -24,7 +24,7 @@ def _write_sample_bundle_root(root: Path) -> None:
             {
                 "project": "etl-identity-engine",
                 "bundle_type": "customer_pilot",
-                "version": "0.9.2",
+                "version": "1.0.0",
                 "pilot_name": "public-safety-regressions",
                 "generated_at_utc": "2026-03-15T00:00:00Z",
                 "source_commit": "abc123",
@@ -67,7 +67,7 @@ def _write_sample_bundle_root(root: Path) -> None:
     handoff_manifest = {
         "project": "etl-identity-engine",
         "bundle_type": "customer_pilot",
-        "version": "0.9.2",
+        "version": "1.0.0",
         "pilot_name": "public-safety-regressions",
         "generated_at_utc": "2026-03-15T00:00:00Z",
         "source_commit": "abc123",

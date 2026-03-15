@@ -3,7 +3,7 @@
 The current runtime path uses external YAML config for blocking passes,
 field weights, and threshold bands.
 
-The supported matching strategy for the public `0.x` line remains a
+The supported matching strategy for the public release line remains a
 deterministic, explainable heuristic scorer. ML-assisted scoring is
 intentionally out of scope for the supported runtime surface.
 

@@ -19,7 +19,7 @@ golden records, and reporting artifacts.
   targets are now available.
 - The supported matching engine remains deterministic and explainable:
   exact signals plus heuristic partial and phonetic-name scoring. The
-  public `0.x` line does not introduce an ML-assisted scorer.
+  public release line does not introduce an ML-assisted scorer.
 - The supported manual-review model now includes persisted review-case
   state when persisted-state support is enabled. The CSV queue remains the
   portable file artifact, and approved or rejected review decisions now

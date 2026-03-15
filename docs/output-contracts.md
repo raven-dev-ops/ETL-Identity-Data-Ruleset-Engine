@@ -1,7 +1,7 @@
 # Output Contracts
 
 This repository treats the pipeline artifacts below as stable contracts
-for the current `0.x` release line. Contract tests validate the file
+for the current release line. Contract tests validate the file
 names, CSV headers, and summary-object shape before merge.
 
 CSV artifacts always write a header row, even when a run produces zero
