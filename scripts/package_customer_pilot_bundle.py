@@ -160,17 +160,17 @@ def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, sou
                 "- `seed_run/data/`: raw pipeline outputs from the seeded run",
                 "- `state/pipeline_state.sqlite`: persisted pipeline state for the seeded run",
                 "- `demo_shell/`: the prepared Django + SQLite demo shell workspace",
-                "- `runtime/`: minimal ETL Identity Engine source payload and dependency list",
+                "- `runtime/`: ETL Identity Engine source payload, config, and dependency list",
                 "- `launch/`: quick startup helpers for local walkthroughs",
                 "- `tools/rebuild_demo_shell.py`: rebuild the demo shell from the shipped persisted state",
+                "- `tools/bootstrap_windows_pilot.py`: Windows-first bootstrap for the PostgreSQL-backed single-host pilot path",
                 "",
                 "## Quick Start",
                 "",
                 "1. Install Python 3.11 or newer.",
-                "2. Create and activate a virtual environment.",
-                "3. Install the pilot runtime dependencies:",
-                "   `python -m pip install -r runtime/requirements-pilot.txt`",
-                "4. Start the local walkthrough:",
+                "2. On Windows with Docker Desktop available, run:",
+                "   `powershell -ExecutionPolicy Bypass -File .\\launch\\bootstrap_windows_pilot.ps1`",
+                "3. Or use the portable seeded SQLite walkthrough:",
                 "   - Windows PowerShell: `./launch/start_demo_shell.ps1`",
                 "   - Bash: `./launch/start_demo_shell.sh`",
                 "",
@@ -190,6 +190,7 @@ def _write_runtime_payload(*, destination_root: Path) -> None:
     runtime_root = destination_root / "runtime"
     (runtime_root / "src").mkdir(parents=True, exist_ok=True)
     _copy_tree_files(REPO_ROOT / "src" / "etl_identity_engine", runtime_root / "src" / "etl_identity_engine")
+    _copy_tree_files(REPO_ROOT / "config", runtime_root / "config")
     (runtime_root / "manage_public_safety_demo.py").write_text(
         """from __future__ import annotations
 
@@ -288,6 +289,12 @@ if __name__ == "__main__":
     )
 
 
+def _write_windows_bootstrap_tool(*, destination_root: Path) -> None:
+    tool_path = destination_root / "tools" / "bootstrap_windows_pilot.py"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / "scripts" / "bootstrap_windows_customer_pilot.py", tool_path)
+
+
 def _write_launch_helpers(*, destination_root: Path) -> tuple[str, ...]:
     launch_root = destination_root / "launch"
     launch_root.mkdir(parents=True, exist_ok=True)
@@ -323,10 +330,18 @@ python "${ROOT_DIR}/tools/rebuild_demo_shell.py" --host "${HOST}" --port "${PORT
 """,
         encoding="utf-8",
     )
+
+    bootstrap_powershell_path = launch_root / "bootstrap_windows_pilot.ps1"
+    shutil.copy2(
+        REPO_ROOT / "scripts" / "bootstrap_windows_customer_pilot.ps1",
+        bootstrap_powershell_path,
+    )
     return (
         "launch/start_demo_shell.ps1",
         "launch/start_demo_shell.sh",
+        "launch/bootstrap_windows_pilot.ps1",
         "tools/rebuild_demo_shell.py",
+        "tools/bootstrap_windows_pilot.py",
     )
 
 
@@ -426,6 +441,7 @@ def package_customer_pilot_bundle(
         _close_django_connections()
         _write_runtime_payload(destination_root=staging_root)
         _write_rebuild_tool(destination_root=staging_root)
+        _write_windows_bootstrap_tool(destination_root=staging_root)
         launch_helpers = _write_launch_helpers(destination_root=staging_root)
         _write_pilot_readme(
             destination=staging_root / "README.md",

@@ -57,6 +57,7 @@ def test_parse_backlog_active_catalog() -> None:
         111,
         112,
         113,
+        114,
     ]
     assert parsed.epics[0].description_items == (
         "Epic created from planning/active-github-issues-backlog.md",
@@ -71,7 +72,7 @@ def test_select_sync_backlog_skips_closed_catalog_entries_by_default() -> None:
 
     sync_backlog = MODULE.select_sync_backlog(parsed, include_closed=False)
 
-    assert len(sync_backlog.issues) == 3
+    assert len(sync_backlog.issues) == 2
     assert {issue.status for issue in sync_backlog.issues} == {"open"}
     assert sync_backlog.milestones == ("v1.2.0",)
 

@@ -35,14 +35,19 @@ of truth for tracked work; this file is the short maintainer view.
   customer pilot bundle can be built from the seeded public-safety
   regression manifest and now includes persisted state, the prepared
   Django demo shell, a minimal runtime payload, and startup helpers.
+- The second `v1.2.0` pilot-handoff slice is now in-repo: the shipped
+  customer pilot bundle now includes a Windows-first bootstrap path
+  that provisions local PostgreSQL, rebuilds the seeded run into that
+  state store, and prepares the Django shell with generated launch and
+  runtime config helpers.
 - GitHub sync is complete for the new backlog cycle with the remaining
   open epic `#98`.
 
 ## Open Task Groups
 
 - [ ] `v1.2.0` Customer deployment packaging and pilot handoff
-  - Local catalog issues: `#114` through `#116`
-  - Open GitHub issues: `#108` through `#110`
+  - Local catalog issues: `#115` through `#116`
+  - Open GitHub issues: `#109` through `#110`
 
 ## Gaps Now Explicitly Tracked
 
@@ -55,11 +60,11 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Service and demo-shell read models over persisted public-safety activity
 - [x] Regression fixtures for cross-system same-person and false-merge cases
 - [x] Standalone customer pilot bundle with seeded state and launch helpers
-- [ ] Windows-first single-host pilot bootstrap
+- [x] Windows-first single-host pilot bootstrap
 - [ ] Customer readiness check and handoff manifest
 - [ ] Operator/admin runbooks and pilot acceptance checklist
 
 ## Next Step
 
-- Next: local catalog issue `#114`: Windows-first single-host pilot
-  bootstrap.
+- Next: local catalog issue `#115`: customer readiness check and
+  handoff manifest.

@@ -90,6 +90,7 @@ ETL-Identity-Data-Ruleset-Engine/
     service-api.md
     standards-mapping.md
     survivorship.md
+    windows-pilot-bootstrap.md
   planning/
     active-github-issues-backlog.md
     github-issues-backlog.md
@@ -104,6 +105,8 @@ ETL-Identity-Data-Ruleset-Engine/
   scripts/
     bootstrap_venv.ps1
     bootstrap_venv.sh
+    bootstrap_windows_customer_pilot.ps1
+    bootstrap_windows_customer_pilot.py
     build_public_safety_demo_site.py
     container_smoke_test.py
     container_supply_chain_check.py
@@ -143,6 +146,7 @@ ETL-Identity-Data-Ruleset-Engine/
       streaming.py
   tests/
     test_benchmarking.py
+    test_bootstrap_windows_customer_pilot.py
     test_build_public_safety_demo_site.py
     conftest.py
     test_generate.py

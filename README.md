@@ -229,6 +229,7 @@ is included in the repository.
 - [Release Process](docs/release-process.md)
 - [RMS Source Contract](docs/rms-source-contract.md)
 - [Standards Mapping](docs/standards-mapping.md)
+- [Windows Pilot Bootstrap](docs/windows-pilot-bootstrap.md)
 
 ## Maintainer Release Bundle
 
@@ -441,6 +442,10 @@ python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot
 That bundle is documented in
 [docs/customer-pilot-bundle.md](docs/customer-pilot-bundle.md) and is
 the current handoff path for a local public-safety pilot walkthrough.
+
+For the supported Windows-first single-host pilot path over local
+PostgreSQL, use the documented bootstrap in
+[docs/windows-pilot-bootstrap.md](docs/windows-pilot-bootstrap.md).
 
 If you need a purely static handoff instead, the older static-site path
 is still available:

@@ -221,7 +221,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 114) Add a Windows-first single-host pilot installer/bootstrap for the Django and PostgreSQL baseline
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.2.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
 - Depends on: #113
@@ -299,7 +299,7 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#98`
 - Open child issues represented in this local active catalog:
-  `#108` through `#110`
+  `#109` through `#110`
 - Open milestones in GitHub for this backlog:
   `v1.2.0`
 - Closed backlog history remains in:

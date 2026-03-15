@@ -33,7 +33,11 @@ def test_build_manifest_contains_expected_fields() -> None:
         source_run_id="RUN-EXAMPLE",
         state_db="state/pipeline_state.sqlite",
         demo_shell_dir="demo_shell",
-        launch_helpers=("launch/start_demo_shell.ps1", "launch/start_demo_shell.sh"),
+        launch_helpers=(
+            "launch/start_demo_shell.ps1",
+            "launch/start_demo_shell.sh",
+            "launch/bootstrap_windows_pilot.ps1",
+        ),
         artifacts=("README.md",),
     )
 
@@ -48,7 +52,11 @@ def test_build_manifest_contains_expected_fields() -> None:
         "source_run_id": "RUN-EXAMPLE",
         "state_db": "state/pipeline_state.sqlite",
         "demo_shell_dir": "demo_shell",
-        "launch_helpers": ["launch/start_demo_shell.ps1", "launch/start_demo_shell.sh"],
+        "launch_helpers": [
+            "launch/start_demo_shell.ps1",
+            "launch/start_demo_shell.sh",
+            "launch/bootstrap_windows_pilot.ps1",
+        ],
         "artifacts": ["README.md"],
     }
 
@@ -73,9 +81,12 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
             "demo_shell/bundle/data/public_safety_demo/public_safety_demo_summary.json",
             "launch/start_demo_shell.ps1",
             "launch/start_demo_shell.sh",
+            "launch/bootstrap_windows_pilot.ps1",
             "tools/rebuild_demo_shell.py",
+            "tools/bootstrap_windows_pilot.py",
             "runtime/manage_public_safety_demo.py",
             "runtime/requirements-pilot.txt",
+            "runtime/config/runtime_environments.yml",
             "runtime/src/etl_identity_engine/demo_shell/settings.py",
             "seed_dataset/manifest.yml",
             "seed_run/data/golden/golden_person_records.csv",
