@@ -33,11 +33,16 @@ Start from:
 The shipped preflight expects these categories to be configured:
 
 - state store: `ETL_IDENTITY_STATE_DB`
-- object storage: access and secret key
-- JWT auth: issuer, audience, public key
+- object storage: access and secret key, preferably through
+  `ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY_FILE` and
+  `ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY_FILE`
+- JWT auth: issuer, audience, and a PEM public key, preferably through
+  `ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM_FILE`
 - TLS material: certificate and key paths
 - audit path: `ETL_IDENTITY_AUDIT_LOG_DIR`
 - backup path: `ETL_IDENTITY_BACKUP_ROOT`
+- optional runtime auth rotation gate:
+  - `ETL_IDENTITY_RUNTIME_AUTH_MAX_AGE_HOURS`
 - deployment attestations:
   - `ETL_IDENTITY_CJIS_ENCRYPTION_AT_REST`
   - `ETL_IDENTITY_CJIS_MFA_ENFORCED`
@@ -55,12 +60,24 @@ Run the repo-side preflight before deployment signoff:
 python scripts/cjis_preflight_check.py --environment cjis --runtime-config config/runtime_environments.yml
 ```
 
+For a service-only startup gate over the same runtime profile:
+
+```bash
+python -m etl_identity_engine.cli check-runtime-auth-material \
+  --environment cjis \
+  --runtime-config config/runtime_environments.yml \
+  --max-secret-file-age-hours 720
+```
+
 What it enforces:
 
 - the selected runtime environment loads cleanly
 - state storage resolves to PostgreSQL, not SQLite
 - service auth is JWT on the `Authorization` header
 - JWT validation is pinned to `RS256`
+- mounted secret-file inputs resolve cleanly when `_FILE` variables are
+  used
+- file-backed auth material can be age-checked for rotation health
 - object-storage secrets are present
 - required TLS, audit, and backup paths exist
 - required deployment attestation flags are affirmative

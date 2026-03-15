@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import json
 import os
 from pathlib import Path
 from typing import Sequence
 
-from etl_identity_engine.runtime_config import load_runtime_environment
+from etl_identity_engine.runtime_config import evaluate_runtime_auth_material, load_runtime_environment
 from etl_identity_engine.storage.state_store_target import resolve_state_store_target
 
 
@@ -43,6 +44,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Optional JSON output path for the preflight summary.",
     )
+    parser.add_argument(
+        "--max-secret-file-age-hours",
+        default=None,
+        type=float,
+        help="Optional maximum allowed age for file-backed runtime auth material.",
+    )
     return parser.parse_args(argv)
 
 
@@ -52,20 +59,36 @@ def _bool_env_ok(value: str | None) -> bool:
     return value.strip().lower() in BOOLEAN_TRUE_VALUES
 
 
+def _resolve_max_secret_file_age_hours(
+    configured_value: float | None,
+    *,
+    environ: Mapping[str, str],
+) -> float | None:
+    if configured_value is not None:
+        return float(configured_value)
+    raw_value = str(environ.get("ETL_IDENTITY_RUNTIME_AUTH_MAX_AGE_HOURS", "") or "").strip()
+    if not raw_value:
+        return None
+    return float(raw_value)
+
+
 def evaluate_cjis_preflight(
     *,
     environment_name: str,
     runtime_config_path: Path,
     environ: dict[str, str] | None = None,
+    max_secret_file_age_hours: float | None = None,
 ) -> dict[str, object]:
     effective_environ = dict(os.environ if environ is None else environ)
-    previous_env = os.environ.copy()
-    os.environ.update(effective_environ)
-    try:
-        environment = load_runtime_environment(environment_name, runtime_config_path)
-    finally:
-        os.environ.clear()
-        os.environ.update(previous_env)
+    resolved_max_secret_file_age_hours = _resolve_max_secret_file_age_hours(
+        max_secret_file_age_hours,
+        environ=effective_environ,
+    )
+    environment = load_runtime_environment(
+        environment_name,
+        runtime_config_path,
+        environ=effective_environ,
+    )
 
     checks: list[dict[str, object]] = []
     errors: list[str] = []
@@ -127,27 +150,18 @@ def evaluate_cjis_preflight(
         )
         if algorithms != ("RS256",):
             errors.append("CJIS baseline requires RS256 JWT validation in the shipped runtime profile")
-        checks.append(
-            {
-                "check": "jwt_public_key",
-                "status": "ok" if bool(service_auth.jwt_public_key_pem) else "error",
-                "detail": "configured" if service_auth.jwt_public_key_pem else "missing",
-            }
-        )
         if not service_auth.jwt_public_key_pem:
             errors.append("CJIS baseline requires a configured JWT public key")
 
-    for secret_key in ("object_storage_access_key", "object_storage_secret_key"):
-        secret_value = environment.secrets.get(secret_key, "")
-        checks.append(
-            {
-                "check": f"secret:{secret_key}",
-                "status": "ok" if secret_value and secret_value != "disabled" else "error",
-                "detail": "configured" if secret_value and secret_value != "disabled" else "missing",
-            }
-        )
-        if not secret_value or secret_value == "disabled":
-            errors.append(f"CJIS baseline requires {secret_key} to be configured")
+    runtime_auth_summary = evaluate_runtime_auth_material(
+        environment_name,
+        runtime_config_path,
+        environ=effective_environ,
+        include_declared_secrets=True,
+        max_secret_file_age_hours=resolved_max_secret_file_age_hours,
+    )
+    checks.extend(runtime_auth_summary["checks"])
+    errors.extend(str(error) for error in runtime_auth_summary["errors"])
 
     for env_name in PATH_ENV_VARS:
         env_value = effective_environ.get(env_name, "").strip()
@@ -186,12 +200,14 @@ def evaluate_cjis_preflight(
         if not env_value:
             errors.append(f"{env_name} must be configured")
 
+    deduplicated_errors = list(dict.fromkeys(errors))
     return {
         "environment": environment_name,
         "runtime_config_path": str(runtime_config_path.resolve()),
-        "status": "ok" if not errors else "error",
+        "max_secret_file_age_hours": resolved_max_secret_file_age_hours,
+        "status": "ok" if not deduplicated_errors else "error",
         "checks": checks,
-        "errors": errors,
+        "errors": deduplicated_errors,
     }
 
 
@@ -200,6 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = evaluate_cjis_preflight(
         environment_name=args.environment,
         runtime_config_path=Path(args.runtime_config),
+        max_secret_file_age_hours=args.max_secret_file_age_hours,
     )
     if args.output:
         output_path = Path(args.output)

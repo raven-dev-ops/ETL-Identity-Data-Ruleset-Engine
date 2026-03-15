@@ -38,6 +38,11 @@ Both runtime environment files and per-environment YAML overlays support
 - `${ENV_VAR}` requires the variable to be present at runtime.
 - `${ENV_VAR:-default}` falls back to `default` when the variable is not
   set.
+- For any placeholder-backed value, the runtime also supports a mounted
+  secret-file companion variable named `${ENV_VAR}_FILE`. When
+  `ENV_VAR` is unset and `ENV_VAR_FILE` points to a readable file, the
+  runtime reads the file contents, trims trailing whitespace, and uses
+  that value instead.
 
 This is the supported mechanism for secret-backed values in the current
 line. Secrets should not be committed directly into the repo config.
@@ -86,6 +91,7 @@ The stable service scope names for the current line are:
 - `runs:publish`
 - `golden:read`
 - `crosswalk:read`
+- `public_safety:read`
 - `review_cases:read`
 - `review_cases:write`
 - `exports:run`
@@ -96,9 +102,29 @@ The default production environment now uses JWT bearer auth with:
 - `ETL_IDENTITY_SERVICE_JWT_AUDIENCE`
 - `ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM`
 
+Mounted-secret deployments should prefer the `_FILE` companions instead:
+
+- `ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM_FILE`
+- `ETL_IDENTITY_SERVICE_READER_API_KEY_FILE`
+- `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY_FILE`
+- `ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY_FILE`
+- `ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY_FILE`
+
 If `mode: api_key` is configured and both API-key values resolve to
 blank strings, service auth is treated as unconfigured. `serve-api`
 then fails fast until the deployment environment provides both values.
+
+For startup and periodic rotation checks, use:
+
+```bash
+python -m etl_identity_engine.cli check-runtime-auth-material \
+  --environment prod \
+  --max-secret-file-age-hours 720
+```
+
+`serve-api` accepts the same `--max-secret-file-age-hours` option and
+also honors `ETL_IDENTITY_RUNTIME_AUTH_MAX_AGE_HOURS` when you want the
+rotation-age gate to come from the deployment environment.
 
 The `cjis` environment is stricter than `prod` in one important way: it
 pins JWT validation to `RS256`, requires deployment-supplied object

@@ -1,11 +1,14 @@
 import csv
 from pathlib import Path
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 import pytest
 
 from etl_identity_engine.cli import main
 from etl_identity_engine.runtime_config import (
     ConfigValidationError,
+    evaluate_runtime_auth_material,
     load_benchmark_fixture_configs,
     load_pipeline_config,
     load_runtime_environment,
@@ -119,6 +122,14 @@ environments:
       operator_api_key: ${TEST_SERVICE_OPERATOR_API_KEY:-}
 """,
     )
+
+
+def _generate_rsa_public_key_pem() -> str:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
 
 
 def test_load_pipeline_config_reads_custom_directory(tmp_path: Path) -> None:
@@ -868,12 +879,19 @@ environments:
         - etl-identity-operator
 """,
     )
+    public_key_path = tmp_path / "jwt-public.pem"
+    public_key_pem = _generate_rsa_public_key_pem()
+    public_key_path.write_text(public_key_pem, encoding="utf-8")
     monkeypatch.setenv("ETL_IDENTITY_STATE_DB", "postgresql+psycopg://etl_identity:secret@db.internal:5432/identity_state")
-    monkeypatch.setenv("ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY", "access-key")
-    monkeypatch.setenv("ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY", "secret-key")
+    access_key_path = tmp_path / "object-storage-access-key.txt"
+    access_key_path.write_text("access-key", encoding="utf-8")
+    secret_key_path = tmp_path / "object-storage-secret-key.txt"
+    secret_key_path.write_text("secret-key", encoding="utf-8")
+    monkeypatch.setenv("ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY_FILE", str(access_key_path))
+    monkeypatch.setenv("ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY_FILE", str(secret_key_path))
     monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_ISSUER", "https://issuer.example.gov")
     monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_AUDIENCE", "etl-identity-api")
-    monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM", "/runtime/secrets/jwt-public.pem")
+    monkeypatch.setenv("ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM_FILE", str(public_key_path))
 
     environment = load_runtime_environment("cjis", runtime_config)
 
@@ -886,7 +904,115 @@ environments:
     assert environment.service_auth is not None
     assert environment.service_auth.mode == "jwt"
     assert environment.service_auth.algorithms == ("RS256",)
-    assert environment.service_auth.jwt_public_key_pem == "/runtime/secrets/jwt-public.pem"
+    assert environment.service_auth.jwt_public_key_pem == public_key_pem.strip()
+
+
+def test_load_runtime_environment_resolves_service_auth_from_secret_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    reader_key_path = tmp_path / "reader-key.txt"
+    reader_key_path.write_text("reader-key-from-file\n", encoding="utf-8")
+    operator_key_path = tmp_path / "operator-key.txt"
+    operator_key_path.write_text("operator-key-from-file\n", encoding="utf-8")
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY_FILE", str(reader_key_path))
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY_FILE", str(operator_key_path))
+    monkeypatch.delenv("TEST_SERVICE_READER_API_KEY", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_OPERATOR_API_KEY", raising=False)
+
+    environment = load_runtime_environment("prod", runtime_config)
+
+    assert environment.service_auth is not None
+    assert environment.service_auth.reader_api_key == "reader-key-from-file"
+    assert environment.service_auth.operator_api_key == "operator-key-from-file"
+
+
+def test_load_runtime_environment_rejects_missing_secret_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY_FILE", str(tmp_path / "missing-reader-key.txt"))
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY", "operator-key")
+    monkeypatch.delenv("TEST_SERVICE_READER_API_KEY", raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match=r"references secret-file environment variable TEST_SERVICE_READER_API_KEY_FILE",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
+def test_evaluate_runtime_auth_material_reports_file_backed_sources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    reader_key_path = tmp_path / "reader-key.txt"
+    reader_key_path.write_text("reader-key-from-file\n", encoding="utf-8")
+    operator_key_path = tmp_path / "operator-key.txt"
+    operator_key_path.write_text("operator-key-from-file\n", encoding="utf-8")
+    access_key_path = tmp_path / "access-key.txt"
+    access_key_path.write_text("access-key-from-file\n", encoding="utf-8")
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY_FILE", str(access_key_path))
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY_FILE", str(reader_key_path))
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY_FILE", str(operator_key_path))
+    monkeypatch.delenv("TEST_OBJECT_STORAGE_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_READER_API_KEY", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_OPERATOR_API_KEY", raising=False)
+
+    summary = evaluate_runtime_auth_material(
+        "prod",
+        runtime_config,
+        max_secret_file_age_hours=24.0,
+    )
+
+    assert summary["status"] == "ok"
+    checks = {check["check"]: check for check in summary["checks"]}
+    assert checks["service_auth.reader_api_key"]["source"] == "env_file"
+    assert checks["service_auth.operator_api_key"]["source"] == "env_file"
+    assert checks["secret:object_storage_access_key"]["source"] == "env_file"
+    assert checks["service_auth.reader_api_key"]["file_age_hours"] >= 0.0
+
+
+def test_check_runtime_auth_material_cli_reports_errors_for_stale_secret_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(runtime_config)
+    reader_key_path = tmp_path / "reader-key.txt"
+    reader_key_path.write_text("reader-key-from-file\n", encoding="utf-8")
+    operator_key_path = tmp_path / "operator-key.txt"
+    operator_key_path.write_text("operator-key-from-file\n", encoding="utf-8")
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_OBJECT_STORAGE_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY_FILE", str(reader_key_path))
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY_FILE", str(operator_key_path))
+    monkeypatch.delenv("TEST_SERVICE_READER_API_KEY", raising=False)
+    monkeypatch.delenv("TEST_SERVICE_OPERATOR_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match=r"Runtime auth material check failed"):
+        main(
+            [
+                "check-runtime-auth-material",
+                "--environment",
+                "prod",
+                "--runtime-config",
+                str(runtime_config),
+                "--max-secret-file-age-hours",
+                "0",
+            ]
+        )
 
 
 def test_load_runtime_environment_rejects_invalid_jwt_service_auth_config(

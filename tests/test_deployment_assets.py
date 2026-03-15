@@ -41,7 +41,9 @@ def test_cjis_env_example_documents_required_values() -> None:
 
     assert "ETL_IDENTITY_STATE_DB=" in env_text
     assert "ETL_IDENTITY_SERVICE_JWT_ISSUER=" in env_text
-    assert "ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM=" in env_text
+    assert "ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM_FILE=" in env_text
+    assert "ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY_FILE=" in env_text
+    assert "ETL_IDENTITY_RUNTIME_AUTH_MAX_AGE_HOURS=" in env_text
     assert "ETL_IDENTITY_TLS_CERT_PATH=" in env_text
     assert "ETL_IDENTITY_CJIS_MFA_ENFORCED=1" in env_text
 

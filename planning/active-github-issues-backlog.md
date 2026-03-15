@@ -142,7 +142,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 122) Add secret-file and rotation health checks for runtime auth material
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.4.0`
 - Labels: `type:feature`, `area:security`, `priority:p0`
 - Depends on: none
@@ -294,6 +294,6 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#112` and `#113`
 - Open child issues represented in this local active catalog:
-  `#119` through `#125`
+  `#120` through `#125`
 - Open milestones in GitHub for this backlog:
   `v1.4.0` and `v1.5.0`

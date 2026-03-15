@@ -102,6 +102,7 @@ from etl_identity_engine.quality.exceptions import (
 from etl_identity_engine.runtime_config import (
     ExportJobConfig,
     PipelineConfig,
+    evaluate_runtime_auth_material,
     load_benchmark_fixture_configs,
     load_export_job_configs,
     load_pipeline_config,
@@ -196,6 +197,16 @@ def _require_state_db(args: argparse.Namespace) -> str:
     if not args.state_db:
         raise ValueError("This command requires --state-db or a runtime environment with state_db configured")
     return str(args.state_db)
+
+
+def _resolve_max_secret_file_age_hours(args: argparse.Namespace) -> float | None:
+    configured_value = getattr(args, "max_secret_file_age_hours", None)
+    if configured_value is not None:
+        return float(configured_value)
+    raw_env_value = os.environ.get("ETL_IDENTITY_RUNTIME_AUTH_MAX_AGE_HOURS", "").strip()
+    if not raw_env_value:
+        return None
+    return float(raw_env_value)
 
 
 def _config_fingerprint(config: PipelineConfig) -> str:
@@ -2037,6 +2048,17 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
             "serve-api requires a runtime environment with service_auth configured via "
             "environment-backed auth settings"
         )
+    runtime_auth_summary = evaluate_runtime_auth_material(
+        runtime_environment.name,
+        Path(args.runtime_config) if args.runtime_config else None,
+        include_declared_secrets=False,
+        max_secret_file_age_hours=_resolve_max_secret_file_age_hours(args),
+    )
+    if runtime_auth_summary["status"] != "ok":
+        raise ValueError(
+            "serve-api runtime auth material check failed: "
+            + "; ".join(str(error) for error in runtime_auth_summary["errors"])
+        )
     emit_structured_log(
         "service_api_starting",
         component="cli",
@@ -2054,6 +2076,26 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
         environment=runtime_environment.name,
     )
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+
+
+def _cmd_check_runtime_auth_material(args: argparse.Namespace) -> None:
+    runtime_environment = _resolve_runtime_environment(args)
+    if runtime_environment is None:
+        raise ValueError(
+            "check-runtime-auth-material requires --environment, --runtime-config, or ETL_IDENTITY_ENV"
+        )
+    summary = evaluate_runtime_auth_material(
+        runtime_environment.name,
+        Path(args.runtime_config) if args.runtime_config else None,
+        include_declared_secrets=True,
+        max_secret_file_age_hours=_resolve_max_secret_file_age_hours(args),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    if summary["status"] != "ok":
+        raise ValueError(
+            "Runtime auth material check failed: "
+            + "; ".join(str(error) for error in summary["errors"])
+        )
 
 
 def _cmd_report(args: argparse.Namespace) -> None:
@@ -4233,7 +4275,27 @@ def build_parser() -> argparse.ArgumentParser:
     serve_api_parser.add_argument("--host", default="127.0.0.1")
     serve_api_parser.add_argument("--port", default=8000, type=int)
     serve_api_parser.add_argument("--log-level", default="info")
+    serve_api_parser.add_argument(
+        "--max-secret-file-age-hours",
+        default=None,
+        type=float,
+        help="Optional maximum allowed age for file-backed auth material before startup fails.",
+    )
     serve_api_parser.set_defaults(func=_cmd_serve_api)
+
+    check_runtime_auth_material_parser = subparsers.add_parser(
+        "check-runtime-auth-material",
+        help="Validate runtime auth and signing material, including optional secret-file rotation age checks.",
+    )
+    check_runtime_auth_material_parser.add_argument("--environment", default=None)
+    check_runtime_auth_material_parser.add_argument("--runtime-config", default=None)
+    check_runtime_auth_material_parser.add_argument(
+        "--max-secret-file-age-hours",
+        default=None,
+        type=float,
+        help="Optional maximum allowed age for file-backed auth material.",
+    )
+    check_runtime_auth_material_parser.set_defaults(func=_cmd_check_runtime_auth_material)
 
     stream_refresh_parser = subparsers.add_parser(
         "stream-refresh",

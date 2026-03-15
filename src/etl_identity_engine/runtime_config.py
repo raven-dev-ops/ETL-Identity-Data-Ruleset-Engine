@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
 from typing import Literal
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 import yaml
 from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_NAME, DELIVERY_CONTRACT_VERSION
 from etl_identity_engine.storage.state_store_target import is_state_store_url, resolve_state_store_target
@@ -62,6 +67,7 @@ DEFAULT_OPERATOR_SERVICE_SCOPES = (
     "exports:run",
 )
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
+SECRET_FILE_ENV_SUFFIX = "_FILE"
 
 
 class ConfigValidationError(ValueError):
@@ -158,6 +164,14 @@ class ServiceAuthConfig:
 
 
 @dataclass(frozen=True)
+class EnvPlaceholderResolution:
+    env_name: str
+    source: Literal["env", "env_file", "default"]
+    file_env_name: str | None = None
+    file_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class ExportJobConfig:
     name: str
     consumer: str
@@ -208,18 +222,78 @@ def _config_error(path: Path, message: str) -> ConfigValidationError:
     return ConfigValidationError(f"{path.name}: {message}")
 
 
-def _resolve_env_placeholders(value: str, *, path: Path, context: str) -> str:
+def _resolve_env_reference(
+    env_name: str,
+    *,
+    default_value: str | None,
+    path: Path,
+    context: str,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[str, EnvPlaceholderResolution]:
+    effective_environ = os.environ if environ is None else environ
+    resolved = effective_environ.get(env_name)
+    if resolved is not None:
+        return resolved, EnvPlaceholderResolution(env_name=env_name, source="env")
+
+    file_env_name = f"{env_name}{SECRET_FILE_ENV_SUFFIX}"
+    file_reference = effective_environ.get(file_env_name)
+    if file_reference:
+        file_path = Path(file_reference).expanduser()
+        if not file_path.exists():
+            raise _config_error(
+                path,
+                f"{context} references secret-file environment variable {file_env_name} "
+                f"but the configured path does not exist: {file_path}",
+            )
+        if not file_path.is_file():
+            raise _config_error(
+                path,
+                f"{context} references secret-file environment variable {file_env_name} "
+                f"but the configured path is not a file: {file_path}",
+            )
+        file_value = file_path.read_text(encoding="utf-8").strip()
+        if not file_value:
+            raise _config_error(
+                path,
+                f"{context} references secret-file environment variable {file_env_name} "
+                f"but the file is empty: {file_path}",
+            )
+        return file_value, EnvPlaceholderResolution(
+            env_name=env_name,
+            source="env_file",
+            file_env_name=file_env_name,
+            file_path=file_path.resolve(),
+        )
+
+    if default_value is not None:
+        return default_value, EnvPlaceholderResolution(env_name=env_name, source="default")
+
+    raise _config_error(
+        path,
+        f"{context} references required environment variable {env_name}",
+    )
+
+
+def _resolve_env_placeholders(
+    value: str,
+    *,
+    path: Path,
+    context: str,
+    environ: Mapping[str, str] | None = None,
+    resolutions: list[EnvPlaceholderResolution] | None = None,
+) -> str:
     def replacer(match: re.Match[str]) -> str:
         env_name = match.group(1)
         default_value = match.group(3)
-        resolved = os.environ.get(env_name)
-        if resolved is None:
-            if default_value is not None:
-                return default_value
-            raise _config_error(
-                path,
-                f"{context} references required environment variable {env_name}",
-            )
+        resolved, resolution = _resolve_env_reference(
+            env_name,
+            default_value=default_value,
+            path=path,
+            context=context,
+            environ=environ,
+        )
+        if resolutions is not None:
+            resolutions.append(resolution)
         return resolved
 
     return ENV_VAR_PATTERN.sub(replacer, value)
@@ -230,17 +304,18 @@ def _resolve_node_env_placeholders(
     *,
     path: Path,
     context: str,
+    environ: Mapping[str, str] | None = None,
 ) -> object:
     if isinstance(value, str):
-        return _resolve_env_placeholders(value, path=path, context=context)
+        return _resolve_env_placeholders(value, path=path, context=context, environ=environ)
     if isinstance(value, list):
         return [
-            _resolve_node_env_placeholders(item, path=path, context=context)
+            _resolve_node_env_placeholders(item, path=path, context=context, environ=environ)
             for item in value
         ]
     if isinstance(value, Mapping):
         return {
-            key: _resolve_node_env_placeholders(item, path=path, context=context)
+            key: _resolve_node_env_placeholders(item, path=path, context=context, environ=environ)
             for key, item in value.items()
         }
     return value
@@ -448,21 +523,15 @@ def _optional_float_if_present(
     return _require_float(mapping, key, path=path, context=context)
 
 
-def _load_service_auth_config(
-    raw_service_auth: object,
+def _detect_service_auth_mode(
+    raw_service_auth: Mapping[str, object],
     *,
     config_path: Path,
-    environment_name: str,
-) -> ServiceAuthConfig | None:
-    context = f"environments.{environment_name}.service_auth"
-    if raw_service_auth in (None, {}):
-        return None
-    if not isinstance(raw_service_auth, Mapping):
-        raise _config_error(config_path, f"{context} must be a mapping")
-
+    context: str,
+) -> Literal["api_key", "jwt"]:
     raw_mode = str(raw_service_auth.get("mode", "") or "").strip()
     if not raw_mode:
-        mode: Literal["api_key", "jwt"] = (
+        return (
             "jwt"
             if {
                 "issuer",
@@ -478,13 +547,326 @@ def _load_service_auth_config(
             & set(raw_service_auth)
             else "api_key"
         )
-    elif raw_mode in {"api_key", "jwt"}:
-        mode = raw_mode
-    else:
+    if raw_mode in {"api_key", "jwt"}:
+        return raw_mode
+    raise _config_error(
+        config_path,
+        f"{context}.mode must be one of: api_key, jwt",
+    )
+
+
+def _file_age_hours(file_path: Path) -> float:
+    modified = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+    return (datetime.now(timezone.utc) - modified).total_seconds() / 3600.0
+
+
+def _file_last_modified_utc(file_path: Path) -> str:
+    modified = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+    return modified.isoformat().replace("+00:00", "Z")
+
+
+def _add_auth_material_check(
+    checks: list[dict[str, object]],
+    errors: list[str],
+    *,
+    check_name: str,
+    raw_value: object,
+    config_path: Path,
+    context: str,
+    environ: Mapping[str, str],
+    max_secret_file_age_hours: float | None,
+) -> str | None:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        checks.append({"check": check_name, "status": "error", "detail": "missing"})
+        errors.append(f"{config_path.name}: {context} must be a non-empty string")
+        return None
+
+    placeholder_resolutions: list[EnvPlaceholderResolution] = []
+    try:
+        resolved = _resolve_env_placeholders(
+            raw_value,
+            path=config_path,
+            context=context,
+            environ=environ,
+            resolutions=placeholder_resolutions,
+        ).strip()
+    except ConfigValidationError as exc:
+        checks.append({"check": check_name, "status": "error", "detail": "unresolved"})
+        errors.append(str(exc))
+        return None
+
+    if not resolved:
+        checks.append({"check": check_name, "status": "error", "detail": "missing"})
+        errors.append(f"{config_path.name}: {context} resolved to an empty value")
+        return None
+
+    check: dict[str, object] = {
+        "check": check_name,
+        "status": "ok",
+        "detail": "configured",
+    }
+    if not placeholder_resolutions:
+        check["source"] = "literal"
+        checks.append(check)
+        return resolved
+
+    if len(placeholder_resolutions) == 1:
+        resolution = placeholder_resolutions[0]
+        check["source"] = resolution.source
+        check["env_name"] = resolution.env_name
+        if resolution.source == "env_file" and resolution.file_env_name and resolution.file_path is not None:
+            check["file_env_name"] = resolution.file_env_name
+            check["file_path"] = str(resolution.file_path)
+            check["file_last_modified_utc"] = _file_last_modified_utc(resolution.file_path)
+            file_age_hours = _file_age_hours(resolution.file_path)
+            check["file_age_hours"] = file_age_hours
+            if (
+                max_secret_file_age_hours is not None
+                and file_age_hours > max_secret_file_age_hours
+            ):
+                check["status"] = "error"
+                check["detail"] = (
+                    f"secret file age {file_age_hours:.3f}h exceeds "
+                    f"max {max_secret_file_age_hours:.3f}h"
+                )
+                errors.append(
+                    f"{config_path.name}: {context} secret file age {file_age_hours:.3f}h exceeds "
+                    f"max {max_secret_file_age_hours:.3f}h"
+                )
+        checks.append(check)
+        return resolved
+
+    check["source"] = "mixed"
+    check["env_names"] = [resolution.env_name for resolution in placeholder_resolutions]
+    checks.append(check)
+    return resolved
+
+
+def evaluate_runtime_auth_material(
+    environment_name: str,
+    runtime_config_path: Path | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    include_declared_secrets: bool = True,
+    max_secret_file_age_hours: float | None = None,
+) -> dict[str, object]:
+    config_path = runtime_config_path or default_runtime_config_path()
+    effective_environ = dict(os.environ if environ is None else environ)
+    raw_config = _load_yaml(config_path, resolve_env=False)
+    environments = _require_mapping(
+        raw_config,
+        "environments",
+        path=config_path,
+        context="runtime_config",
+    )
+    selected = environments.get(environment_name)
+    if not isinstance(selected, Mapping):
         raise _config_error(
             config_path,
-            f"{context}.mode must be one of: api_key, jwt",
+            f"environments must define a mapping for '{environment_name}'",
         )
+
+    checks: list[dict[str, object]] = []
+    errors: list[str] = []
+
+    try:
+        environment = load_runtime_environment(
+            environment_name,
+            config_path,
+            environ=effective_environ,
+        )
+    except (ConfigValidationError, FileNotFoundError, ValueError) as exc:
+        environment = None
+        errors.append(str(exc))
+
+    raw_service_auth = selected.get("service_auth")
+    if raw_service_auth in (None, {}):
+        checks.append({"check": "service_auth", "status": "error", "detail": "missing"})
+        errors.append(f"{config_path.name}: environments.{environment_name}.service_auth is required")
+    elif not isinstance(raw_service_auth, Mapping):
+        checks.append({"check": "service_auth", "status": "error", "detail": "invalid"})
+        errors.append(f"{config_path.name}: environments.{environment_name}.service_auth must be a mapping")
+    else:
+        context = f"environments.{environment_name}.service_auth"
+        try:
+            mode = _detect_service_auth_mode(
+                raw_service_auth,
+                config_path=config_path,
+                context=context,
+            )
+            checks.append({"check": "service_auth.mode", "status": "ok", "detail": mode})
+        except ConfigValidationError as exc:
+            mode = None
+            checks.append({"check": "service_auth.mode", "status": "error", "detail": "invalid"})
+            errors.append(str(exc))
+
+        if mode == "api_key":
+            _add_auth_material_check(
+                checks,
+                errors,
+                check_name="service_auth.reader_api_key",
+                raw_value=raw_service_auth.get("reader_api_key"),
+                config_path=config_path,
+                context=f"{context}.reader_api_key",
+                environ=effective_environ,
+                max_secret_file_age_hours=max_secret_file_age_hours,
+            )
+            _add_auth_material_check(
+                checks,
+                errors,
+                check_name="service_auth.operator_api_key",
+                raw_value=raw_service_auth.get("operator_api_key"),
+                config_path=config_path,
+                context=f"{context}.operator_api_key",
+                environ=effective_environ,
+                max_secret_file_age_hours=max_secret_file_age_hours,
+            )
+        elif mode == "jwt":
+            _add_auth_material_check(
+                checks,
+                errors,
+                check_name="service_auth.issuer",
+                raw_value=raw_service_auth.get("issuer"),
+                config_path=config_path,
+                context=f"{context}.issuer",
+                environ=effective_environ,
+                max_secret_file_age_hours=max_secret_file_age_hours,
+            )
+            _add_auth_material_check(
+                checks,
+                errors,
+                check_name="service_auth.audience",
+                raw_value=raw_service_auth.get("audience"),
+                config_path=config_path,
+                context=f"{context}.audience",
+                environ=effective_environ,
+                max_secret_file_age_hours=max_secret_file_age_hours,
+            )
+
+            jwt_secret = _add_auth_material_check(
+                checks,
+                errors,
+                check_name="service_auth.jwt_secret",
+                raw_value=raw_service_auth.get("jwt_secret"),
+                config_path=config_path,
+                context=f"{context}.jwt_secret",
+                environ=effective_environ,
+                max_secret_file_age_hours=max_secret_file_age_hours,
+            ) if raw_service_auth.get("jwt_secret") not in (None, "") else None
+
+            jwt_public_key_pem = _add_auth_material_check(
+                checks,
+                errors,
+                check_name="service_auth.jwt_public_key_pem",
+                raw_value=raw_service_auth.get("jwt_public_key_pem"),
+                config_path=config_path,
+                context=f"{context}.jwt_public_key_pem",
+                environ=effective_environ,
+                max_secret_file_age_hours=max_secret_file_age_hours,
+            ) if raw_service_auth.get("jwt_public_key_pem") not in (None, "") else None
+
+            if jwt_secret and jwt_public_key_pem:
+                errors.append(
+                    f"{config_path.name}: {context} must define exactly one of jwt_secret or jwt_public_key_pem"
+                )
+            if not jwt_secret and not jwt_public_key_pem:
+                errors.append(
+                    f"{config_path.name}: {context} must define exactly one of jwt_secret or jwt_public_key_pem"
+                )
+
+            if jwt_public_key_pem:
+                try:
+                    public_key = serialization.load_pem_public_key(jwt_public_key_pem.encode("utf-8"))
+                except (TypeError, ValueError) as exc:
+                    checks.append(
+                        {
+                            "check": "service_auth.jwt_public_key_format",
+                            "status": "error",
+                            "detail": "invalid_pem",
+                        }
+                    )
+                    errors.append(
+                        f"{config_path.name}: {context}.jwt_public_key_pem must resolve to a PEM-encoded public key ({exc})"
+                    )
+                else:
+                    algorithms = ()
+                    if environment is not None and environment.service_auth is not None:
+                        algorithms = environment.service_auth.algorithms
+                    elif isinstance(raw_service_auth.get("algorithms"), list):
+                        algorithms = tuple(
+                            str(item).strip()
+                            for item in raw_service_auth.get("algorithms", [])
+                            if str(item).strip()
+                        )
+                    if any(algorithm.startswith(("RS", "PS")) for algorithm in algorithms):
+                        valid_key_type = isinstance(public_key, RSAPublicKey)
+                        key_family = "rsa"
+                    elif any(algorithm.startswith("ES") for algorithm in algorithms):
+                        valid_key_type = isinstance(public_key, EllipticCurvePublicKey)
+                        key_family = "ec"
+                    elif any(algorithm == "EdDSA" for algorithm in algorithms):
+                        valid_key_type = isinstance(public_key, Ed25519PublicKey)
+                        key_family = "eddsa"
+                    else:
+                        valid_key_type = True
+                        key_family = type(public_key).__name__
+                    checks.append(
+                        {
+                            "check": "service_auth.jwt_public_key_format",
+                            "status": "ok" if valid_key_type else "error",
+                            "detail": key_family,
+                        }
+                    )
+                    if not valid_key_type:
+                        errors.append(
+                            f"{config_path.name}: {context}.jwt_public_key_pem must resolve to a {key_family} public key "
+                            f"for algorithms {', '.join(algorithms)}"
+                        )
+
+    if include_declared_secrets:
+        raw_secrets = selected.get("secrets", {})
+        if raw_secrets in (None, {}):
+            pass
+        elif not isinstance(raw_secrets, Mapping):
+            checks.append({"check": "runtime_secrets", "status": "error", "detail": "invalid"})
+            errors.append(f"{config_path.name}: environments.{environment_name}.secrets must be a mapping")
+        else:
+            for secret_name, secret_value in raw_secrets.items():
+                _add_auth_material_check(
+                    checks,
+                    errors,
+                    check_name=f"secret:{secret_name}",
+                    raw_value=secret_value,
+                    config_path=config_path,
+                    context=f"environments.{environment_name}.secrets.{secret_name}",
+                    environ=effective_environ,
+                    max_secret_file_age_hours=max_secret_file_age_hours,
+                )
+
+    deduplicated_errors = list(dict.fromkeys(errors))
+    return {
+        "environment": environment_name,
+        "runtime_config_path": str(config_path.resolve()),
+        "max_secret_file_age_hours": max_secret_file_age_hours,
+        "status": "ok" if not deduplicated_errors else "error",
+        "checks": checks,
+        "errors": deduplicated_errors,
+    }
+
+
+def _load_service_auth_config(
+    raw_service_auth: object,
+    *,
+    config_path: Path,
+    environment_name: str,
+) -> ServiceAuthConfig | None:
+    context = f"environments.{environment_name}.service_auth"
+    if raw_service_auth in (None, {}):
+        return None
+    if not isinstance(raw_service_auth, Mapping):
+        raise _config_error(config_path, f"{context} must be a mapping")
+
+    mode = _detect_service_auth_mode(raw_service_auth, config_path=config_path, context=context)
 
     if mode == "api_key":
         _validate_allowed_keys(
@@ -715,6 +1097,8 @@ def _load_service_auth_config(
 def load_runtime_environment(
     environment: str | None = None,
     runtime_config_path: Path | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
 ) -> RuntimeEnvironmentConfig:
     config_path = runtime_config_path or default_runtime_config_path()
     raw_config = _load_yaml(config_path, resolve_env=False)
@@ -725,7 +1109,8 @@ def load_runtime_environment(
         context="top-level runtime config",
     )
 
-    default_environment = environment or os.environ.get("ETL_IDENTITY_ENV")
+    effective_environ = os.environ if environ is None else environ
+    default_environment = environment or effective_environ.get("ETL_IDENTITY_ENV")
     if default_environment is None:
         raw_default_environment = raw_config.get("default_environment")
         if raw_default_environment in (None, ""):
@@ -735,6 +1120,7 @@ def load_runtime_environment(
                 raw_default_environment,
                 path=config_path,
                 context="runtime_config.default_environment",
+                environ=effective_environ,
             )
             if not isinstance(resolved_default_environment, str) or not resolved_default_environment.strip():
                 raise _config_error(config_path, "runtime_config.default_environment must be a non-empty string")
@@ -757,6 +1143,7 @@ def load_runtime_environment(
         dict(selected),
         path=config_path,
         context=f"environments.{default_environment}",
+        environ=effective_environ,
     )
     if not isinstance(resolved_selected, Mapping):
         raise _config_error(

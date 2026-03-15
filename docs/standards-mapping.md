@@ -14,10 +14,10 @@ external controls it is trying to support. It is not a certification.
 
 | Control Area | Repo Baseline | Primary Repo Surface |
 | --- | --- | --- |
-| Strong access control | JWT-based service auth for `cjis` runtime, no API-key compatibility path | `config/runtime_environments.yml`, `docs/runtime-environments.md` |
+| Strong access control | JWT-based service auth for `cjis` runtime, no API-key compatibility path, plus startup/runtime auth-material checks | `config/runtime_environments.yml`, `docs/runtime-environments.md`, `scripts/cjis_preflight_check.py` |
 | Protected transport and host material | Required TLS certificate and key paths in the preflight | `deploy/cjis.env.example`, `scripts/cjis_preflight_check.py` |
 | Audit logging | Required audit-log directory plus structured logs and persisted audit events with shared free-text/auth redaction | `docs/operations-observability.md`, `scripts/cjis_preflight_check.py` |
-| Encrypted protected storage | Required PostgreSQL state store and object-storage secret material | `config/runtime_environments.yml`, `scripts/cjis_preflight_check.py` |
+| Encrypted protected storage | Required PostgreSQL state store and object-storage secret material, with `_FILE` mounted-secret support and optional rotation-age checks | `config/runtime_environments.yml`, `deploy/cjis.env.example`, `scripts/cjis_preflight_check.py` |
 | Backup and recovery | Required backup root plus replay/restore runbooks | `docs/recovery-runbooks.md`, `scripts/cjis_preflight_check.py` |
 | MFA and personnel attestations | Required affirmative deployment attestations in the preflight | `deploy/cjis.env.example`, `scripts/cjis_preflight_check.py` |
 | Contractor / operator governance | Explicit operator boundary and Security Addendum acknowledgement flag | `SECURITY.md`, `deploy/cjis.env.example`, `scripts/cjis_preflight_check.py` |

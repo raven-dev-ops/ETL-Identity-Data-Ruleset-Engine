@@ -482,6 +482,16 @@ the current handoff path for a local public-safety pilot walkthrough.
 The readiness, hashed handoff-manifest path, and detached-signature
 verification flow are documented in
 [docs/customer-pilot-readiness.md](docs/customer-pilot-readiness.md).
+Runtime environment auth material can now also be validated directly,
+including mounted `_FILE` secrets and optional rotation-age checks:
+
+```bash
+python -m etl_identity_engine.cli check-runtime-auth-material --environment prod --max-secret-file-age-hours 720
+```
+
+That same age gate is available on `serve-api` and on the stricter
+`scripts/cjis_preflight_check.py` baseline for CJIS-aligned
+deployments.
 The operator/admin runbooks and the acceptance checklist are documented
 in [docs/customer-pilot-runbooks.md](docs/customer-pilot-runbooks.md)
 and

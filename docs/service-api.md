@@ -11,10 +11,15 @@ Start the API with:
 export ETL_IDENTITY_STATE_DB=data/state/pipeline_state.sqlite
 export ETL_IDENTITY_SERVICE_JWT_ISSUER=https://idp.example.com/realms/data
 export ETL_IDENTITY_SERVICE_JWT_AUDIENCE=etl-identity-api
-export ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM="$(cat deploy/idp-public-key.pem)"
+export ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM_FILE=deploy/idp-public-key.pem
+
+python -m etl_identity_engine.cli check-runtime-auth-material \
+  --environment prod \
+  --max-secret-file-age-hours 720
 
 python -m etl_identity_engine.cli serve-api \
   --environment prod \
+  --max-secret-file-age-hours 720 \
   --host 127.0.0.1 \
   --port 8000
 ```
@@ -123,6 +128,10 @@ The default production JWT environment expects:
 - `ETL_IDENTITY_SERVICE_JWT_ISSUER`
 - `ETL_IDENTITY_SERVICE_JWT_AUDIENCE`
 - `ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM`
+
+Mounted-secret deployments should prefer:
+
+- `ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM_FILE`
 
 Those values should be supplied by the deployment environment rather than
 committed into repo config.

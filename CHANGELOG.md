@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
   customer-handoff manifests, including signed bundle packaging,
   standalone signature verification tooling, and customer-pilot
   readiness enforcement when signed handoff manifests are present.
+- Added `_FILE` mounted-secret resolution for runtime environments,
+  `check-runtime-auth-material` plus `serve-api` startup gates for auth
+  and JWT signing material, and CJIS preflight support for optional
+  secret-rotation age checks.
 
 ## [1.0.0] - 2026-03-14
 
