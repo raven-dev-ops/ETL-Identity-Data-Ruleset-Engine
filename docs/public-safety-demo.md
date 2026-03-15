@@ -97,6 +97,8 @@ The customer-pilot packaging path goes further and also includes the
 seed dataset, the persisted SQLite run state, a prepared demo-shell
 workspace, a minimal runtime payload, and one-command launch helpers.
 See [customer-pilot-bundle.md](customer-pilot-bundle.md).
+Bundle integrity and target-host validation are documented in
+[customer-pilot-readiness.md](customer-pilot-readiness.md).
 For the supported Windows-first single-host PostgreSQL pilot bootstrap,
 see [windows-pilot-bootstrap.md](windows-pilot-bootstrap.md).
 

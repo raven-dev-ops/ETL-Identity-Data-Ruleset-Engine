@@ -240,7 +240,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 115) Add a customer environment readiness check and signed handoff manifest
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.2.0`
 - Labels: `type:feature`, `area:security`, `priority:p1`
 - Depends on: #114
@@ -299,7 +299,7 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#98`
 - Open child issues represented in this local active catalog:
-  `#109` through `#110`
+  `#110`
 - Open milestones in GitHub for this backlog:
   `v1.2.0`
 - Closed backlog history remains in:

@@ -61,6 +61,44 @@ def test_build_manifest_contains_expected_fields() -> None:
     }
 
 
+def test_build_handoff_manifest_contains_expected_fields() -> None:
+    manifest = MODULE.build_handoff_manifest(
+        version="0.9.2",
+        pilot_name="public-safety-regressions",
+        generated_at_utc="2026-03-15T00:00:00Z",
+        source_commit="abc123",
+        source_manifest="seed_dataset/manifest.yml",
+        source_run_id="RUN-EXAMPLE",
+        verification_type="sha256",
+        artifacts=(
+            {
+                "path": "README.md",
+                "sha256": "deadbeef",
+                "size_bytes": 10,
+            },
+        ),
+    )
+
+    assert manifest == {
+        "project": "etl-identity-engine",
+        "bundle_type": "customer_pilot",
+        "version": "0.9.2",
+        "pilot_name": "public-safety-regressions",
+        "generated_at_utc": "2026-03-15T00:00:00Z",
+        "source_commit": "abc123",
+        "source_manifest": "seed_dataset/manifest.yml",
+        "source_run_id": "RUN-EXAMPLE",
+        "verification_type": "sha256",
+        "artifacts": [
+            {
+                "path": "README.md",
+                "sha256": "deadbeef",
+                "size_bytes": 10,
+            }
+        ],
+    }
+
+
 def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> None:
     bundle_path = MODULE.package_customer_pilot_bundle(
         output_dir=tmp_path,
@@ -76,14 +114,17 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
         expected_members = {
             "README.md",
             MODULE.MANIFEST_NAME,
+            MODULE.HANDOFF_MANIFEST_NAME,
             "state/pipeline_state.sqlite",
             "demo_shell/db.sqlite3",
             "demo_shell/bundle/data/public_safety_demo/public_safety_demo_summary.json",
             "launch/start_demo_shell.ps1",
             "launch/start_demo_shell.sh",
             "launch/bootstrap_windows_pilot.ps1",
+            "launch/check_pilot_readiness.ps1",
             "tools/rebuild_demo_shell.py",
             "tools/bootstrap_windows_pilot.py",
+            "tools/check_pilot_readiness.py",
             "runtime/manage_public_safety_demo.py",
             "runtime/requirements-pilot.txt",
             "runtime/config/runtime_environments.yml",
@@ -116,3 +157,9 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
         assert manifest["demo_shell_dir"] == "demo_shell"
         assert "launch/start_demo_shell.ps1" in manifest["launch_helpers"]
         assert "tools/rebuild_demo_shell.py" in manifest["artifacts"]
+
+        handoff_manifest = json.loads(archive.read(MODULE.HANDOFF_MANIFEST_NAME).decode("utf-8"))
+        assert handoff_manifest["verification_type"] == "sha256"
+        handoff_paths = {entry["path"] for entry in handoff_manifest["artifacts"]}
+        assert MODULE.MANIFEST_NAME in handoff_paths
+        assert "tools/check_pilot_readiness.py" in handoff_paths

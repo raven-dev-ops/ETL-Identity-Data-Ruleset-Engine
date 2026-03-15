@@ -8,6 +8,8 @@ run into SQLite state, prepares the read-only Django demo shell, and
 ships the launch helpers needed for a local operator or buyer demo.
 It now also includes the Windows-first bootstrap needed to rebuild the
 same seeded pilot into a local PostgreSQL-backed single-host runtime.
+It also now includes a hashed handoff manifest and readiness-check path
+for customer-environment validation before bootstrap.
 
 ## Build Command
 
@@ -33,6 +35,7 @@ The packaged zip includes:
 
 - `README.md`
 - `pilot_manifest.json`
+- `pilot_handoff_manifest.json`
 - `seed_dataset/`
 - `seed_run/data/`
 - `state/pipeline_state.sqlite`
@@ -40,20 +43,24 @@ The packaged zip includes:
 - `runtime/`
 - `tools/rebuild_demo_shell.py`
 - `tools/bootstrap_windows_pilot.py`
+- `tools/check_pilot_readiness.py`
 - `launch/start_demo_shell.ps1`
 - `launch/start_demo_shell.sh`
 - `launch/bootstrap_windows_pilot.ps1`
+- `launch/check_pilot_readiness.ps1`
 
 ## Local Walkthrough
 
 From the extracted bundle root:
 
-1. For the supported Windows-first PostgreSQL pilot path, run:
+1. Run the readiness check first:
+   `powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1`
+2. For the supported Windows-first PostgreSQL pilot path, run:
    `powershell -ExecutionPolicy Bypass -File .\launch\bootstrap_windows_pilot.ps1`
-2. For the portable seeded SQLite walkthrough, install the shipped
+3. For the portable seeded SQLite walkthrough, install the shipped
    runtime dependencies:
    `python -m pip install -r runtime/requirements-pilot.txt`
-3. Start the local SQLite walkthrough:
+4. Start the local SQLite walkthrough:
    - PowerShell: `./launch/start_demo_shell.ps1`
    - Bash: `./launch/start_demo_shell.sh`
 
@@ -73,6 +80,7 @@ deployment package.
 
 - It is designed for local walkthroughs.
 - It uses synthetic public-safety data only.
-- It now includes the Windows-first single-host bootstrap path, but it
-  does not replace the readiness check, signed handoff, or operator
-  runbook work still tracked in the remainder of the `v1.2.0` backlog.
+- It now includes the Windows-first single-host bootstrap path and the
+  hashed handoff-manifest readiness check, but it does not replace the
+  operator runbook and acceptance material still tracked in the
+  remainder of the `v1.2.0` backlog.

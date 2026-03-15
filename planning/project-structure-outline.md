@@ -67,6 +67,7 @@ ETL-Identity-Data-Ruleset-Engine/
     container-deployment.md
     cjis-deployment-baseline.md
     customer-pilot-bundle.md
+    customer-pilot-readiness.md
     event-stream-ingestion.md
     kubernetes-deployment.md
     data-model.md
@@ -105,6 +106,8 @@ ETL-Identity-Data-Ruleset-Engine/
   scripts/
     bootstrap_venv.ps1
     bootstrap_venv.sh
+    check_customer_pilot_readiness.ps1
+    check_customer_pilot_readiness.py
     bootstrap_windows_customer_pilot.ps1
     bootstrap_windows_customer_pilot.py
     build_public_safety_demo_site.py
@@ -147,6 +150,7 @@ ETL-Identity-Data-Ruleset-Engine/
   tests/
     test_benchmarking.py
     test_bootstrap_windows_customer_pilot.py
+    test_check_customer_pilot_readiness.py
     test_build_public_safety_demo_site.py
     conftest.py
     test_generate.py

@@ -16,6 +16,7 @@ The supported topology is:
 From the extracted customer pilot bundle root:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1
 powershell -ExecutionPolicy Bypass -File .\launch\bootstrap_windows_pilot.ps1 --prepare-only
 ```
 
@@ -45,6 +46,9 @@ After bootstrap, the bundle root includes:
 - `launch/start_pilot_service.ps1`
 - `launch/stop_pilot_postgres.ps1`
 
+The readiness check and hashed handoff manifest are documented in
+[customer-pilot-readiness.md](customer-pilot-readiness.md).
+
 ## Follow-On Commands
 
 Start the PostgreSQL-backed Django walkthrough again later:
@@ -68,5 +72,4 @@ Stop and remove the local PostgreSQL pilot container:
 ## Scope Boundary
 
 This bootstrap is the supported single-host pilot path for evaluation
-and walkthroughs. It is not a production installer, HA topology, or
-full customer readiness check.
+and walkthroughs. It is not a production installer or HA topology.

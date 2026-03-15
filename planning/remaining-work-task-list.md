@@ -40,14 +40,18 @@ of truth for tracked work; this file is the short maintainer view.
   that provisions local PostgreSQL, rebuilds the seeded run into that
   state store, and prepares the Django shell with generated launch and
   runtime config helpers.
+- The third `v1.2.0` pilot-handoff slice is now in-repo: the customer
+  pilot bundle includes a hashed handoff manifest, and the repo plus
+  bundle both ship a readiness check for the documented Windows
+  single-host baseline.
 - GitHub sync is complete for the new backlog cycle with the remaining
   open epic `#98`.
 
 ## Open Task Groups
 
 - [ ] `v1.2.0` Customer deployment packaging and pilot handoff
-  - Local catalog issues: `#115` through `#116`
-  - Open GitHub issues: `#109` through `#110`
+  - Local catalog issues: `#116`
+  - Open GitHub issues: `#110`
 
 ## Gaps Now Explicitly Tracked
 
@@ -61,10 +65,10 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Regression fixtures for cross-system same-person and false-merge cases
 - [x] Standalone customer pilot bundle with seeded state and launch helpers
 - [x] Windows-first single-host pilot bootstrap
-- [ ] Customer readiness check and handoff manifest
+- [x] Customer readiness check and handoff manifest
 - [ ] Operator/admin runbooks and pilot acceptance checklist
 
 ## Next Step
 
-- Next: local catalog issue `#115`: customer readiness check and
-  handoff manifest.
+- Next: local catalog issue `#116`: operator/admin runbooks and pilot
+  acceptance checklist.

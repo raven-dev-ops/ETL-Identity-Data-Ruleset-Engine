@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -29,6 +30,7 @@ from package_release_sample import (
 DEFAULT_OUTPUT_DIR = Path("dist") / "customer-pilot"
 DEFAULT_SOURCE_MANIFEST = REPO_ROOT / "fixtures" / "public_safety_regressions" / "manifest.yml"
 MANIFEST_NAME = "pilot_manifest.json"
+HANDOFF_MANIFEST_NAME = "pilot_handoff_manifest.json"
 
 
 def _ensure_repo_src_on_path() -> None:
@@ -126,6 +128,31 @@ def build_manifest(
     }
 
 
+def build_handoff_manifest(
+    *,
+    version: str,
+    pilot_name: str,
+    generated_at_utc: str,
+    source_commit: str,
+    source_manifest: str,
+    source_run_id: str,
+    verification_type: str,
+    artifacts: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "project": PROJECT_NAME,
+        "bundle_type": "customer_pilot",
+        "version": version,
+        "pilot_name": pilot_name,
+        "generated_at_utc": generated_at_utc,
+        "source_commit": source_commit,
+        "source_manifest": source_manifest,
+        "source_run_id": source_run_id,
+        "verification_type": verification_type,
+        "artifacts": list(artifacts),
+    }
+
+
 def _read_project_dependencies(pyproject_path: Path = REPO_ROOT / "pyproject.toml") -> tuple[str, ...]:
     payload = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     dependencies = payload.get("project", {}).get("dependencies", [])
@@ -142,6 +169,31 @@ def _copy_tree_files(source_root: Path, destination_root: Path) -> None:
         destination_path = destination_root / relative_path
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, destination_path)
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _artifact_hash_entries(
+    staging_root: Path,
+    *,
+    exclude_names: Sequence[str] = (),
+) -> tuple[dict[str, object], ...]:
+    excluded = set(exclude_names)
+    entries: list[dict[str, object]] = []
+    for path in sorted(staging_root.rglob("*")):
+        if not path.is_file() or path.name in excluded:
+            continue
+        payload = path.read_bytes()
+        entries.append(
+            {
+                "path": path.relative_to(staging_root).as_posix(),
+                "sha256": _sha256_bytes(payload),
+                "size_bytes": len(payload),
+            }
+        )
+    return tuple(entries)
 
 
 def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, source_run_id: str) -> None:
@@ -164,13 +216,17 @@ def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, sou
                 "- `launch/`: quick startup helpers for local walkthroughs",
                 "- `tools/rebuild_demo_shell.py`: rebuild the demo shell from the shipped persisted state",
                 "- `tools/bootstrap_windows_pilot.py`: Windows-first bootstrap for the PostgreSQL-backed single-host pilot path",
+                "- `tools/check_pilot_readiness.py`: validates the target host and verifies the hashed handoff manifest",
+                "- `pilot_handoff_manifest.json`: hashed manifest of the delivered pilot artifacts",
                 "",
                 "## Quick Start",
                 "",
                 "1. Install Python 3.11 or newer.",
-                "2. On Windows with Docker Desktop available, run:",
+                "2. Run the readiness check before bootstrap:",
+                "   `powershell -ExecutionPolicy Bypass -File .\\launch\\check_pilot_readiness.ps1`",
+                "3. On Windows with Docker Desktop available, run:",
                 "   `powershell -ExecutionPolicy Bypass -File .\\launch\\bootstrap_windows_pilot.ps1`",
-                "3. Or use the portable seeded SQLite walkthrough:",
+                "4. Or use the portable seeded SQLite walkthrough:",
                 "   - Windows PowerShell: `./launch/start_demo_shell.ps1`",
                 "   - Bash: `./launch/start_demo_shell.sh`",
                 "",
@@ -295,6 +351,12 @@ def _write_windows_bootstrap_tool(*, destination_root: Path) -> None:
     shutil.copy2(REPO_ROOT / "scripts" / "bootstrap_windows_customer_pilot.py", tool_path)
 
 
+def _write_readiness_tool(*, destination_root: Path) -> None:
+    tool_path = destination_root / "tools" / "check_pilot_readiness.py"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / "scripts" / "check_customer_pilot_readiness.py", tool_path)
+
+
 def _write_launch_helpers(*, destination_root: Path) -> tuple[str, ...]:
     launch_root = destination_root / "launch"
     launch_root.mkdir(parents=True, exist_ok=True)
@@ -336,12 +398,19 @@ python "${ROOT_DIR}/tools/rebuild_demo_shell.py" --host "${HOST}" --port "${PORT
         REPO_ROOT / "scripts" / "bootstrap_windows_customer_pilot.ps1",
         bootstrap_powershell_path,
     )
+    readiness_powershell_path = launch_root / "check_pilot_readiness.ps1"
+    shutil.copy2(
+        REPO_ROOT / "scripts" / "check_customer_pilot_readiness.ps1",
+        readiness_powershell_path,
+    )
     return (
         "launch/start_demo_shell.ps1",
         "launch/start_demo_shell.sh",
         "launch/bootstrap_windows_pilot.ps1",
+        "launch/check_pilot_readiness.ps1",
         "tools/rebuild_demo_shell.py",
         "tools/bootstrap_windows_pilot.py",
+        "tools/check_pilot_readiness.py",
     )
 
 
@@ -387,13 +456,21 @@ def _stage_seed_dataset(*, source_manifest: Path, destination_root: Path) -> Pat
     return destination_root / source_manifest.name
 
 
-def _artifact_names(staging_root: Path) -> tuple[str, ...]:
+def _artifact_names(
+    staging_root: Path,
+    *,
+    extra_paths: Sequence[str] = (),
+    exclude_names: Sequence[str] = (MANIFEST_NAME,),
+) -> tuple[str, ...]:
+    extras = set(extra_paths)
+    excluded = set(exclude_names)
     return tuple(
         sorted(
             str(path.relative_to(staging_root)).replace("\\", "/")
             for path in staging_root.rglob("*")
-            if path.is_file() and path.name != MANIFEST_NAME
+            if path.is_file() and path.name not in excluded
         )
+        + sorted(extras)
     )
 
 
@@ -442,6 +519,7 @@ def package_customer_pilot_bundle(
         _write_runtime_payload(destination_root=staging_root)
         _write_rebuild_tool(destination_root=staging_root)
         _write_windows_bootstrap_tool(destination_root=staging_root)
+        _write_readiness_tool(destination_root=staging_root)
         launch_helpers = _write_launch_helpers(destination_root=staging_root)
         _write_pilot_readme(
             destination=staging_root / "README.md",
@@ -450,7 +528,10 @@ def package_customer_pilot_bundle(
             source_run_id=source_run_id,
         )
 
-        artifact_names = _artifact_names(staging_root)
+        artifact_names = _artifact_names(
+            staging_root,
+            extra_paths=(HANDOFF_MANIFEST_NAME,),
+        )
         manifest = build_manifest(
             version=version,
             pilot_name=resolved_pilot_name,
@@ -465,6 +546,23 @@ def package_customer_pilot_bundle(
         )
         (staging_root / MANIFEST_NAME).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        handoff_manifest = build_handoff_manifest(
+            version=version,
+            pilot_name=resolved_pilot_name,
+            generated_at_utc=resolved_generated_at_utc,
+            source_commit=source_commit or resolve_source_commit(repo_root),
+            source_manifest="seed_dataset/" + staged_manifest.name,
+            source_run_id=source_run_id,
+            verification_type="sha256",
+            artifacts=_artifact_hash_entries(
+                staging_root,
+                exclude_names=(HANDOFF_MANIFEST_NAME,),
+            ),
+        )
+        (staging_root / HANDOFF_MANIFEST_NAME).write_text(
+            json.dumps(handoff_manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
 

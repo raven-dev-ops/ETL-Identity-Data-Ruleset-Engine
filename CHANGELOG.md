@@ -39,6 +39,9 @@ All notable changes to this project will be documented in this file.
   local PostgreSQL container, reruns the bundled seed manifest into
   PostgreSQL, rebuilds the Django demo shell from that state, and
   writes launch/config helpers for the single-host pilot baseline.
+- Added a customer-pilot readiness check and hashed handoff manifest so
+  the delivered bundle can verify artifact integrity and validate the
+  documented Windows single-host baseline before bootstrap.
 
 ## [0.9.2] - 2026-03-14
 

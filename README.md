@@ -209,6 +209,7 @@ is included in the repository.
 - [Container Deployment](docs/container-deployment.md)
 - [CJIS Deployment Baseline](docs/cjis-deployment-baseline.md)
 - [Customer Pilot Bundle](docs/customer-pilot-bundle.md)
+- [Customer Pilot Readiness](docs/customer-pilot-readiness.md)
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
@@ -442,6 +443,8 @@ python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot
 That bundle is documented in
 [docs/customer-pilot-bundle.md](docs/customer-pilot-bundle.md) and is
 the current handoff path for a local public-safety pilot walkthrough.
+The readiness and hashed handoff-manifest path is documented in
+[docs/customer-pilot-readiness.md](docs/customer-pilot-readiness.md).
 
 For the supported Windows-first single-host pilot path over local
 PostgreSQL, use the documented bootstrap in
