@@ -10,13 +10,13 @@ Define and track the repository structure for implementing the ETL Identity Data
 ## Current Status
 
 `M1` through `M6` are implemented in-repo, the public line has now
-advanced through the published `v1.0.0` release, the tracked
-`v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, and
-the current backlog cycle has completed the `v1.3.0` vendor-adapter
-slice, the `v1.4.0` secure-operations evidence slice, and the `v1.5.0`
-customer deployment supportability slice, including Windows service
-wrappers, support-bundle collection, patch-upgrade tooling, and the
-operator admin console.
+advanced through the published `v1.1.0` release, the tracked
+`v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, the
+`v1.3.0`-`v1.5.0` supportability cycle is now archived as historical
+planning state, and the current backlog cycle is opening the next
+tracked gaps: multi-tenant security and HA deployment, live CAD/RMS
+integration targets, and production acceptance with CJIS operating
+controls.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -106,6 +106,7 @@ ETL-Identity-Data-Ruleset-Engine/
     post-v0.6.0-github-issues-backlog.md
     post-v0.9.0-github-issues-backlog.md
     post-v1.2.0-github-issues-backlog.md
+    post-v1.5.0-github-issues-backlog.md
     project-structure-outline.md
     remaining-work-task-list.md
   fixtures/
@@ -228,17 +229,12 @@ The current public line is now explicitly scoped around:
 
 ## Post-Release Focus
 
-- keep the shipped container image plus single-host and Kubernetes
-  deployment assets aligned with the documented runtime paths
-- keep release artifact and container attestation outputs aligned with
-  the documented release path
-- keep benchmark fixtures, capacity targets, and the persisted
-  performance contract aligned with the supported single-host and
-  clustered deployment baselines
-- keep the event-stream contract and persisted stream-refresh runtime
-  aligned with the documented micro-batch operator model
-- execute the new post-`v1.0.0` backlog cycle tracked in
-  `planning/active-github-issues-backlog.md`; the current cycle has now
-  completed the vendor-adapter, secure-operations, and customer
-  deployment supportability slices
+- execute the new post-`v1.1.0` backlog cycle tracked in
+  `planning/active-github-issues-backlog.md`
+- add tenant-aware state, service, and field-authorization boundaries
+  for protected multi-tenant deployments
+- add supported live CAD and RMS integration targets beyond the current
+  synthetic and vendor-shaped rehearsal flows
+- add production acceptance, promotion, and CJIS operating-control
+  readiness artifacts for protected pilot environments
 

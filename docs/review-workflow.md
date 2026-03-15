@@ -120,6 +120,5 @@ It does not yet:
 
 - expose field-level or tenant-level review authorization beyond the
   current `operator` role plus `review_cases:write` scope
-- expose publication or export-job triggers over the service API
 
 Those remain tracked in the active backlog.

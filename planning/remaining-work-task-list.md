@@ -1,50 +1,48 @@
 # Remaining Work Task List
 
-Date prepared: 2026-03-14
+Date prepared: 2026-03-15
 Last updated: 2026-03-15
 
-This checklist mirrors the active post-`v1.0.0` backlog in
+This checklist mirrors the active post-`v1.1.0` backlog in
 `planning/active-github-issues-backlog.md`. GitHub remains the source
 of truth for tracked work; this file is the short maintainer view.
 
 ## Current Status
 
-- `v1.0.0` is published and closes the CAD/RMS onboarding plus customer
-  pilot handoff cycle.
-- The previous tracked backlog cycle (`v1.0.0` through `v1.2.0`) is now
-  complete and archived in
-  `planning/post-v1.2.0-github-issues-backlog.md`.
-- The `v1.3.0` vendor adapter slice, the `v1.4.0` secure-operations
-  evidence slice, and the `v1.5.0` customer deployment supportability
-  slice are now complete both locally and in GitHub.
-- The current backlog cycle was opened for packaged vendor adapters,
-  stronger secure-operations evidence, and customer deployment
-  supportability, and that scope is now complete.
-- There are no open tracked GitHub issues or milestones remaining in
-  the current cycle.
+- `v1.1.0` is published and closes the vendor-adapter, secure-operations,
+  and customer deployment supportability cycle.
+- The previous tracked backlog cycle is now archived in
+  `planning/post-v1.5.0-github-issues-backlog.md`.
+- A new backlog cycle is now opened in GitHub for the documented next gaps:
+  multi-tenant security and HA deployment, live CAD/RMS integration
+  targets, and production acceptance with CJIS operating controls.
+- Active GitHub epics for this cycle are `#126`, `#127`, and `#128`.
+- Open child issues for this cycle are `#129` through `#140`.
+- Open milestones for this cycle are
+  `v1.2.0-multi-tenant-foundation`,
+  `v1.3.0-live-integrations`, and `v1.4.0-cjis-acceptance`.
 
 ## Open Task Groups
 
-- [x] `v1.3.0` Vendor adapter packs and onboarding acceleration
-- [x] `v1.4.0` Secure operations and compliance evidence
-- [x] `v1.5.0` Customer deployment automation and supportability
+- [ ] `v1.2.0-multi-tenant-foundation` Multi-tenant security and high-availability foundation
+- [ ] `v1.3.0-live-integrations` Live CAD/RMS integration targets
+- [ ] `v1.4.0-cjis-acceptance` Production acceptance and CJIS operating controls
 
 ## Gaps Now Explicitly Tracked
 
-- [x] Packaged CAD vendor profile overlays
-- [x] Packaged RMS vendor profile overlays
-- [x] Onboarding diff reports for unmapped columns and contract drift
-- [x] Syntheticized vendor-batch example generation
-- [x] Detached-signature support for customer handoff manifests
-- [x] Secret-file and rotation health checks for auth material
-- [x] Encrypted backup and export-bundle workflows
-- [x] CJIS evidence-pack generation from config and audit artifacts
-- [x] Windows service wrappers for pilot API and demo shell
-- [x] Support-bundle collection for pilot troubleshooting
-- [x] Patch-upgrade and reseed workflow for existing pilot installs
-- [x] Operator admin console for health, metrics, and audit views
+- [ ] Tenant-aware persisted-state boundaries
+- [ ] Tenant-scoped service authorization
+- [ ] Field-level authorization hooks
+- [ ] HA PostgreSQL deployment baseline
+- [ ] First packaged live CAD integration target
+- [ ] First packaged live RMS integration target
+- [ ] Secure landed-file acquisition and chain-of-custody workflow
+- [ ] Masked acceptance fixtures and drift-report workflow for live onboarding
+- [ ] Environment promotion and sealing workflow
+- [ ] CJIS operating-controls evidence review cadence
+- [ ] Production acceptance suite and readiness report
+- [ ] Incident response, audit review, and operator training package
 
 ## Next Step
 
-- No open tracked tasks remain in the current backlog cycle. Next step
-  is release/admin work or opening a new backlog cycle.
+- Next: start local catalog `#129` / GitHub issue `#129`.

@@ -3,8 +3,9 @@
 This backlog is the current source of truth for new GitHub issues after
 the completed bootstrap backlog, the completed `post-v0.1.0` follow-up
 backlog, the completed `v0.6.0` production-readiness cycle, the
-completed `v0.7.0`-`v0.9.0` delivery cycle, and the completed
-`v1.0.0`-`v1.2.0` customer-pilot cycle. Historical backlog files remain
+completed `v0.7.0`-`v0.9.0` delivery cycle, the completed
+`v1.0.0`-`v1.2.0` customer-pilot cycle, and the completed
+`v1.3.0`-`v1.5.0` supportability cycle. Historical backlog files remain
 available as read-only records:
 
 - `planning/github-issues-backlog.md`
@@ -12,15 +13,16 @@ available as read-only records:
 - `planning/post-v0.6.0-github-issues-backlog.md`
 - `planning/post-v0.9.0-github-issues-backlog.md`
 - `planning/post-v1.2.0-github-issues-backlog.md`
+- `planning/post-v1.5.0-github-issues-backlog.md`
 
-Date prepared: 2026-03-14
+Date prepared: 2026-03-15
 Last synced to GitHub: 2026-03-15
 
 ## Milestones
 
-- `v1.3.0`: Vendor adapter packs and onboarding acceleration
-- `v1.4.0`: Secure operations and compliance evidence
-- `v1.5.0`: Customer deployment automation and supportability
+- `v1.2.0-multi-tenant-foundation`: Multi-tenant security and high-availability foundation
+- `v1.3.0-live-integrations`: Live CAD/RMS integration targets
+- `v1.4.0-cjis-acceptance`: Production acceptance and CJIS operating controls
 
 ## Label Set To Create
 
@@ -48,252 +50,261 @@ Last synced to GitHub: 2026-03-15
 
 ## Issue Catalog
 
-## v1.3.0: Vendor adapter packs and onboarding acceleration
+## v1.2.0-multi-tenant-foundation: Multi-tenant security and high-availability foundation
 
-### 117) Add packaged vendor profile overlays for common CAD exports
+### 129) Add tenant-aware persisted-state boundaries across runs and derived artifacts
 
-- Status: `closed`
-- Milestone: `v1.3.0`
-- Labels: `type:feature`, `area:ingest`, `priority:p0`
+- Status: `open`
+- Milestone: `v1.2.0-multi-tenant-foundation`
+- Labels: `type:feature`, `area:storage`, `priority:p0`
 - Depends on: none
 - Description:
-  - The current public-safety onboarding path supports contract-bound
-    canonical bundles plus custom mapping overlays, but operators still
-    have to author those overlays from scratch for each vendor extract.
-  - Customer onboarding will move faster if the repo ships maintained
-    profile overlays for representative CAD export shapes.
+  - The current persisted-state model assumes one deployment boundary
+    rather than multiple tenant-specific identity domains.
+  - Production use needs explicit tenant identifiers on runs, review
+    cases, audit events, golden records, and public-safety activity so
+    operators can prove state separation.
 - Acceptance criteria:
-  - The repo ships at least two documented CAD vendor-profile overlays.
-  - Contract validation can apply those profiles without manual column
-    rewrites by the operator.
-  - Tests cover valid and invalid CAD payloads for each shipped profile.
+  - The persisted-state schema adds a supported tenant boundary for core
+    run, review, audit, and public-safety artifacts.
+  - CLI and runtime flows can declare the tenant context for batch runs,
+    replay, publish, export, and support operations.
+  - Tests prove that persisted artifacts remain tenant-bounded.
 
-### 118) Add packaged vendor profile overlays for common RMS exports
+### 130) Add tenant-scoped service authorization and query enforcement
 
-- Status: `closed`
-- Milestone: `v1.3.0`
-- Labels: `type:feature`, `area:ingest`, `priority:p0`
-- Depends on: none
+- Status: `open`
+- Milestone: `v1.2.0-multi-tenant-foundation`
+- Labels: `type:feature`, `area:service`, `priority:p0`
+- Depends on: #129
 - Description:
-  - RMS onboarding has the same problem as CAD onboarding: the contract
-    is stable, but the operator still needs vendor-specific mapping
-    knowledge before validation can start.
-  - The repo should ship maintained RMS profiles for representative
-    report/person extract shapes used in public-safety pilots.
+  - The service currently enforces role and scope boundaries, but not
+    tenant-specific read or write boundaries.
+  - Production multi-tenant use needs every read-side and operator-side
+    request to bind to an explicit tenant context.
 - Acceptance criteria:
-  - The repo ships at least two documented RMS vendor-profile overlays.
-  - Contract validation can apply those profiles without manual column
-    rewrites by the operator.
-  - Tests cover valid and invalid RMS payloads for each shipped profile.
+  - The service auth model supports tenant claims or equivalent
+    deployment-supplied tenant bindings.
+  - Read, review, replay, publish, export, and admin-console surfaces
+    reject cross-tenant access.
+  - Tests cover allowed and forbidden tenant access paths.
 
-### 119) Add an onboarding diff report for unmapped columns and contract drift
+### 131) Add field-level authorization hooks for sensitive identity attributes
 
-- Status: `closed`
-- Milestone: `v1.3.0`
-- Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #117, #118
+- Status: `open`
+- Milestone: `v1.2.0-multi-tenant-foundation`
+- Labels: `type:feature`, `area:security`, `priority:p1`
+- Depends on: #130
 - Description:
-  - Source owners need more than pass/fail validation during onboarding.
-  - The repo should explain which source columns were mapped, ignored,
-    or still unresolved so vendor conversations become concrete.
+  - The current service line documents only endpoint-level role and
+    scope enforcement.
+  - Customer production rollouts may need policy-driven redaction or
+    suppression for specific identity fields in service, export, or demo
+    read models.
 - Acceptance criteria:
-  - The onboarding CLI emits a machine-readable diff report for mapped,
-    unmapped, and unused source columns.
-  - The report highlights required canonical fields that still have no
-    source mapping.
-  - Docs show how operators use the diff report during onboarding.
+  - The repo defines a supported policy hook for field-level masking or
+    denial on documented read surfaces.
+  - The service and export paths apply those policies consistently.
+  - Docs define the supported policy boundary and fallback behavior.
 
-### 120) Add a syntheticized vendor-batch example generator for onboarding rehearsals
+### 132) Add a high-availability PostgreSQL deployment baseline and failover runbook
 
-- Status: `closed`
-- Milestone: `v1.3.0`
-- Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #117, #118
-- Description:
-  - Customer pilots and pre-sales work benefit from realistic vendor
-    shapes, but the repo should continue to avoid real operational data.
-  - The repo should be able to emit contract-valid vendor-shaped sample
-    bundles directly from synthetic seed data for rehearsal and demo use.
-- Acceptance criteria:
-  - The repo ships a command that writes vendor-profile-shaped synthetic
-    CAD and RMS onboarding bundles.
-  - Generated bundles pass the public-safety onboarding checks.
-  - Docs explain how to use the generator for rehearsals and demos.
-
-## v1.4.0: Secure operations and compliance evidence
-
-### 121) Add detached-signature support for customer handoff manifests
-
-- Status: `closed`
-- Milestone: `v1.4.0`
-- Labels: `type:feature`, `area:security`, `priority:p0`
-- Depends on: none
-- Description:
-  - The current pilot bundle includes a hashed handoff manifest, but the
-    integrity record is not yet signed.
-  - Customer deliveries should support a detached signature workflow so
-    the handoff can prove both integrity and signer identity.
-- Acceptance criteria:
-  - Pilot and release bundle packaging can emit a detached signature for
-    the handoff manifest.
-  - Verification tooling can validate both hash integrity and signature
-    trust before bootstrap.
-  - Docs define the supported signing and verification workflow.
-
-### 122) Add secret-file and rotation health checks for runtime auth material
-
-- Status: `closed`
-- Milestone: `v1.4.0`
-- Labels: `type:feature`, `area:security`, `priority:p0`
-- Depends on: none
-- Description:
-  - The runtime can already resolve environment-backed auth material,
-    but secure customer environments often mount secrets as files and
-    need periodic validation that the expected material is present.
-  - The repo should validate secret-file inputs and expose rotation-read
-    health checks for service bootstrap and ongoing operations.
-- Acceptance criteria:
-  - Runtime environments can resolve supported secret-file paths in
-    addition to plain environment variables.
-  - A readiness-style check validates required auth and signing inputs
-    before service startup.
-  - Docs define the supported secret-file pattern and rotation checks.
-
-### 123) Add encrypted backup and export-bundle workflows for persisted state
-
-- Status: `closed`
-- Milestone: `v1.4.0`
+- Status: `open`
+- Milestone: `v1.2.0-multi-tenant-foundation`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
-- Depends on: #121, #122
+- Depends on: #129
 - Description:
-  - Persisted-state backups and pilot handoff artifacts currently rely
-    on filesystem controls outside the repo runtime.
-  - Secure customer operation needs encrypted backup and export bundles
-    so copied artifacts are protected in transit and at rest.
+  - The documented deployment baselines currently stop at single-node
+    PostgreSQL.
+  - Production acceptance needs a repo-supported HA reference topology
+    and a documented failover, backup, and rollback story.
 - Acceptance criteria:
-  - The repo ships an encrypted backup/export bundle workflow for
-    persisted state and customer pilot handoff artifacts.
-  - Recovery tooling can restore from the encrypted bundle with an
-    operator-supplied key or passphrase.
-  - Tests and docs cover the supported encrypt/restore workflow.
+  - The repo ships a documented HA PostgreSQL reference baseline.
+  - Recovery and rollback runbooks cover failover and restore for that
+    topology.
+  - Smoke or rehearsal validation proves the supported commands and
+    manifests are coherent.
 
-### 124) Generate a CJIS evidence pack from runtime config and audit artifacts
+## v1.3.0-live-integrations: Live CAD/RMS integration targets
 
-- Status: `closed`
-- Milestone: `v1.4.0`
-- Labels: `type:feature`, `area:docs`, `priority:p1`
-- Depends on: #122, #123
+### 133) Add the first packaged live CAD vendor integration target
+
+- Status: `open`
+- Milestone: `v1.3.0-live-integrations`
+- Labels: `type:feature`, `area:ingest`, `priority:p0`
+- Depends on: none
 - Description:
-  - The repo now has a CJIS-aligned baseline and preflight checks, but
-    customer review still requires manual collection of config, audit,
-    and deployment evidence.
-  - The repo should generate an evidence pack that bundles the relevant
-    machine-readable config and audit outputs for a review conversation.
+  - The repo now ships synthetic vendor profiles, but not a maintained
+    integration target for a real CAD export used in customer pilots.
+  - The next step is a supported live CAD integration pack that keeps
+    acquisition, mapping, and onboarding concrete.
 - Acceptance criteria:
-  - The repo ships a command that builds a CJIS evidence pack from the
-    supported runtime configuration and audit artifacts.
-  - The evidence pack includes a documented standards mapping index.
-  - Docs clearly state that the pack supports review and does not by
-    itself claim full operational compliance.
+  - The repo ships a documented integration pack for one target CAD
+    export shape.
+  - The onboarding path can validate landed extracts for that target
+    without ad hoc operator edits.
+  - Docs define how customer-specific deployment variables plug into the
+    target.
 
-## v1.5.0: Customer deployment automation and supportability
+### 134) Add the first packaged live RMS vendor integration target
 
-### 125) Add a one-command Windows service wrapper for the pilot API and demo shell
+- Status: `open`
+- Milestone: `v1.3.0-live-integrations`
+- Labels: `type:feature`, `area:ingest`, `priority:p0`
+- Depends on: none
+- Description:
+  - RMS onboarding has the same gap as CAD onboarding: the current repo
+    validates synthetic vendor shapes but not a maintained live target.
+  - A production pilot needs one documented RMS integration target with
+    the same explicit contract and landing assumptions.
+- Acceptance criteria:
+  - The repo ships a documented integration pack for one target RMS
+    export shape.
+  - The onboarding path can validate landed extracts for that target
+    without ad hoc operator edits.
+  - Docs define how customer-specific deployment variables plug into the
+    target.
 
-- Status: `closed`
-- Milestone: `v1.5.0`
+### 135) Add secure landed-file acquisition and chain-of-custody workflow for vendor batches
+
+- Status: `open`
+- Milestone: `v1.3.0-live-integrations`
+- Labels: `type:feature`, `area:operations`, `priority:p1`
+- Depends on: #133, #134
+- Description:
+  - The runtime now expects landed files or object-storage paths, but it
+    does not yet define a supported acquisition and custody workflow for
+    live vendor exports.
+  - Production pilots need a documented path from customer drop zone to
+    validated manifest input.
+- Acceptance criteria:
+  - The repo defines a supported landing and custody workflow for live
+    vendor batches.
+  - The workflow records enough metadata for audit and replay.
+  - Docs clearly separate live landed-input handling from synthetic repo
+    fixtures.
+
+### 136) Add masked acceptance fixtures and drift-report workflow for live customer onboarding
+
+- Status: `open`
+- Milestone: `v1.3.0-live-integrations`
+- Labels: `type:feature`, `area:quality`, `priority:p1`
+- Depends on: #133, #134, #135
+- Description:
+  - Customer onboarding conversations need concrete proof artifacts
+    without pulling operational records into the repo.
+  - The repo should support masked acceptance fixtures and repeatable
+    drift-report packaging for live integration rehearsals.
+- Acceptance criteria:
+  - The repo ships a documented masked-fixture workflow for customer
+    onboarding acceptance.
+  - Drift-report output can be generated and reviewed without leaking
+    operational identity data into the repo.
+  - Tests or smoke coverage validate the masked-fixture packaging path.
+
+## v1.4.0-cjis-acceptance: Production acceptance and CJIS operating controls
+
+### 137) Add environment promotion and sealing workflow for protected pilot deployments
+
+- Status: `open`
+- Milestone: `v1.4.0-cjis-acceptance`
 - Labels: `type:feature`, `area:operations`, `priority:p0`
-- Depends on: #122
+- Depends on: #132, #135
 - Description:
-  - The customer pilot bootstrap currently prepares local launch scripts,
-    but the operator still starts the service and demo shell manually.
-  - The single-host customer path needs an option to install or manage
-    those processes as durable Windows services.
+  - The repo now supports customer pilots and secure evidence packs, but
+    it does not yet define how a validated lower environment becomes a
+    protected pilot environment in a controlled way.
+  - Production acceptance needs a documented promotion and environment
+    sealing workflow.
 - Acceptance criteria:
-  - The repo ships a supported Windows service wrapper for the demo
-    shell and service API processes.
-  - The bootstrap or admin tooling can install, start, stop, and remove
-    those services.
-  - Docs define the supported host assumptions and rollback path.
+  - The repo documents a supported promotion path from validation to a
+    protected pilot environment.
+  - The workflow defines immutable config, artifact, and evidence inputs
+    required for promotion.
+  - Rollback and revalidation steps are documented.
 
-### 126) Add a support-bundle collector for customer pilot troubleshooting
+### 138) Add CJIS operating-controls evidence capture and review cadence automation
 
-- Status: `closed`
-- Milestone: `v1.5.0`
-- Labels: `type:feature`, `area:operations`, `priority:p1`
-- Depends on: #123
+- Status: `open`
+- Milestone: `v1.4.0-cjis-acceptance`
+- Labels: `type:feature`, `area:docs`, `priority:p1`
+- Depends on: #137
 - Description:
-  - When a customer pilot fails, support currently has to ask for logs,
-    manifests, and runtime state piecemeal.
-  - The repo should be able to collect a redacted support bundle that
-    packages the relevant operational evidence in one artifact.
+  - The current CJIS evidence pack supports point-in-time review, but it
+    does not yet define a repeatable review cadence for ongoing
+    operation.
+  - Customer acceptance needs a documented operating-controls evidence
+    loop rather than one-off artifact generation.
 - Acceptance criteria:
-  - The repo ships a support-bundle command for the pilot baseline.
-  - The bundle includes documented logs, runtime config, and state
-    metadata with the existing observability redaction rules applied.
-  - Runbooks explain when and how to generate the support bundle.
+  - The repo defines a repeatable evidence-capture and review cadence
+    for the CJIS-sensitive deployment baseline.
+  - The evidence pack and operational docs align with that cadence.
+  - Docs clearly separate repo-side evidence support from agency-side
+    compliance obligations.
 
-### 127) Add a patch-upgrade and reseed workflow for existing pilot installs
+### 139) Add a production acceptance suite and cutover readiness report
 
-- Status: `closed`
-- Milestone: `v1.5.0`
-- Labels: `type:feature`, `area:operations`, `priority:p1`
-- Depends on: #125
+- Status: `open`
+- Milestone: `v1.4.0-cjis-acceptance`
+- Labels: `type:feature`, `area:quality`, `priority:p1`
+- Depends on: #137, #138
 - Description:
-  - The current customer-pilot path is deterministic, but upgrades are
-    still effectively "re-extract and start over."
-  - Customer pilots need a documented patch path that can preserve or
-    intentionally reseed the supported install root in a controlled way.
+  - The repo has many individual checks, but not one coherent acceptance
+    suite that says a protected pilot is ready for cutover.
+  - Production deployment needs a single readiness artifact that pulls
+    the critical checks together.
 - Acceptance criteria:
-  - The repo ships a documented patch-upgrade workflow for the supported
-    Windows single-host pilot baseline.
-  - Operators can choose between preserving the current state or
-    reseeding from the shipped manifest and state artifacts.
-  - Smoke coverage validates the supported upgrade path.
+  - The repo ships a documented production acceptance suite for the
+    protected pilot baseline.
+  - The suite produces a machine-readable readiness report.
+  - Docs define which failures are blocking and which are advisory.
 
-### 128) Add an operator admin console for health, metrics, and recent audit events
+### 140) Add incident response, audit review, and operator training package for customer handoff
 
-- Status: `closed`
-- Milestone: `v1.5.0`
-- Labels: `type:feature`, `area:service`, `priority:p1`
-- Depends on: #122, #126
+- Status: `open`
+- Milestone: `v1.4.0-cjis-acceptance`
+- Labels: `type:docs`, `area:operations`, `priority:p2`
+- Depends on: #138, #139
 - Description:
-  - The service already exposes health, metrics, and audit data, but the
-    operator still has to inspect those surfaces manually or through raw
-    API calls.
-  - The customer-support path needs a minimal admin console for the
-    supported pilot and single-host runtime.
+  - The product runtime is now strong enough that the remaining gap is
+    operator execution quality in a protected environment.
+  - Customer handoff needs a packaged training and response baseline
+    rather than scattered operational notes.
 - Acceptance criteria:
-  - The repo ships a documented operator admin console surface for
-    health, metrics, and recent audit events.
-  - Access control follows the existing service auth and scope model.
-  - Tests cover the supported read model and auth behavior.
+  - The repo ships a documented incident-response and audit-review
+    package for customer operators.
+  - Operator training material aligns with the supported runtime,
+    service, support-bundle, and evidence surfaces.
+  - The handoff package states which responsibilities remain outside the
+    repo and inside agency or customer governance.
 
 ## Suggested Epic Issues
 
 Create these 3 epics first, then link child issues:
 
-1. Epic: Vendor Adapter Packs and Onboarding Acceleration (`v1.3.0`)
-2. Epic: Secure Operations and Compliance Evidence (`v1.4.0`)
-3. Epic: Customer Deployment Automation and Supportability (`v1.5.0`)
+1. Epic: Multi-tenant security and high-availability foundation (`v1.2.0-multi-tenant-foundation`)
+2. Epic: Live CAD/RMS integration targets (`v1.3.0-live-integrations`)
+3. Epic: Production acceptance and CJIS operating controls (`v1.4.0-cjis-acceptance`)
 
 ## Suggested Issue Creation Order
 
 1. Create or confirm labels.
-2. Create milestones `v1.3.0`, `v1.4.0`, and `v1.5.0`.
+2. Create milestones `v1.2.0-multi-tenant-foundation`, `v1.3.0-live-integrations`, and `v1.4.0-cjis-acceptance`.
 3. Create the 3 epics.
 4. Create all child issues and assign them to epics.
-5. Execute `v1.3.0` before `v1.4.0`, and `v1.4.0` before `v1.5.0`.
+5. Execute `v1.2.0-multi-tenant-foundation` before `v1.3.0-live-integrations`, and `v1.3.0-live-integrations` before `v1.4.0-cjis-acceptance`.
 
 ## Tracker Status Snapshot
 
 Snapshot date: 2026-03-15
 
-- This backlog opens the post-`v1.0.0` cycle focused on vendor adapter
-  packs, secure operational evidence, and customer supportability.
+- This backlog opens the post-`v1.1.0` cycle focused on tenant
+  boundaries, live CAD/RMS integration targets, and production
+  acceptance with CJIS operating controls.
 - Active epic issues in GitHub for this backlog:
-  none
+  `#126`, `#127`, `#128`
 - Open child issues represented in this local active catalog:
-  none
+  `#129` through `#140`
 - Open milestones in GitHub for this backlog:
-  none
+  `v1.2.0-multi-tenant-foundation`, `v1.3.0-live-integrations`, and
+  `v1.4.0-cjis-acceptance`
