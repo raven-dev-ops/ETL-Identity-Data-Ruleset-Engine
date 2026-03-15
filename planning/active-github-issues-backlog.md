@@ -260,7 +260,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 116) Add operator/admin runbooks and a pilot acceptance checklist for customer handoff
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.2.0`
 - Labels: `type:docs`, `area:docs`, `priority:p1`
 - Depends on: #115
@@ -297,11 +297,11 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog:
-  `#98`
+  none
 - Open child issues represented in this local active catalog:
-  `#110`
+  none
 - Open milestones in GitHub for this backlog:
-  `v1.2.0`
+  none
 - Closed backlog history remains in:
   `planning/github-issues-backlog.md`,
   `planning/post-v0.1.0-github-issues-backlog.md`,

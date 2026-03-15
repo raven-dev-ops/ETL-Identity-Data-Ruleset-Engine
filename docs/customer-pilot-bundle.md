@@ -82,5 +82,6 @@ deployment package.
 - It uses synthetic public-safety data only.
 - It now includes the Windows-first single-host bootstrap path and the
   hashed handoff-manifest readiness check, but it does not replace the
-  operator runbook and acceptance material still tracked in the
-  remainder of the `v1.2.0` backlog.
+  operator runbook and acceptance material documented in
+  [customer-pilot-runbooks.md](customer-pilot-runbooks.md) and
+  [customer-pilot-acceptance-checklist.md](customer-pilot-acceptance-checklist.md).

@@ -66,8 +66,10 @@ ETL-Identity-Data-Ruleset-Engine/
     compatibility-policy.md
     container-deployment.md
     cjis-deployment-baseline.md
+    customer-pilot-acceptance-checklist.md
     customer-pilot-bundle.md
     customer-pilot-readiness.md
+    customer-pilot-runbooks.md
     event-stream-ingestion.md
     kubernetes-deployment.md
     data-model.md

@@ -209,6 +209,8 @@ is included in the repository.
 - [Container Deployment](docs/container-deployment.md)
 - [CJIS Deployment Baseline](docs/cjis-deployment-baseline.md)
 - [Customer Pilot Bundle](docs/customer-pilot-bundle.md)
+- [Customer Pilot Runbooks](docs/customer-pilot-runbooks.md)
+- [Customer Pilot Acceptance Checklist](docs/customer-pilot-acceptance-checklist.md)
 - [Customer Pilot Readiness](docs/customer-pilot-readiness.md)
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
@@ -445,6 +447,10 @@ That bundle is documented in
 the current handoff path for a local public-safety pilot walkthrough.
 The readiness and hashed handoff-manifest path is documented in
 [docs/customer-pilot-readiness.md](docs/customer-pilot-readiness.md).
+The operator/admin runbooks and the acceptance checklist are documented
+in [docs/customer-pilot-runbooks.md](docs/customer-pilot-runbooks.md)
+and
+[docs/customer-pilot-acceptance-checklist.md](docs/customer-pilot-acceptance-checklist.md).
 
 For the supported Windows-first single-host pilot path over local
 PostgreSQL, use the documented bootstrap in

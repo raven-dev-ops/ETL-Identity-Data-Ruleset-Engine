@@ -76,4 +76,6 @@ Run the readiness check:
    integrity
 
 This is a readiness and delivery-integrity control, not the full pilot
-acceptance or operator runbook. Those remain separate handoff material.
+acceptance or operator runbook. Those remain separate handoff material
+in [customer-pilot-runbooks.md](customer-pilot-runbooks.md) and
+[customer-pilot-acceptance-checklist.md](customer-pilot-acceptance-checklist.md).

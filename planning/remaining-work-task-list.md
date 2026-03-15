@@ -44,14 +44,15 @@ of truth for tracked work; this file is the short maintainer view.
   pilot bundle includes a hashed handoff manifest, and the repo plus
   bundle both ship a readiness check for the documented Windows
   single-host baseline.
-- GitHub sync is complete for the new backlog cycle with the remaining
-  open epic `#98`.
+- The fourth `v1.2.0` pilot-handoff slice is now in-repo: the repo now
+  ships customer pilot runbooks and an acceptance checklist for install,
+  startup, rollback, backup, and demo execution.
+- The full `v1.2.0` milestone is now complete in-repo and ready for
+  GitHub closeout.
 
 ## Open Task Groups
 
-- [ ] `v1.2.0` Customer deployment packaging and pilot handoff
-  - Local catalog issues: `#116`
-  - Open GitHub issues: `#110`
+- [x] `v1.2.0` Customer deployment packaging and pilot handoff
 
 ## Gaps Now Explicitly Tracked
 
@@ -66,9 +67,9 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Standalone customer pilot bundle with seeded state and launch helpers
 - [x] Windows-first single-host pilot bootstrap
 - [x] Customer readiness check and handoff manifest
-- [ ] Operator/admin runbooks and pilot acceptance checklist
+- [x] Operator/admin runbooks and pilot acceptance checklist
 
 ## Next Step
 
-- Next: local catalog issue `#116`: operator/admin runbooks and pilot
-  acceptance checklist.
+- Next: release/admin work for the completed `v1.2.0` cycle, or open a
+  new backlog cycle for net-new scope.

@@ -42,6 +42,9 @@ All notable changes to this project will be documented in this file.
 - Added a customer-pilot readiness check and hashed handoff manifest so
   the delivered bundle can verify artifact integrity and validate the
   documented Windows single-host baseline before bootstrap.
+- Added operator/admin pilot runbooks plus a reusable customer-pilot
+  acceptance checklist for install, startup, rollback, backup, and demo
+  handoff execution.
 
 ## [0.9.2] - 2026-03-14
 
