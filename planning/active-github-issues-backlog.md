@@ -203,7 +203,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 113) Package a standalone customer pilot bundle with seeded state and launch scripts
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.2.0`
 - Labels: `type:feature`, `area:operations`, `priority:p0`
 - Depends on: #111
@@ -299,7 +299,7 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#98`
 - Open child issues represented in this local active catalog:
-  `#107` through `#110`
+  `#108` through `#110`
 - Open milestones in GitHub for this backlog:
   `v1.2.0`
 - Closed backlog history remains in:

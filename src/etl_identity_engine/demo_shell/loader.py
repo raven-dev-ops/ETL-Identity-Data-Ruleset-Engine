@@ -354,10 +354,13 @@ def load_public_safety_demo_state(
     resolved_extract_dir.mkdir(parents=True, exist_ok=True)
 
     store = PipelineStateStore(state_db)
-    resolved_run_id = run_id or store.latest_completed_run_id()
-    if resolved_run_id is None:
-        raise FileNotFoundError("No completed persisted run found for demo-shell loading")
-    bundle = store.load_run_bundle(resolved_run_id)
+    try:
+        resolved_run_id = run_id or store.latest_completed_run_id()
+        if resolved_run_id is None:
+            raise FileNotFoundError("No completed persisted run found for demo-shell loading")
+        bundle = store.load_run_bundle(resolved_run_id)
+    finally:
+        store.engine.dispose()
     summary = _ensure_public_safety_summary(
         dict(bundle.run.summary.get("public_safety_activity") or {}),
         incident_identity_rows=bundle.public_safety_incident_identity_rows,

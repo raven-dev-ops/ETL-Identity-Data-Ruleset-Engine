@@ -31,6 +31,10 @@ All notable changes to this project will be documented in this file.
   same-person, same-household, and false-merge public-safety scenarios,
   plus matching, survivorship, and end-to-end tests that lock those
   outcomes.
+- Added `package_customer_pilot_bundle.py`, which builds a standalone
+  seeded public-safety customer pilot archive containing the seed
+  dataset, persisted SQLite state, prepared Django demo shell, minimal
+  runtime payload, and local startup helpers.
 
 ## [0.9.2] - 2026-03-14
 

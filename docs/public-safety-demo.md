@@ -40,6 +40,13 @@ Package one deterministic demo bundle for handoff:
 python scripts/package_public_safety_demo.py --output-dir dist/public-safety-demo --profile small --seed 42 --formats csv,parquet
 ```
 
+Package the stronger standalone customer pilot handoff with seeded
+state, a prepared demo shell, and startup helpers:
+
+```bash
+python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot
+```
+
 Prepare a standalone Django + SQLite demo shell from that bundle:
 
 ```bash
@@ -85,6 +92,11 @@ the joined demo artifacts, the golden outputs, and the synthetic CAD/RMS
 incident files used to build the demo.
 It now also includes the recommended scenario list and a generated live
 demo walkthrough.
+
+The customer-pilot packaging path goes further and also includes the
+seed dataset, the persisted SQLite run state, a prepared demo-shell
+workspace, a minimal runtime payload, and one-command launch helpers.
+See [customer-pilot-bundle.md](customer-pilot-bundle.md).
 
 The Django shell preparation script writes a standalone local workspace
 under `dist/public-safety-demo-django/` by default:

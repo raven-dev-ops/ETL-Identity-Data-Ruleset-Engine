@@ -31,14 +31,18 @@ of truth for tracked work; this file is the short maintainer view.
 - The `v1.1.0` milestone is now complete in-repo with the public-safety
   regression fixture set and expected merge/no-merge outcomes locked in
   tests.
+- The first `v1.2.0` pilot-handoff slice is now in-repo: a standalone
+  customer pilot bundle can be built from the seeded public-safety
+  regression manifest and now includes persisted state, the prepared
+  Django demo shell, a minimal runtime payload, and startup helpers.
 - GitHub sync is complete for the new backlog cycle with the remaining
   open epic `#98`.
 
 ## Open Task Groups
 
 - [ ] `v1.2.0` Customer deployment packaging and pilot handoff
-  - Local catalog issues: `#113` through `#116`
-  - Open GitHub issues: `#107` through `#110`
+  - Local catalog issues: `#114` through `#116`
+  - Open GitHub issues: `#108` through `#110`
 
 ## Gaps Now Explicitly Tracked
 
@@ -50,12 +54,12 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Persisted public-safety activity ingestion from formal contracts
 - [x] Service and demo-shell read models over persisted public-safety activity
 - [x] Regression fixtures for cross-system same-person and false-merge cases
-- [ ] Standalone customer pilot bundle with seeded state and launch helpers
+- [x] Standalone customer pilot bundle with seeded state and launch helpers
 - [ ] Windows-first single-host pilot bootstrap
 - [ ] Customer readiness check and handoff manifest
 - [ ] Operator/admin runbooks and pilot acceptance checklist
 
 ## Next Step
 
-- Next: local catalog issue `#113`: standalone customer pilot bundle
-  with seeded state and launch helpers.
+- Next: local catalog issue `#114`: Windows-first single-host pilot
+  bootstrap.

@@ -66,6 +66,7 @@ ETL-Identity-Data-Ruleset-Engine/
     compatibility-policy.md
     container-deployment.md
     cjis-deployment-baseline.md
+    customer-pilot-bundle.md
     event-stream-ingestion.md
     kubernetes-deployment.md
     data-model.md
@@ -109,6 +110,7 @@ ETL-Identity-Data-Ruleset-Engine/
     create_github_backlog.py
     create_github_backlog.ps1
     kubernetes_manifest_smoke.py
+    package_customer_pilot_bundle.py
     package_release_sample.py
     package_public_safety_demo.py
     cjis_preflight_check.py
@@ -149,6 +151,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_normalize.py
     test_output_contracts.py
     test_package_release_sample.py
+    test_package_customer_pilot_bundle.py
     test_package_public_safety_demo.py
     test_pipeline_e2e.py
     test_public_safety_conformance.py

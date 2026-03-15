@@ -208,6 +208,7 @@ is included in the repository.
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
 - [CJIS Deployment Baseline](docs/cjis-deployment-baseline.md)
+- [Customer Pilot Bundle](docs/customer-pilot-bundle.md)
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
@@ -429,6 +430,17 @@ read-only local walkthrough over either the packaged bundle or a
 materialized persisted run, so it stays self-contained for buyer demos.
 The copy and scenario flow are tuned for an ID Network-style CAD/RMS
 identity-resolution conversation.
+
+To package that same seeded flow as a standalone customer pilot handoff
+with persisted state, the prepared demo shell, and startup helpers:
+
+```bash
+python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot
+```
+
+That bundle is documented in
+[docs/customer-pilot-bundle.md](docs/customer-pilot-bundle.md) and is
+the current handoff path for a local public-safety pilot walkthrough.
 
 If you need a purely static handoff instead, the older static-site path
 is still available:
