@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import http.client
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -127,6 +128,25 @@ sources:
     )
 
 
+def _set_world_access(path: Path) -> None:
+    if path.is_dir():
+        os.chmod(path, 0o777)
+    else:
+        os.chmod(path, 0o666)
+
+
+def _ensure_runtime_root_permissions(runtime_root: Path) -> None:
+    for directory in (
+        runtime_root,
+        runtime_root / "landing",
+        runtime_root / "output",
+        runtime_root / "state",
+        runtime_root / "published",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+        _set_world_access(directory)
+
+
 def _prepare_landing_zone(runtime_root: Path) -> None:
     landing_dir = runtime_root / "landing"
     _write_manifest(landing_dir / "batch-manifest.yaml")
@@ -160,6 +180,9 @@ def _prepare_landing_zone(runtime_root: Path) -> None:
             )
         ],
     )
+    _set_world_access(landing_dir / "batch-manifest.yaml")
+    _set_world_access(landing_dir / "agency_a.csv")
+    _set_world_access(landing_dir / "agency_b.parquet")
 
 
 def _validate_manifests() -> dict[str, list[str]]:
@@ -315,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
     commands = _validate_manifests()
 
     runtime_root = Path(tempfile.mkdtemp(prefix="etl-identity-engine-kubernetes-smoke-"))
+    _ensure_runtime_root_permissions(runtime_root)
     _prepare_landing_zone(runtime_root)
     network_name = f"etl-identity-k8s-smoke-{int(time.time())}"
     postgres_container_name = f"{network_name}-postgres"

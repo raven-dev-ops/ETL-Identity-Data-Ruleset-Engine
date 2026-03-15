@@ -121,37 +121,20 @@ def _capture_json(command: list[str], *, failure_hint: str, env: dict[str, str] 
         raise SystemExit(f"{failure_hint}: command did not return valid JSON") from exc
 
 
-def _resolve_pip_audit_executable(python_executable: str) -> str:
-    scripts_dir = Path(python_executable).resolve().parent
-    candidate_names = ("pip-audit.exe", "pip-audit")
-    for candidate_name in candidate_names:
-        candidate_path = scripts_dir / candidate_name
-        if candidate_path.exists():
-            return str(candidate_path)
-
-    path_candidate = shutil.which("pip-audit")
-    if path_candidate:
-        return path_candidate
-
-    raise SystemExit(
-        "pip-audit executable not found in the active environment. "
-        "Run `python -m pip install -e .[dev]` before the release hardening check."
-    )
-
-
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _run_dependency_audit(python_executable: str, output_path: Path) -> None:
-    pip_audit_executable = _resolve_pip_audit_executable(python_executable)
     utf8_env = os.environ.copy()
     utf8_env["PYTHONIOENCODING"] = "utf-8"
     utf8_env["PYTHONUTF8"] = "1"
     completed = _run_command(
         [
-            pip_audit_executable,
+            python_executable,
+            "-m",
+            "pip_audit",
             "--local",
             "--format",
             "json",

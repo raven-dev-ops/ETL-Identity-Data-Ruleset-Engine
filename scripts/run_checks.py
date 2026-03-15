@@ -157,13 +157,28 @@ def verify_distribution_build(
 
 def verify_console_entrypoint(python_executable: str) -> Path:
     scripts_dir = Path(python_executable).resolve().parent
-    candidate_names = (
-        PROJECT_DISTRIBUTION,
-        f"{PROJECT_DISTRIBUTION}.exe",
-        f"{PROJECT_DISTRIBUTION}.cmd",
-    )
+    candidate_names: list[str] = [PROJECT_DISTRIBUTION, PROJECT_DISTRIBUTION.replace("-", "_")]
+    try:
+        distribution = metadata.distribution(PROJECT_DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        distribution = None
+    if distribution is not None:
+        for entry_point in distribution.entry_points:
+            if entry_point.group == "console_scripts":
+                candidate_names.append(entry_point.name)
 
+    normalized_candidates: list[str] = []
     for candidate_name in candidate_names:
+        if candidate_name not in normalized_candidates:
+            normalized_candidates.append(candidate_name)
+
+    candidate_names_with_suffixes: list[str] = []
+    for candidate_name in normalized_candidates:
+        candidate_names_with_suffixes.append(candidate_name)
+        candidate_names_with_suffixes.append(f"{candidate_name}.exe")
+        candidate_names_with_suffixes.append(f"{candidate_name}.cmd")
+
+    for candidate_name in candidate_names_with_suffixes:
         candidate_path = scripts_dir / candidate_name
         if not candidate_path.exists():
             continue
@@ -174,6 +189,16 @@ def verify_console_entrypoint(python_executable: str) -> Path:
                 f"Console entrypoint {candidate_path} did not expose the expected CLI help output."
             )
         return candidate_path
+
+    python_path = Path(python_executable)
+    if python_path.exists():
+        help_text = _capture_output((python_executable, "-m", "etl_identity_engine.cli", "--help"))
+        if "run-all" not in help_text or "generate" not in help_text:
+            raise SystemExit(
+                "The installed CLI module did not expose the expected help output when run via "
+                f"`{python_executable} -m etl_identity_engine.cli --help`."
+            )
+        return python_path
 
     raise SystemExit(
         f"Console entrypoint {PROJECT_DISTRIBUTION!r} was not found next to {python_executable}. "

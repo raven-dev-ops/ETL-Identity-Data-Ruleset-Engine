@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tomllib
@@ -109,25 +108,6 @@ def _git_head_commit() -> str:
         detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
         raise SystemExit(f"Unable to resolve git HEAD: {detail}")
     return completed.stdout.strip()
-
-
-def _resolve_pip_audit_executable() -> str:
-    candidates = (
-        Path(sys.executable).resolve().parent / "pip-audit.exe",
-        Path(sys.executable).resolve().parent / "pip-audit",
-    )
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
-
-    path_candidate = shutil.which("pip-audit")
-    if path_candidate:
-        return path_candidate
-
-    raise SystemExit(
-        "pip-audit executable not found in the active environment. "
-        "Run `python -m pip install -e .[dev]` before the container supply-chain check."
-    )
 
 
 def _normalize_image_inspect(inspect_payload: Any, *, image_tag: str) -> dict[str, object]:
@@ -240,13 +220,14 @@ def _build_attestation(
 
 
 def _run_dependency_audit(requirements_lock_path: Path, output_path: Path) -> None:
-    pip_audit_executable = _resolve_pip_audit_executable()
     utf8_env = os.environ.copy()
     utf8_env["PYTHONIOENCODING"] = "utf-8"
     utf8_env["PYTHONUTF8"] = "1"
     completed = _run_command(
         [
-            pip_audit_executable,
+            sys.executable,
+            "-m",
+            "pip_audit",
             "--requirement",
             str(requirements_lock_path),
             "--format",

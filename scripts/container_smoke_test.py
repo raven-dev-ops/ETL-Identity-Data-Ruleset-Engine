@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -73,6 +74,17 @@ def _write_env_file(
     )
 
 
+def _ensure_runtime_root_permissions(runtime_root: Path) -> None:
+    for directory in (
+        runtime_root,
+        runtime_root / "state",
+        runtime_root / "output",
+        runtime_root / "published",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+        os.chmod(directory, 0o777)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--image-tag", default="etl-identity-engine:container-smoke")
@@ -82,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     runtime_root = Path(tempfile.mkdtemp(prefix="etl-identity-engine-container-smoke-"))
+    _ensure_runtime_root_permissions(runtime_root)
     env_file = runtime_root / "container.env"
     service_name = "identity-service"
     try:
