@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-15
+
 - Added packaged CAD and RMS vendor profiles for common public-safety
   onboarding shapes, including bundle-local or manifest-declared
   `vendor_profile` support, direct CLI validation, and tests for valid
