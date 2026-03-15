@@ -77,6 +77,27 @@ The mapping overlay translates vendor-specific person, incident, and
 link column names into the canonical CAD contract fields before bundle
 validation continues.
 
+For supported bundled profiles, a CAD source bundle may also declare a
+packaged `vendor_profile` instead of a bundle-local overlay:
+
+```yaml
+contract_name: cad_call_for_service
+contract_version: v1
+vendor_profile: cad_county_dispatch_v1
+files:
+  person_records: vendor_person_records.csv
+  incident_records: vendor_incident_records.csv
+  incident_person_links: vendor_incident_person_links.csv
+```
+
+Current shipped CAD vendor profiles:
+
+- `cad_county_dispatch_v1`
+- `cad_records_management_v1`
+
+`mapping_overlay` and `vendor_profile` are mutually exclusive for the
+same bundle.
+
 ## Validation Rules
 
 - `person_records.source_system` must be `cad`.
@@ -94,6 +115,12 @@ validation continues.
 
 ```bash
 etl-identity-engine validate-public-safety-contract --bundle-dir ./cad_bundle
+```
+
+To validate a vendor-native CAD bundle against a packaged profile:
+
+```bash
+etl-identity-engine validate-public-safety-contract --bundle-dir ./cad_bundle --vendor-profile cad_county_dispatch_v1
 ```
 
 The command prints a JSON summary when the bundle is valid and raises a

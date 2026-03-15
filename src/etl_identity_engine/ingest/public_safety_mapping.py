@@ -26,8 +26,10 @@ class PublicSafetyMappingFileOverlay:
 @dataclass(frozen=True)
 class PublicSafetyMappingOverlay:
     overlay_path: Path
+    overlay_label: str
     contract_name: str
     contract_version: str
+    vendor_profile: str | None
     files: dict[str, PublicSafetyMappingFileOverlay]
 
 
@@ -244,8 +246,10 @@ def load_public_safety_mapping_overlay(
 
     return PublicSafetyMappingOverlay(
         overlay_path=resolved_path,
+        overlay_label=resolved_path.name,
         contract_name=overlay_contract_name,
         contract_version=overlay_contract_version,
+        vendor_profile=None,
         files=resolved_files,
     )
 
@@ -271,7 +275,7 @@ def apply_public_safety_mapping_overlay(
         }
     )
     if missing_source_columns:
-        overlay_name = "<implicit canonical passthrough>" if overlay is None else overlay.overlay_path.name
+        overlay_name = "<implicit canonical passthrough>" if overlay is None else overlay.overlay_label
         raise PublicSafetyMappingOverlayError(
             f"{overlay_name}: files.{logical_name} references missing source columns: "
             + ", ".join(missing_source_columns)
@@ -283,7 +287,7 @@ def apply_public_safety_mapping_overlay(
         if field not in column_map and field not in source_fieldnames and field not in defaults
     ]
     if missing_canonical_fields:
-        overlay_name = "<implicit canonical passthrough>" if overlay is None else overlay.overlay_path.name
+        overlay_name = "<implicit canonical passthrough>" if overlay is None else overlay.overlay_label
         raise PublicSafetyMappingOverlayError(
             f"{overlay_name}: files.{logical_name} does not provide canonical fields: "
             + ", ".join(missing_canonical_fields)

@@ -28,6 +28,9 @@ named contract-bound source classes alongside the landed person inputs.
 Those public-safety bundles can now also carry vendor-column mapping
 overlays so real CAD/RMS extracts do not have to rename themselves into
 the synthetic canonical headers before onboarding validation starts.
+For CAD onboarding, the repo now also ships maintained packaged vendor
+profiles for common export shapes, so operators can select a supported
+`vendor_profile` instead of authoring a custom overlay for every pilot.
 Manifest-driven runs with `--state-db` now also persist the derived
 incident-to-identity activity view from those validated CAD/RMS
 bundles, so the demo slice can be restored directly from persisted
@@ -228,6 +231,7 @@ is included in the repository.
 - [Evaluation and Metrics](docs/evaluation-and-metrics.md)
 - [Output Contracts](docs/output-contracts.md)
 - [Public Safety Onboarding](docs/public-safety-onboarding.md)
+- [Public Safety Vendor Profiles](docs/public-safety-vendor-profiles.md)
 - [Public Safety Demo](docs/public-safety-demo.md)
 - [Production Operating Model](docs/production-operating-model.md)
 - [Release Process](docs/release-process.md)

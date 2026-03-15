@@ -1,0 +1,38 @@
+overlay_version: v1
+contract_name: cad_call_for_service
+contract_version: v1
+files:
+  person_records:
+    columns:
+      source_record_id: cad_person_key
+      person_entity_id: master_name_id
+      first_name: given_name
+      last_name: family_name
+      dob: birth_date
+      address: street_address
+      city: city_name
+      state: state_code
+      postal_code: zip5
+      phone: primary_phone
+      updated_at: row_updated_at
+      is_conflict_variant: variant_flag
+      conflict_types: variant_codes
+    defaults:
+      source_system: cad
+  incident_records:
+    columns:
+      incident_id: cad_event_key
+      occurred_at: call_received_at
+      location: street_address
+      city: city_name
+      state: state_code
+    defaults:
+      source_system: cad
+  incident_person_links:
+    columns:
+      incident_person_link_id: cad_link_key
+      incident_id: cad_event_key
+      person_entity_id: master_name_id
+      source_record_id: cad_person_key
+      role: party_role
+    defaults: {}

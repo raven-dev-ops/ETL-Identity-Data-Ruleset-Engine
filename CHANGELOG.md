@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added packaged CAD vendor profiles for common public-safety onboarding
+  shapes, including bundle-local or manifest-declared `vendor_profile`
+  support, direct CLI validation, and tests for valid and invalid
+  profile-shaped inputs.
+
 ## [1.0.0] - 2026-03-14
 
 - Added versioned `cad_call_for_service` and `rms_report_person`

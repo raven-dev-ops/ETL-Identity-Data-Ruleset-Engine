@@ -25,3 +25,9 @@ etl-identity-engine check-public-safety-onboarding \
   --bundle-dir fixtures/public_safety_onboarding/cad_bundle \
   --bundle-dir fixtures/public_safety_onboarding/rms_bundle
 ```
+
+The installed runtime also ships packaged CAD vendor profiles that can
+be applied during validation without a bundle-local overlay file:
+
+- `cad_county_dispatch_v1`
+- `cad_records_management_v1`

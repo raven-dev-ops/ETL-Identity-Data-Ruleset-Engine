@@ -377,6 +377,110 @@ def _build_vendor_public_safety_bundle(
     return root_dir, overlay_path
 
 
+def _build_packaged_profile_public_safety_bundle(
+    root_dir: Path,
+    *,
+    profile_name: str,
+    include_marker_vendor_profile: bool,
+) -> Path:
+    root_dir.mkdir(parents=True, exist_ok=True)
+    if profile_name == "cad_county_dispatch_v1":
+        person_rows = [
+            {
+                "cad_person_key": "CAD-1",
+                "master_name_id": "PS-1",
+                "given_name": "Jamie",
+                "family_name": "Lane",
+                "birth_date": "1985-03-12",
+                "street_address": "123 Main St",
+                "city_name": "Columbus",
+                "state_code": "OH",
+                "zip5": "43004",
+                "primary_phone": "(555) 123-4567",
+                "row_updated_at": "2026-03-14T00:00:00Z",
+                "variant_flag": "false",
+                "variant_codes": "",
+            }
+        ]
+        incident_rows = [
+            {
+                "cad_event_key": "CAD-INC-1",
+                "call_received_at": "2026-03-14T12:00:00Z",
+                "street_address": "100 WEST MAIN STREET",
+                "city_name": "Columbus",
+                "state_code": "OH",
+            }
+        ]
+        link_rows = [
+            {
+                "cad_link_key": "CAD-LINK-1",
+                "cad_event_key": "CAD-INC-1",
+                "master_name_id": "PS-1",
+                "cad_person_key": "CAD-1",
+                "party_role": "REPORTING_PARTY",
+            }
+        ]
+    elif profile_name == "cad_records_management_v1":
+        person_rows = [
+            {
+                "person_oid": "CAD-2",
+                "subject_uid": "PS-2",
+                "first": "Alex",
+                "last": "Rivera",
+                "dob_yyyy_mm_dd": "1986-04-01",
+                "location_line1": "456 NORTH HIGH STREET",
+                "jurisdiction_city": "Columbus",
+                "jurisdiction_state": "OH",
+                "postal": "43004",
+                "phone_digits": "5559876543",
+                "last_edit_ts": "2026-03-14T01:00:00Z",
+                "conflict_flag": "false",
+                "conflict_reason_codes": "",
+            }
+        ]
+        incident_rows = [
+            {
+                "call_oid": "CAD-INC-2",
+                "dispatch_ts": "2026-03-14T13:00:00Z",
+                "place_text": "456 NORTH HIGH STREET",
+                "jurisdiction_city": "Columbus",
+                "jurisdiction_state": "OH",
+            }
+        ]
+        link_rows = [
+            {
+                "call_person_oid": "CAD-LINK-2",
+                "call_oid": "CAD-INC-2",
+                "subject_uid": "PS-2",
+                "person_oid": "CAD-2",
+                "participation_role": "SUBJECT",
+            }
+        ]
+    else:
+        raise AssertionError(f"Unsupported test vendor profile: {profile_name}")
+
+    _write_csv(root_dir / "vendor_person_records.csv", person_rows)
+    _write_csv(root_dir / "vendor_incident_records.csv", incident_rows)
+    _write_csv(root_dir / "vendor_incident_person_links.csv", link_rows)
+
+    manifest_payload: dict[str, object] = {
+        "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        "contract_version": "v1",
+        "files": {
+            "person_records": "vendor_person_records.csv",
+            "incident_records": "vendor_incident_records.csv",
+            "incident_person_links": "vendor_incident_person_links.csv",
+        },
+    }
+    if include_marker_vendor_profile:
+        manifest_payload["vendor_profile"] = profile_name
+    (root_dir / PUBLIC_SAFETY_CONTRACT_MARKER).write_text(
+        yaml.safe_dump(manifest_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    return root_dir
+
+
 def _source_bundles_block(*, cad_path: str, rms_path: str) -> str:
     return f"""
 source_bundles:
@@ -412,6 +516,28 @@ source_bundles:
     contract_name: rms_report_person
     contract_version: v1
     mapping_overlay: {rms_overlay_path}
+"""
+
+
+def _source_bundles_block_with_vendor_profile(
+    *,
+    cad_path: str,
+    rms_path: str,
+    cad_vendor_profile: str,
+) -> str:
+    return f"""
+source_bundles:
+  - bundle_id: cad_primary
+    source_class: cad
+    path: {cad_path}
+    contract_name: cad_call_for_service
+    contract_version: v1
+    vendor_profile: {cad_vendor_profile}
+  - bundle_id: rms_primary
+    source_class: rms
+    path: {rms_path}
+    contract_name: rms_report_person
+    contract_version: v1
 """
 
 
@@ -676,6 +802,100 @@ def test_resolve_batch_manifest_supports_vendor_mapped_public_safety_bundle_over
     assert rms_bundle.files[1].rows[0]["incident_id"] == "RMS-INC-1"
 
 
+def test_resolve_batch_manifest_supports_packaged_cad_vendor_profiles(
+    tmp_path: Path,
+) -> None:
+    landing_dir = tmp_path / "landing"
+    _write_csv(
+        landing_dir / "agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_parquet(
+        landing_dir / "agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    cad_bundle_dir = _build_packaged_profile_public_safety_bundle(
+        landing_dir / "cad_vendor_profile_bundle",
+        profile_name="cad_county_dispatch_v1",
+        include_marker_vendor_profile=False,
+    )
+    rms_bundle_dir = _build_public_safety_bundle(
+        landing_dir / "rms_bundle",
+        contract_name=RMS_REPORT_PERSON_CONTRACT.contract_name,
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "manifest-with-vendor-profile.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            source_bundles_block=_source_bundles_block_with_vendor_profile(
+                cad_path=cad_bundle_dir.name,
+                rms_path=rms_bundle_dir.name,
+                cad_vendor_profile="cad_county_dispatch_v1",
+            ),
+        ),
+    )
+
+    resolved = resolve_batch_manifest(manifest_path)
+
+    cad_bundle = next(bundle for bundle in resolved.source_bundles if bundle.spec.bundle_id == "cad_primary")
+    assert cad_bundle.vendor_profile == "cad_county_dispatch_v1"
+    assert cad_bundle.mapping_overlay_reference is None
+    assert cad_bundle.files[0].rows[0]["source_record_id"] == "CAD-1"
+    assert cad_bundle.files[1].rows[0]["incident_id"] == "CAD-INC-1"
+
+
+def test_resolve_batch_manifest_rejects_source_bundle_with_overlay_and_vendor_profile(
+    tmp_path: Path,
+) -> None:
+    landing_dir = tmp_path / "landing"
+    _write_csv(
+        landing_dir / "agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_parquet(
+        landing_dir / "agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    cad_bundle_dir = _build_packaged_profile_public_safety_bundle(
+        landing_dir / "cad_vendor_profile_bundle",
+        profile_name="cad_county_dispatch_v1",
+        include_marker_vendor_profile=False,
+    )
+    rms_bundle_dir = _build_public_safety_bundle(
+        landing_dir / "rms_bundle",
+        contract_name=RMS_REPORT_PERSON_CONTRACT.contract_name,
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "manifest-with-invalid-vendor-profile.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            source_bundles_block=f"""
+source_bundles:
+  - bundle_id: cad_primary
+    source_class: cad
+    path: {cad_bundle_dir.name}
+    contract_name: cad_call_for_service
+    contract_version: v1
+    mapping_overlay: overlays/vendor_columns.yml
+    vendor_profile: cad_county_dispatch_v1
+  - bundle_id: rms_primary
+    source_class: rms
+    path: {rms_bundle_dir.name}
+    contract_name: rms_report_person
+    contract_version: v1
+""",
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundles\[0\] cannot define both mapping_overlay and vendor_profile",
+    ):
+        resolve_batch_manifest(manifest_path)
+
+
 def test_normalize_manifest_rejects_invalid_public_safety_source_bundle_without_partial_output(
     tmp_path: Path,
 ) -> None:
@@ -801,6 +1021,46 @@ def test_run_all_supports_vendor_mapped_public_safety_source_bundles(tmp_path: P
     normalized_rows = _read_csv(base_dir / "data" / "normalized" / "normalized_person_records.csv")
     assert {row["source_record_id"] for row in normalized_rows} == {"A-1", "B-1"}
     assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
+
+
+def test_run_all_supports_packaged_cad_vendor_profile_source_bundles(tmp_path: Path) -> None:
+    landing_dir = tmp_path / "landing"
+    _write_csv(
+        landing_dir / "agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_parquet(
+        landing_dir / "agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    cad_bundle_dir = _build_packaged_profile_public_safety_bundle(
+        landing_dir / "cad_vendor_profile_bundle",
+        profile_name="cad_records_management_v1",
+        include_marker_vendor_profile=False,
+    )
+    rms_bundle_dir = _build_public_safety_bundle(
+        landing_dir / "rms_bundle",
+        contract_name=RMS_REPORT_PERSON_CONTRACT.contract_name,
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "vendor-profile-run-all-manifest.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            source_bundles_block=_source_bundles_block_with_vendor_profile(
+                cad_path=cad_bundle_dir.name,
+                rms_path=rms_bundle_dir.name,
+                cad_vendor_profile="cad_records_management_v1",
+            ),
+        ),
+    )
+    base_dir = tmp_path / "vendor-profile-run"
+
+    assert main(["run-all", "--base-dir", str(base_dir), "--manifest", str(manifest_path)]) == 0
+
+    assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
+    public_safety_rows = _read_csv(base_dir / "data" / "public_safety_demo" / "incident_identity_view.csv")
+    assert {row["incident_id"] for row in public_safety_rows} == {"CAD-INC-2", "RMS-INC-1"}
 
 
 def test_resolve_batch_manifest_supports_object_storage_memory_uris(tmp_path: Path) -> None:

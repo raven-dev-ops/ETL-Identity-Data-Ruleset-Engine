@@ -72,6 +72,7 @@ Each entry in `source_bundles` must contain:
 Optional source-bundle fields:
 
 - `mapping_overlay`
+- `vendor_profile`
 
 Supported `source_class` values:
 
@@ -94,6 +95,12 @@ bundle-local or manifest-declared `mapping_overlay` YAML file. The
 overlay translates vendor columns into the canonical contract fields for
 `person_records`, `incident_records`, and `incident_person_links`
 before contract validation continues.
+
+For supported packaged onboarding profiles, a source bundle may instead
+declare `vendor_profile`. That lets operators select a shipped mapping
+profile without adding a bundle-local overlay file. `mapping_overlay`
+and `vendor_profile` are mutually exclusive for the same source bundle.
+The current shipped packaged profiles cover CAD onboarding only.
 
 ## Supported Schema
 
@@ -260,6 +267,12 @@ source_bundles:
     contract_name: rms_report_person
     contract_version: v1
     mapping_overlay: overlays/vendor_columns.yml
+  - bundle_id: cad_vendor_profile
+    source_class: cad
+    path: cad_vendor_bundle
+    contract_name: cad_call_for_service
+    contract_version: v1
+    vendor_profile: cad_county_dispatch_v1
 ```
 
 ## Validation Behavior
@@ -276,6 +289,7 @@ Before normalization starts, the runtime validates:
 - `source_system` values against `source_id`
 - declared CAD/RMS bundle contract identity and source class
 - optional vendor-column mapping overlays for declared CAD/RMS bundles
+- optional packaged vendor profiles for declared CAD bundles
 - bundle required-file completeness and row-shape validation
 - incident/link referential integrity inside each declared CAD/RMS bundle
 

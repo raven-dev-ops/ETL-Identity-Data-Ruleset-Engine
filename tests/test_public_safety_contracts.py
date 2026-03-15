@@ -84,17 +84,26 @@ def _link_row(
     }
 
 
-def _write_contract_manifest(bundle_dir: Path, *, contract_name: str, files: dict[str, str]) -> Path:
+def _write_contract_manifest(
+    bundle_dir: Path,
+    *,
+    contract_name: str,
+    files: dict[str, str],
+    mapping_overlay: str | None = None,
+    vendor_profile: str | None = None,
+) -> Path:
+    payload: dict[str, object] = {
+        "contract_name": contract_name,
+        "contract_version": "v1",
+        "files": files,
+    }
+    if mapping_overlay is not None:
+        payload["mapping_overlay"] = mapping_overlay
+    if vendor_profile is not None:
+        payload["vendor_profile"] = vendor_profile
     marker_path = bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
     marker_path.write_text(
-        yaml.safe_dump(
-            {
-                "contract_name": contract_name,
-                "contract_version": "v1",
-                "files": files,
-            },
-            sort_keys=False,
-        ),
+        yaml.safe_dump(payload, sort_keys=False),
         encoding="utf-8",
     )
     return marker_path
@@ -314,6 +323,112 @@ def _build_vendor_overlay_bundle(tmp_path: Path, *, contract_name: str) -> tuple
     return bundle_dir, overlay_path
 
 
+def _packaged_vendor_profile_rows(profile_name: str) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+    if profile_name == "cad_county_dispatch_v1":
+        return (
+            [
+                {
+                    "cad_person_key": "CAD-1",
+                    "master_name_id": "P-1",
+                    "given_name": "Taylor",
+                    "family_name": "Jordan",
+                    "birth_date": "1985-03-12",
+                    "street_address": "123 Main Street",
+                    "city_name": "Columbus",
+                    "state_code": "OH",
+                    "zip5": "43004",
+                    "primary_phone": "5551234567",
+                    "row_updated_at": "2026-03-14T00:00:00Z",
+                    "variant_flag": "false",
+                    "variant_codes": "",
+                }
+            ],
+            [
+                {
+                    "cad_event_key": "CAD-INC-1",
+                    "call_received_at": "2026-03-14T12:00:00Z",
+                    "street_address": "100 WEST MAIN STREET",
+                    "city_name": "Columbus",
+                    "state_code": "OH",
+                }
+            ],
+            [
+                {
+                    "cad_link_key": "CAD-LINK-1",
+                    "cad_event_key": "CAD-INC-1",
+                    "master_name_id": "P-1",
+                    "cad_person_key": "CAD-1",
+                    "party_role": "REPORTING_PARTY",
+                }
+            ],
+        )
+    if profile_name == "cad_records_management_v1":
+        return (
+            [
+                {
+                    "person_oid": "CAD-2",
+                    "subject_uid": "P-2",
+                    "first": "Jamie",
+                    "last": "Lane",
+                    "dob_yyyy_mm_dd": "1986-04-01",
+                    "location_line1": "456 NORTH HIGH STREET",
+                    "jurisdiction_city": "Columbus",
+                    "jurisdiction_state": "OH",
+                    "postal": "43004",
+                    "phone_digits": "5559876543",
+                    "last_edit_ts": "2026-03-14T01:00:00Z",
+                    "conflict_flag": "false",
+                    "conflict_reason_codes": "",
+                }
+            ],
+            [
+                {
+                    "call_oid": "CAD-INC-2",
+                    "dispatch_ts": "2026-03-14T13:00:00Z",
+                    "place_text": "456 NORTH HIGH STREET",
+                    "jurisdiction_city": "Columbus",
+                    "jurisdiction_state": "OH",
+                }
+            ],
+            [
+                {
+                    "call_person_oid": "CAD-LINK-2",
+                    "call_oid": "CAD-INC-2",
+                    "subject_uid": "P-2",
+                    "person_oid": "CAD-2",
+                    "participation_role": "SUBJECT",
+                }
+            ],
+        )
+    raise AssertionError(f"Unsupported test vendor profile: {profile_name}")
+
+
+def _build_packaged_vendor_profile_bundle(
+    tmp_path: Path,
+    *,
+    profile_name: str,
+    include_marker_vendor_profile: bool = True,
+) -> Path:
+    bundle_dir = tmp_path / profile_name
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    person_rows, incident_rows, link_rows = _packaged_vendor_profile_rows(profile_name)
+    _write_csv(bundle_dir / "vendor_person_records.csv", person_rows, tuple(person_rows[0]))
+    _write_csv(bundle_dir / "vendor_incident_records.csv", incident_rows, tuple(incident_rows[0]))
+    _write_csv(bundle_dir / "vendor_incident_person_links.csv", link_rows, tuple(link_rows[0]))
+    _write_contract_manifest(
+        bundle_dir,
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        vendor_profile=profile_name if include_marker_vendor_profile else None,
+        files={
+            "person_records": "vendor_person_records.csv",
+            "incident_records": "vendor_incident_records.csv",
+            "incident_person_links": "vendor_incident_person_links.csv",
+        },
+    )
+    return bundle_dir
+
+
 def test_validate_cad_contract_bundle_accepts_valid_csv_bundle(tmp_path: Path) -> None:
     bundle_dir = _build_bundle(tmp_path, contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name)
 
@@ -370,6 +485,88 @@ def test_validate_public_safety_contract_accepts_vendor_overlay_bundle(tmp_path:
         "variant_codes",
     )
     assert validated.files[0].fieldnames == PERSON_HEADERS
+
+
+@pytest.mark.parametrize(
+    "profile_name,expected_source_record_id,expected_incident_id",
+    [
+        ("cad_county_dispatch_v1", "CAD-1", "CAD-INC-1"),
+        ("cad_records_management_v1", "CAD-2", "CAD-INC-2"),
+    ],
+)
+def test_validate_public_safety_contract_accepts_packaged_cad_vendor_profiles(
+    tmp_path: Path,
+    profile_name: str,
+    expected_source_record_id: str,
+    expected_incident_id: str,
+) -> None:
+    bundle_dir = _build_packaged_vendor_profile_bundle(tmp_path, profile_name=profile_name)
+
+    validated = validate_public_safety_contract_bundle(bundle_dir)
+
+    assert validated.contract_name == CAD_CALL_FOR_SERVICE_CONTRACT.contract_name
+    assert validated.vendor_profile == profile_name
+    assert validated.mapping_overlay_relative_path is None
+    assert validated.files[0].fieldnames == PERSON_HEADERS
+    assert validated.files[1].fieldnames == INCIDENT_HEADERS
+    assert validated.files[2].fieldnames == INCIDENT_LINK_HEADERS
+    assert validated.files[0].rows[0]["source_record_id"] == expected_source_record_id
+    assert validated.files[1].rows[0]["incident_id"] == expected_incident_id
+
+
+@pytest.mark.parametrize(
+    "profile_name,missing_column",
+    [
+        ("cad_county_dispatch_v1", "given_name"),
+        ("cad_records_management_v1", "first"),
+    ],
+)
+def test_validate_public_safety_contract_rejects_invalid_packaged_cad_vendor_profiles(
+    tmp_path: Path,
+    profile_name: str,
+    missing_column: str,
+) -> None:
+    bundle_dir = _build_packaged_vendor_profile_bundle(tmp_path, profile_name=profile_name)
+    person_path = bundle_dir / "vendor_person_records.csv"
+    person_rows = []
+    with person_path.open("r", encoding="utf-8", newline="") as handle:
+        person_rows = list(csv.DictReader(handle))
+    for row in person_rows:
+        row.pop(missing_column, None)
+    _write_csv(person_path, person_rows, tuple(column for column in person_rows[0] if column != missing_column))
+
+    with pytest.raises(
+        PublicSafetyContractValidationError,
+        match=rf"files.person_records references missing source columns: {missing_column}",
+    ):
+        validate_public_safety_contract_bundle(bundle_dir)
+
+
+def test_validate_public_safety_contract_rejects_marker_with_overlay_and_vendor_profile(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _build_packaged_vendor_profile_bundle(
+        tmp_path,
+        profile_name="cad_county_dispatch_v1",
+        include_marker_vendor_profile=False,
+    )
+    _write_contract_manifest(
+        bundle_dir,
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        mapping_overlay="overlays/vendor_columns.yml",
+        vendor_profile="cad_county_dispatch_v1",
+        files={
+            "person_records": "vendor_person_records.csv",
+            "incident_records": "vendor_incident_records.csv",
+            "incident_person_links": "vendor_incident_person_links.csv",
+        },
+    )
+
+    with pytest.raises(
+        PublicSafetyContractValidationError,
+        match="contract manifest cannot define both mapping_overlay and vendor_profile",
+    ):
+        validate_public_safety_contract_bundle(bundle_dir)
 
 
 def test_validate_public_safety_contract_rejects_missing_marker(tmp_path: Path) -> None:
@@ -499,3 +696,31 @@ def test_validate_public_safety_contract_cli_writes_summary_json(
         "incident_records",
         "incident_person_links",
     }
+
+
+def test_validate_public_safety_contract_cli_accepts_packaged_vendor_profile(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bundle_dir = _build_packaged_vendor_profile_bundle(
+        tmp_path,
+        profile_name="cad_county_dispatch_v1",
+        include_marker_vendor_profile=False,
+    )
+
+    assert (
+        main(
+            [
+                "validate-public-safety-contract",
+                "--bundle-dir",
+                str(bundle_dir),
+                "--vendor-profile",
+                "cad_county_dispatch_v1",
+            ]
+        )
+        == 0
+    )
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["vendor_profile"] == "cad_county_dispatch_v1"
+    assert summary["files"]["person_records"]["fieldnames"] == list(PERSON_HEADERS)

@@ -19,6 +19,10 @@ from etl_identity_engine.ingest.public_safety_mapping import (
     apply_public_safety_mapping_overlay,
     load_public_safety_mapping_overlay,
 )
+from etl_identity_engine.ingest.public_safety_vendor_profiles import (
+    PublicSafetyVendorProfileError,
+    load_packaged_public_safety_mapping_overlay,
+)
 from etl_identity_engine.io.read import read_dict_fieldnames, read_dict_rows
 
 
@@ -72,6 +76,7 @@ class ValidatedPublicSafetyContractBundle:
     source_system: str
     mapping_overlay_path: Path | None
     mapping_overlay_relative_path: str | None
+    vendor_profile: str | None
     files: tuple[ValidatedPublicSafetyContractFile, ...]
 
     def to_summary(self) -> dict[str, object]:
@@ -83,6 +88,7 @@ class ValidatedPublicSafetyContractBundle:
             "source_system": self.source_system,
             "mapping_overlay_path": None if self.mapping_overlay_path is None else str(self.mapping_overlay_path),
             "mapping_overlay_relative_path": self.mapping_overlay_relative_path,
+            "vendor_profile": self.vendor_profile,
             "files": {
                 file.logical_name: {
                     "path": str(file.path),
@@ -276,6 +282,7 @@ def _load_mapping_overlay(
     marker: Mapping[str, object],
     spec: PublicSafetyContractSpec,
     explicit_mapping_overlay_path: Path | None,
+    explicit_vendor_profile: str | None,
 ) -> PublicSafetyMappingOverlay | None:
     marker_overlay_reference = _optional_non_empty_string(
         marker,
@@ -283,6 +290,33 @@ def _load_mapping_overlay(
         bundle_dir=bundle_dir,
         context="contract manifest",
     )
+    marker_vendor_profile = _optional_non_empty_string(
+        marker,
+        "vendor_profile",
+        bundle_dir=bundle_dir,
+        context="contract manifest",
+    )
+    if marker_overlay_reference is not None and marker_vendor_profile is not None:
+        raise _bundle_error(
+            bundle_dir,
+            "contract manifest cannot define both mapping_overlay and vendor_profile",
+        )
+    if explicit_mapping_overlay_path is not None and explicit_vendor_profile is not None:
+        raise _bundle_error(
+            bundle_dir,
+            "explicit mapping overlay and vendor_profile cannot both be provided",
+        )
+    if explicit_mapping_overlay_path is not None and marker_vendor_profile is not None:
+        raise _bundle_error(
+            bundle_dir,
+            "vendor_profile from the contract manifest cannot be combined with an explicit mapping overlay",
+        )
+    if explicit_vendor_profile is not None and marker_overlay_reference is not None:
+        raise _bundle_error(
+            bundle_dir,
+            "mapping_overlay from the contract manifest cannot be combined with an explicit vendor_profile",
+        )
+
     resolved_overlay_path = explicit_mapping_overlay_path
     if resolved_overlay_path is None and marker_overlay_reference is not None:
         resolved_overlay_path = _resolve_bundle_relative_path(
@@ -290,17 +324,28 @@ def _load_mapping_overlay(
             marker_overlay_reference,
             label="mapping overlay",
         )
-    if resolved_overlay_path is None:
-        return None
-    try:
-        return load_public_safety_mapping_overlay(
-            resolved_overlay_path,
-            contract_name=spec.contract_name,
-            contract_version=spec.contract_version,
-            allowed_fields_by_file=_allowed_fields_by_file(spec),
-        )
-    except PublicSafetyMappingOverlayError as exc:
-        raise _bundle_error(bundle_dir, f"mapping overlay is invalid: {exc}") from exc
+    resolved_vendor_profile = explicit_vendor_profile or marker_vendor_profile
+    if resolved_overlay_path is not None:
+        try:
+            return load_public_safety_mapping_overlay(
+                resolved_overlay_path,
+                contract_name=spec.contract_name,
+                contract_version=spec.contract_version,
+                allowed_fields_by_file=_allowed_fields_by_file(spec),
+            )
+        except PublicSafetyMappingOverlayError as exc:
+            raise _bundle_error(bundle_dir, f"mapping overlay is invalid: {exc}") from exc
+    if resolved_vendor_profile is not None:
+        try:
+            return load_packaged_public_safety_mapping_overlay(
+                resolved_vendor_profile,
+                contract_name=spec.contract_name,
+                contract_version=spec.contract_version,
+                allowed_fields_by_file=_allowed_fields_by_file(spec),
+            )
+        except PublicSafetyVendorProfileError as exc:
+            raise _bundle_error(bundle_dir, str(exc)) from exc
+    return None
 
 
 def _load_and_canonicalize_rows(
@@ -459,6 +504,7 @@ def validate_public_safety_contract_bundle(
     bundle_dir: Path,
     *,
     mapping_overlay_path: Path | None = None,
+    vendor_profile: str | None = None,
 ) -> ValidatedPublicSafetyContractBundle:
     """Validate a versioned CAD or RMS source bundle and return its summary."""
     if not bundle_dir.exists():
@@ -469,7 +515,9 @@ def validate_public_safety_contract_bundle(
     marker_path = bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
     marker = _load_marker_mapping(marker_path)
 
-    unexpected_keys = sorted(set(marker) - {"contract_name", "contract_version", "files", "mapping_overlay"})
+    unexpected_keys = sorted(
+        set(marker) - {"contract_name", "contract_version", "files", "mapping_overlay", "vendor_profile"}
+    )
     if unexpected_keys:
         raise _bundle_error(
             bundle_dir,
@@ -510,6 +558,7 @@ def validate_public_safety_contract_bundle(
         marker=marker,
         spec=spec,
         explicit_mapping_overlay_path=resolved_mapping_overlay_path,
+        explicit_vendor_profile=vendor_profile,
     )
 
     _validate_required_file_keys(bundle_dir, spec, file_mapping)
@@ -633,7 +682,10 @@ def validate_public_safety_contract_bundle(
         contract_name=contract_name,
         contract_version=contract_version,
         source_system=spec.source_system,
-        mapping_overlay_path=None if overlay is None else overlay.overlay_path,
+        mapping_overlay_path=(
+            None if overlay is None or overlay.vendor_profile is not None else overlay.overlay_path
+        ),
         mapping_overlay_relative_path=mapping_overlay_relative_path,
+        vendor_profile=None if overlay is None else overlay.vendor_profile,
         files=tuple(validated_files),
     )

@@ -65,6 +65,7 @@ class BatchSourceBundleSpec:
     contract_name: str
     contract_version: str
     mapping_overlay: str | None = None
+    vendor_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ class ResolvedBatchSourceBundle:
     contract_version: str
     source_system: str
     mapping_overlay_reference: str | None
+    vendor_profile: str | None
     files: tuple[ResolvedBatchSourceBundleFile, ...]
 
 
@@ -551,6 +553,7 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
                 "contract_name",
                 "contract_version",
                 "mapping_overlay",
+                "vendor_profile",
             },
             path=path,
             context=context,
@@ -612,6 +615,23 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
                 path,
                 f"{context}.source_class must be {contract_spec.source_system!r} for {contract_name!r}",
             )
+        mapping_overlay = _optional_non_empty_string(
+            bundle_value,
+            "mapping_overlay",
+            path=path,
+            context=context,
+        )
+        vendor_profile = _optional_non_empty_string(
+            bundle_value,
+            "vendor_profile",
+            path=path,
+            context=context,
+        )
+        if mapping_overlay is not None and vendor_profile is not None:
+            raise _manifest_error(
+                path,
+                f"{context} cannot define both mapping_overlay and vendor_profile",
+            )
 
         source_bundles.append(
             BatchSourceBundleSpec(
@@ -625,12 +645,8 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
                 ),
                 contract_name=contract_name,
                 contract_version=contract_version,
-                mapping_overlay=_optional_non_empty_string(
-                    bundle_value,
-                    "mapping_overlay",
-                    path=path,
-                    context=context,
-                ),
+                mapping_overlay=mapping_overlay,
+                vendor_profile=vendor_profile,
             )
         )
 
@@ -757,6 +773,7 @@ def _build_resolved_source_bundle(
         contract_version=validated_bundle.contract_version,
         source_system=validated_bundle.source_system,
         mapping_overlay_reference=effective_mapping_overlay_reference,
+        vendor_profile=validated_bundle.vendor_profile,
         files=tuple(
             ResolvedBatchSourceBundleFile(
                 logical_name=file.logical_name,
@@ -936,6 +953,7 @@ def _materialize_object_storage_bundle(
             return validate_public_safety_contract_bundle(
                 staged_bundle_dir,
                 mapping_overlay_path=staged_mapping_overlay_path,
+                vendor_profile=bundle.vendor_profile,
             )
         except PublicSafetyContractValidationError as exc:
             raise _manifest_error(
@@ -1025,6 +1043,7 @@ def resolve_batch_manifest(manifest_path: Path) -> ResolvedBatchManifest:
                 validated_bundle = validate_public_safety_contract_bundle(
                     bundle_path,
                     mapping_overlay_path=mapping_overlay_path,
+                    vendor_profile=bundle.vendor_profile,
                 )
             except PublicSafetyContractValidationError as exc:
                 raise _manifest_error(

@@ -27,6 +27,11 @@ It includes:
 - `example_manifest.yml`
 - `example_vendor_overlay_manifest.yml`
 
+The runtime also now ships maintained packaged CAD vendor profiles:
+
+- `cad_county_dispatch_v1`
+- `cad_records_management_v1`
+
 ## Self-Check Commands
 
 Validate both public-safety bundles plus the example manifest:
@@ -45,6 +50,12 @@ Validate a single bundle directly:
 
 ```bash
 etl-identity-engine validate-public-safety-contract --bundle-dir fixtures/public_safety_onboarding/cad_bundle
+```
+
+Validate a vendor-native CAD bundle with a packaged profile:
+
+```bash
+etl-identity-engine validate-public-safety-contract --bundle-dir ./cad_bundle --vendor-profile cad_county_dispatch_v1
 ```
 
 ## Expected Outcome
@@ -73,6 +84,11 @@ The current onboarding model now supports two source-bundle shapes:
 - canonical bundles that already use the documented contract columns
 - vendor bundles that keep vendor-native columns and add a
   `mapping_overlay` YAML file
+
+For the supported CAD profiles, there is now also a third option:
+
+- vendor bundles that keep vendor-native columns and declare a shipped
+  `vendor_profile`
 
 This remains the intended first pass for source owners and integration
 teams before persisted public-safety activity ingestion work.

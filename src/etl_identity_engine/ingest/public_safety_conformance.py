@@ -43,6 +43,7 @@ def _manifest_summary(manifest_path: Path) -> dict[str, object]:
                 "source_class": bundle.spec.source_class,
                 "bundle_reference": bundle.bundle_reference,
                 "mapping_overlay_reference": bundle.mapping_overlay_reference,
+                "vendor_profile": bundle.vendor_profile,
                 "contract_name": bundle.contract_name,
                 "contract_version": bundle.contract_version,
                 "files": [

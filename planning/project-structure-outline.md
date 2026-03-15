@@ -85,6 +85,7 @@ ETL-Identity-Data-Ruleset-Engine/
     production-operating-model.md
     public-safety-onboarding.md
     public-safety-demo.md
+    public-safety-vendor-profiles.md
     recovery-runbooks.md
     release-process.md
     review-workflow.md
