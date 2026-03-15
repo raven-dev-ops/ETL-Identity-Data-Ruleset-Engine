@@ -123,18 +123,24 @@ def test_bootstrap_windows_customer_pilot_prepares_runtime_files(
     assert prepared_calls == [(state_db, "RUN-POSTGRES-001")]
 
     runtime_env = (bundle_root / "runtime" / "pilot_runtime.env").read_text(encoding="utf-8")
+    assert "ETL_IDENTITY_PILOT_NAME=public-safety-regressions" in runtime_env
     assert f"ETL_IDENTITY_STATE_DB={state_db}" in runtime_env
     assert "ETL_IDENTITY_PILOT_SOURCE_RUN_ID=RUN-POSTGRES-001" in runtime_env
 
     bootstrap_config = json.loads(
         (bundle_root / "runtime" / "pilot_bootstrap.json").read_text(encoding="utf-8")
     )
+    assert bootstrap_config["pilot_name"] == "public-safety-regressions"
     assert bootstrap_config["run_id"] == "RUN-POSTGRES-001"
     assert bootstrap_config["postgres_container_name"] == "etl-identity-pilot-public-safety-regressions"
     assert bootstrap_config["service_port"] == 8010
+    assert bootstrap_config["service_host"] == "127.0.0.1"
+    assert bootstrap_config["windows_services"]["demo_shell"]["service_name"] == "ETLIdentityPilotDemoShell"
+    assert bootstrap_config["windows_services"]["service_api"]["service_name"] == "ETLIdentityPilotServiceApi"
 
     assert (bundle_root / "launch" / "start_pilot_demo_shell.ps1").exists()
     assert (bundle_root / "launch" / "start_pilot_service.ps1").exists()
+    assert (bundle_root / "launch" / "manage_pilot_services.ps1").exists()
     assert (bundle_root / "launch" / "stop_pilot_postgres.ps1").exists()
 
     assert result.run_id == "RUN-POSTGRES-001"

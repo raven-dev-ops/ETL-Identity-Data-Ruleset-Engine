@@ -1,7 +1,7 @@
 # Project Structure Outline
 
 Date prepared: 2026-03-12
-Last updated: 2026-03-14
+Last updated: 2026-03-15
 
 ## Objective
 
@@ -13,9 +13,10 @@ Define and track the repository structure for implementing the ETL Identity Data
 advanced through the published `v1.0.0` release, the tracked
 `v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, and
 the current backlog cycle has completed the `v1.3.0` vendor-adapter
-slice, has now also completed the `v1.4.0` secure-operations evidence
-slice, and is now focused on customer deployment supportability, with
-the CJIS evidence-pack workflow implemented in-repo.
+slice, the `v1.4.0` secure-operations evidence slice, and the `v1.5.0`
+customer deployment supportability slice, including Windows service
+wrappers, support-bundle collection, patch-upgrade tooling, and the
+operator admin console.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -123,9 +124,12 @@ ETL-Identity-Data-Ruleset-Engine/
     create_github_backlog.py
     create_github_backlog.ps1
     kubernetes_manifest_smoke.py
+    manage_windows_customer_pilot_services.py
     package_customer_pilot_bundle.py
+    package_customer_pilot_support_bundle.py
     package_release_sample.py
     package_public_safety_demo.py
+    patch_upgrade_customer_pilot.py
     cjis_preflight_check.py
     package_cjis_evidence_pack.py
     persisted_state_recovery_smoke.py
@@ -157,6 +161,7 @@ ETL-Identity-Data-Ruleset-Engine/
       storage/
       survivorship/
       streaming.py
+      windows_pilot_services.py
   tests/
     test_benchmarking.py
     test_bootstrap_windows_customer_pilot.py
@@ -171,7 +176,9 @@ ETL-Identity-Data-Ruleset-Engine/
     test_package_release_sample.py
     test_package_cjis_evidence_pack.py
     test_package_customer_pilot_bundle.py
+    test_package_customer_pilot_support_bundle.py
     test_package_public_safety_demo.py
+    test_patch_upgrade_customer_pilot.py
     test_pipeline_e2e.py
     test_public_safety_conformance.py
     test_public_safety_demo_django.py
@@ -190,6 +197,7 @@ ETL-Identity-Data-Ruleset-Engine/
     test_github_issue_templates.py
     test_verify_github_issue_metadata.py
     test_state_backup_bundle.py
+    test_windows_pilot_services.py
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
   LICENSE
@@ -230,7 +238,7 @@ The current public line is now explicitly scoped around:
 - keep the event-stream contract and persisted stream-refresh runtime
   aligned with the documented micro-batch operator model
 - execute the new post-`v1.0.0` backlog cycle tracked in
-  `planning/active-github-issues-backlog.md`, now focused on secure
-  operations evidence and customer deployment supportability after the
-  packaged vendor-adapter slice completed
+  `planning/active-github-issues-backlog.md`; the current cycle has now
+  completed the vendor-adapter, secure-operations, and customer
+  deployment supportability slices
 

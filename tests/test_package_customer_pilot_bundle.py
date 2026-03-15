@@ -144,9 +144,15 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
             "launch/start_demo_shell.sh",
             "launch/bootstrap_windows_pilot.ps1",
             "launch/check_pilot_readiness.ps1",
+            "launch/manage_pilot_services.ps1",
+            "launch/collect_support_bundle.ps1",
+            "launch/patch_upgrade_pilot.ps1",
             "tools/rebuild_demo_shell.py",
             "tools/bootstrap_windows_pilot.py",
             "tools/check_pilot_readiness.py",
+            "tools/manage_windows_pilot_services.py",
+            "tools/package_customer_pilot_support_bundle.py",
+            "tools/patch_upgrade_customer_pilot.py",
             "runtime/manage_public_safety_demo.py",
             "runtime/requirements-pilot.txt",
             "runtime/config/runtime_environments.yml",
@@ -178,13 +184,16 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
         assert manifest["state_db"] == "state/pipeline_state.sqlite"
         assert manifest["demo_shell_dir"] == "demo_shell"
         assert "launch/start_demo_shell.ps1" in manifest["launch_helpers"]
+        assert "launch/manage_pilot_services.ps1" in manifest["launch_helpers"]
         assert "tools/rebuild_demo_shell.py" in manifest["artifacts"]
+        assert "tools/package_customer_pilot_support_bundle.py" in manifest["artifacts"]
 
         handoff_manifest = json.loads(archive.read(MODULE.HANDOFF_MANIFEST_NAME).decode("utf-8"))
         assert handoff_manifest["verification_type"] == "sha256"
         handoff_paths = {entry["path"] for entry in handoff_manifest["artifacts"]}
         assert MODULE.MANIFEST_NAME in handoff_paths
         assert "tools/check_pilot_readiness.py" in handoff_paths
+        assert "launch/patch_upgrade_pilot.ps1" in handoff_paths
 
 
 def test_package_customer_pilot_bundle_can_emit_detached_signature(tmp_path: Path) -> None:

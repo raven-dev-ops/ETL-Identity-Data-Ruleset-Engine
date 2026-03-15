@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 from pathlib import Path
 import shutil
 
@@ -32,6 +33,10 @@ def _write_parquet_rows(path: Path, rows: list[dict[str, str]]) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(pa.Table.from_pylist(rows), path)
+
+
+def _parquet_available() -> bool:
+    return importlib.util.find_spec("pyarrow") is not None
 
 
 def _write_export_jobs_config(config_dir: Path, *, output_root: Path) -> Path:
@@ -83,7 +88,14 @@ def _person_row(
     }
 
 
-def _write_manifest(path: Path, *, batch_id: str, source_a_path: str, source_b_path: str) -> Path:
+def _write_manifest(
+    path: Path,
+    *,
+    batch_id: str,
+    source_a_path: str,
+    source_b_path: str,
+    source_b_format: str,
+) -> Path:
     required_columns = "\n".join(f"        - {column}" for column in PERSON_HEADERS)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -103,7 +115,7 @@ sources:
 {required_columns}
   - source_id: source_b
     path: {source_b_path}
-    format: parquet
+    format: {source_b_format}
     schema_version: person-v1
     required_columns:
 {required_columns}
@@ -126,11 +138,15 @@ def _create_persisted_manifest_run(
     base_dir = tmp_path / run_dir_name
     manifest_dir = tmp_path / manifest_dir_name
     landing_dir = manifest_dir / "landing"
+    source_b_is_parquet = _parquet_available()
+    source_b_path = "agency_b.parquet" if source_b_is_parquet else "agency_b.csv"
+    source_b_format = "parquet" if source_b_is_parquet else "csv"
     manifest_path = _write_manifest(
         manifest_dir / "manifest.yml",
         batch_id=batch_id,
         source_a_path="agency_a.csv",
-        source_b_path="agency_b.parquet",
+        source_b_path=source_b_path,
+        source_b_format=source_b_format,
     )
     source_a_rows = [
         _person_row(
@@ -157,7 +173,10 @@ def _create_persisted_manifest_run(
         )
     ]
     _write_csv_rows(landing_dir / "agency_a.csv", source_a_rows)
-    _write_parquet_rows(landing_dir / "agency_b.parquet", source_b_rows)
+    if source_b_is_parquet:
+        _write_parquet_rows(landing_dir / "agency_b.parquet", source_b_rows)
+    else:
+        _write_csv_rows(landing_dir / "agency_b.csv", source_b_rows)
 
     assert (
         main(
@@ -201,6 +220,8 @@ def _create_persisted_synthetic_run(
                 profile,
                 "--seed",
                 str(seed),
+                "--formats",
+                "csv",
                 "--state-db",
                 str(db_path),
             ]
@@ -289,6 +310,7 @@ def _jwt_service_auth() -> ServiceAuthConfig:
             "golden:read",
             "crosswalk:read",
             "public_safety:read",
+            "audit_events:read",
             "review_cases:read",
             "review_cases:write",
             "runs:replay",
@@ -758,6 +780,44 @@ def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp
     assert all(event.actor_type == "service_api" for event in audit_events[:2])
 
 
+def test_service_api_exposes_operator_audit_events_and_admin_console(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    review_row = store.list_review_cases(run_id=run_id)[0]
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
+    operator_headers = _auth_headers("operator-secret")
+
+    mutation_response = client.post(
+        f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
+        headers=operator_headers,
+        json={"decision": "approved", "notes": "approved for audit listing"},
+    )
+    assert mutation_response.status_code == 200
+
+    reader_audit_response = client.get("/api/v1/audit-events", headers=reader_headers)
+    assert reader_audit_response.status_code == 403
+
+    operator_audit_response = client.get(
+        "/api/v1/audit-events",
+        headers=operator_headers,
+        params={"run_id": run_id, "action": "apply_review_decision", "limit": 5},
+    )
+    assert operator_audit_response.status_code == 200
+    payload = operator_audit_response.json()
+    assert payload
+    assert payload[0]["action"] == "apply_review_decision"
+    assert payload[0]["details"]["required_scopes"] == ["review_cases:write"]
+
+    reader_console_response = client.get("/admin/console", headers=reader_headers)
+    assert reader_console_response.status_code == 403
+
+    operator_console_response = client.get("/admin/console", headers=operator_headers)
+    assert operator_console_response.status_code == 200
+    assert "ETL Identity Operator Console" in operator_console_response.text
+    assert "Recent Audit Events" in operator_console_response.text
+    assert "apply_review_decision" in operator_console_response.text
+
+
 def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
     review_row = store.list_review_cases(run_id=run_id)[0]
@@ -859,6 +919,50 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
         and "runs:replay" in event.details["granted_scopes"]
         for event in audit_events
     )
+
+
+def test_service_api_enforces_audit_event_scope_for_jwt_tokens(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    review_row = store.list_review_cases(run_id=run_id)[0]
+    client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
+
+    write_headers = _jwt_headers(
+        "etl-operator",
+        username="audit.writer",
+        scopes=("review_cases:write",),
+    )
+    read_headers = _jwt_headers(
+        "etl-operator",
+        username="audit.reader",
+        scopes=("audit_events:read", "service:metrics"),
+    )
+    missing_scope_headers = _jwt_headers(
+        "etl-operator",
+        username="audit.denied",
+        scopes=("service:metrics",),
+    )
+
+    mutation_response = client.post(
+        f"/api/v1/runs/{run_id}/review-cases/{review_row.review_id}/decision",
+        headers=write_headers,
+        json={"decision": "approved", "notes": "jwt audit listing"},
+    )
+    assert mutation_response.status_code == 200
+
+    forbidden_audit_response = client.get("/api/v1/audit-events", headers=missing_scope_headers)
+    assert forbidden_audit_response.status_code == 403
+    assert "audit_events:read" in forbidden_audit_response.json()["detail"]
+
+    allowed_audit_response = client.get("/api/v1/audit-events", headers=read_headers)
+    assert allowed_audit_response.status_code == 200
+    assert allowed_audit_response.json()
+
+    forbidden_console_response = client.get("/admin/console", headers=missing_scope_headers)
+    assert forbidden_console_response.status_code == 403
+
+    allowed_console_response = client.get("/admin/console", headers=read_headers)
+    assert allowed_console_response.status_code == 200
+    assert "ETL Identity Operator Console" in allowed_console_response.text
 
 
 def test_service_api_exposes_publish_and_export_job_triggers(tmp_path: Path) -> None:

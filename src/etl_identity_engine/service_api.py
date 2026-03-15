@@ -5,12 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import asdict
+import html
+import json
 from pathlib import Path
 import re
 import time
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
+from fastapi.responses import HTMLResponse
 import jwt
 from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,10 +50,12 @@ ServiceScope = Literal[
     "golden:read",
     "crosswalk:read",
     "public_safety:read",
+    "audit_events:read",
     "review_cases:read",
     "review_cases:write",
     "exports:run",
 ]
+AuditEventStatus = Literal["succeeded", "failed", "noop", "reused"]
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,21 @@ class ServiceMetricsResponse(BaseModel):
     latest_completed_run_finished_at_utc: str | None
     latest_failed_run_id: str | None
     latest_failed_run_finished_at_utc: str | None
+
+
+class AuditEventResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    audit_event_id: str
+    occurred_at_utc: str
+    actor_type: str
+    actor_id: str
+    action: str
+    resource_type: str
+    resource_id: str
+    run_id: str | None
+    status: AuditEventStatus
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class PageMetadataResponse(BaseModel):
@@ -482,6 +502,77 @@ def _serialize_metrics(
     )
 
 
+def _serialize_audit_event(record) -> AuditEventResponse:
+    return AuditEventResponse.model_validate(asdict(record))
+
+
+def _render_operator_admin_console_html(
+    *,
+    metrics: ServiceMetricsResponse,
+    audit_events: list[AuditEventResponse],
+) -> str:
+    audit_rows = "\n".join(
+        (
+            "<tr>"
+            f"<td>{html.escape(event.occurred_at_utc)}</td>"
+            f"<td>{html.escape(event.action)}</td>"
+            f"<td>{html.escape(event.status)}</td>"
+            f"<td>{html.escape(event.actor_id)}</td>"
+            f"<td>{html.escape(event.resource_type)}</td>"
+            f"<td>{html.escape(event.resource_id)}</td>"
+            f"<td><code>{html.escape(json.dumps(event.details, sort_keys=True))}</code></td>"
+            "</tr>"
+        )
+        for event in audit_events
+    ) or "<tr><td colspan=\"7\">No recent audit events.</td></tr>"
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>ETL Identity Operator Console</title>
+    <style>
+      body {{ font-family: Consolas, 'Segoe UI', monospace; margin: 24px; background: #f5f6f7; color: #102030; }}
+      h1, h2 {{ margin-bottom: 0.4rem; }}
+      .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }}
+      .card {{ background: white; border: 1px solid #d9dde3; border-radius: 8px; padding: 14px; }}
+      .value {{ font-size: 1.8rem; font-weight: 700; margin-top: 8px; }}
+      table {{ width: 100%; border-collapse: collapse; background: white; }}
+      th, td {{ border: 1px solid #d9dde3; padding: 8px; text-align: left; vertical-align: top; }}
+      th {{ background: #eef2f7; }}
+      code {{ white-space: pre-wrap; word-break: break-word; }}
+      .meta {{ color: #475569; }}
+    </style>
+  </head>
+  <body>
+    <h1>ETL Identity Operator Console</h1>
+    <p class="meta">API version {html.escape(metrics.api_version)} | state store {html.escape(metrics.state_db)} | uptime {metrics.service_uptime_seconds:.3f}s</p>
+    <div class="cards">
+      <div class="card"><div>Completed Runs</div><div class="value">{metrics.runs.completed}</div></div>
+      <div class="card"><div>Running Runs</div><div class="value">{metrics.runs.running}</div></div>
+      <div class="card"><div>Failed Runs</div><div class="value">{metrics.runs.failed}</div></div>
+      <div class="card"><div>Pending Review Cases</div><div class="value">{metrics.review_cases.pending}</div></div>
+      <div class="card"><div>Audit Events</div><div class="value">{metrics.audit_event_count}</div></div>
+      <div class="card"><div>Latest Completed Run</div><div class="value">{html.escape(metrics.latest_completed_run_id or 'n/a')}</div></div>
+    </div>
+    <h2>Recent Audit Events</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Occurred</th>
+          <th>Action</th>
+          <th>Status</th>
+          <th>Actor</th>
+          <th>Resource Type</th>
+          <th>Resource Id</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>{audit_rows}</tbody>
+    </table>
+  </body>
+</html>"""
+
+
 def _extract_claim_value(claims: Mapping[str, Any], claim_path: str) -> Any:
     current: Any = claims
     for segment in claim_path.split("."):
@@ -702,11 +793,16 @@ def create_service_app(
         "operator",
         required_scopes=("public_safety:read",),
     )
+    audit_event_read_access = require_access("operator", required_scopes=("audit_events:read",))
     review_read_access = require_access("reader", "operator", required_scopes=("review_cases:read",))
     review_write_access = require_access("operator", required_scopes=("review_cases:write",))
     replay_access = require_access("operator", required_scopes=("runs:replay",))
     publish_access = require_access("operator", required_scopes=("runs:publish",))
     export_access = require_access("operator", required_scopes=("exports:run",))
+    admin_console_access = require_access(
+        "operator",
+        required_scopes=("service:metrics", "audit_events:read"),
+    )
 
     @app.get("/healthz", response_model=HealthResponse, tags=["health"])
     def healthz(
@@ -743,6 +839,45 @@ def create_service_app(
             state_db=state_db_display,
             service_started_at_utc=service_started_at_utc,
             service_started_monotonic=service_started_monotonic,
+        )
+
+    @app.get("/api/v1/audit-events", response_model=list[AuditEventResponse], tags=["audit-events"])
+    def list_audit_events(
+        run_id: Annotated[str | None, Query(min_length=1)] = None,
+        action: Annotated[str | None, Query(min_length=1)] = None,
+        status: Annotated[AuditEventStatus | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        _principal: AuthenticatedPrincipal = Depends(audit_event_read_access),
+    ) -> list[AuditEventResponse]:
+        return [
+            _serialize_audit_event(record)
+            for record in store.list_audit_events(
+                run_id=run_id,
+                action=action,
+                status=status,
+                limit=limit,
+            )
+        ]
+
+    @app.get("/admin/console", response_class=HTMLResponse, include_in_schema=False)
+    def admin_console(
+        _principal: AuthenticatedPrincipal = Depends(admin_console_access),
+    ) -> HTMLResponse:
+        metrics = _serialize_metrics(
+            store.load_operational_metrics(),
+            state_db=state_db_display,
+            service_started_at_utc=service_started_at_utc,
+            service_started_monotonic=service_started_monotonic,
+        )
+        recent_audit_events = [
+            _serialize_audit_event(record)
+            for record in store.list_audit_events(limit=25)
+        ]
+        return HTMLResponse(
+            _render_operator_admin_console_html(
+                metrics=metrics,
+                audit_events=recent_audit_events,
+            )
         )
 
     @app.get("/api/v1/runs", response_model=RunListResponse, tags=["runs"])

@@ -63,11 +63,17 @@ The packaged zip includes:
 - `tools/rebuild_demo_shell.py`
 - `tools/bootstrap_windows_pilot.py`
 - `tools/check_pilot_readiness.py`
+- `tools/manage_windows_pilot_services.py`
+- `tools/package_customer_pilot_support_bundle.py`
+- `tools/patch_upgrade_customer_pilot.py`
 - `tools/verify_handoff_signature.py`
 - `launch/start_demo_shell.ps1`
 - `launch/start_demo_shell.sh`
 - `launch/bootstrap_windows_pilot.ps1`
 - `launch/check_pilot_readiness.ps1`
+- `launch/manage_pilot_services.ps1`
+- `launch/collect_support_bundle.ps1`
+- `launch/patch_upgrade_pilot.ps1`
 
 ## Local Walkthrough
 
@@ -92,6 +98,16 @@ python scripts/restore_encrypted_bundle.py --bundle dist/customer-pilot/etl-iden
 4. Start the local SQLite walkthrough:
    - PowerShell: `./launch/start_demo_shell.ps1`
    - Bash: `./launch/start_demo_shell.sh`
+
+For the supported Windows single-host PostgreSQL pilot, operators can
+also:
+
+- install or manage Windows services:
+  `powershell -ExecutionPolicy Bypass -File .\launch\manage_pilot_services.ps1 -Action status`
+- collect a redacted troubleshooting artifact:
+  `powershell -ExecutionPolicy Bypass -File .\launch\collect_support_bundle.ps1`
+- apply a preserve-state or reseed patch upgrade:
+  `powershell -ExecutionPolicy Bypass -File .\launch\patch_upgrade_pilot.ps1 -SourceBundle C:\handoff\etl-identity-engine-vX.Y.Z-customer-pilot-example.zip -Mode preserve_state`
 
 The default walkthrough URL is `http://127.0.0.1:8000/`.
 

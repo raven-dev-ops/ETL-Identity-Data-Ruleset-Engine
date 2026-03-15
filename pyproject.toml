@@ -21,6 +21,7 @@ dependencies = [
   "fsspec>=2024.6.0",
   "psycopg[binary]>=3.2.3",
   "PyJWT>=2.9.0",
+  "pywin32>=307; platform_system == 'Windows'",
   "pyarrow>=16.0.0",
   "PyYAML>=6.0.2",
   "SQLAlchemy>=2.0.36",

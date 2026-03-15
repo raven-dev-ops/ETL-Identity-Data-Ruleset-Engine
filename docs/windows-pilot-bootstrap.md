@@ -54,6 +54,9 @@ After bootstrap, the bundle root includes:
 - `runtime/pilot_bootstrap.json`
 - `launch/start_pilot_demo_shell.ps1`
 - `launch/start_pilot_service.ps1`
+- `launch/manage_pilot_services.ps1`
+- `launch/collect_support_bundle.ps1`
+- `launch/patch_upgrade_pilot.ps1`
 - `launch/stop_pilot_postgres.ps1`
 
 The readiness check, hashed handoff manifest, and optional detached
@@ -74,6 +77,31 @@ Start the authenticated service API against the same PostgreSQL state:
 .\launch\start_pilot_service.ps1
 ```
 
+Install and start the supported Windows service wrappers:
+
+```powershell
+.\launch\manage_pilot_services.ps1 -Action install-and-start -ServiceKind all
+```
+
+Query or stop those services later:
+
+```powershell
+.\launch\manage_pilot_services.ps1 -Action status -ServiceKind all
+.\launch\manage_pilot_services.ps1 -Action stop-and-remove -ServiceKind all
+```
+
+Collect a redacted troubleshooting bundle from the extracted install:
+
+```powershell
+.\launch\collect_support_bundle.ps1
+```
+
+Apply a patch upgrade while preserving the current state:
+
+```powershell
+.\launch\patch_upgrade_pilot.ps1 -SourceBundle C:\handoff\etl-identity-engine-vX.Y.Z-customer-pilot-example.zip -Mode preserve_state
+```
+
 Stop and remove the local PostgreSQL pilot container:
 
 ```powershell
@@ -83,4 +111,8 @@ Stop and remove the local PostgreSQL pilot container:
 ## Scope Boundary
 
 This bootstrap is the supported single-host pilot path for evaluation
-and walkthroughs. It is not a production installer or HA topology.
+and walkthroughs. It is not a production installer or HA topology. The
+supported rollback path is documented in
+[customer-pilot-runbooks.md](customer-pilot-runbooks.md) and includes
+stopping or removing the Windows service wrappers before returning to a
+fresh extracted bundle.

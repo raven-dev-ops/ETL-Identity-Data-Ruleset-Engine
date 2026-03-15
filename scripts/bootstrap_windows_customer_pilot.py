@@ -19,6 +19,7 @@ DEFAULT_POSTGRES_PASSWORD = "pilot-password"
 DEFAULT_POSTGRES_IMAGE = "postgres:16-alpine"
 DEFAULT_POSTGRES_HOST = "127.0.0.1"
 DEFAULT_DEMO_HOST = "127.0.0.1"
+DEFAULT_SERVICE_HOST = "127.0.0.1"
 DEFAULT_DEMO_PORT = 8000
 DEFAULT_SERVICE_PORT = 8010
 DEFAULT_SERVICE_READER_API_KEY = "pilot-reader-key"
@@ -224,6 +225,7 @@ def install_runtime_requirements(*, venv_python: Path, bundle_root: Path) -> Non
         raise FileNotFoundError(f"Pilot requirements file not found: {requirements_path}")
     _run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"])
     _run([str(venv_python), "-m", "pip", "install", "-r", str(requirements_path)])
+    _run([str(venv_python), "-m", "pip", "install", "--no-deps", str(bundle_root / "runtime")])
 
 
 def _docker_inspect_state(container_name: str) -> str | None:
@@ -438,11 +440,13 @@ def _write_text(path: Path, value: str) -> None:
 def write_pilot_runtime_env(
     *,
     bundle_root: Path,
+    pilot_name: str,
     state_db: str,
     run_id: str,
     runtime: PostgreSQLPilotRuntime,
     demo_host: str,
     demo_port: int,
+    service_host: str,
     service_port: int,
 ) -> Path:
     env_path = bundle_root / BOOTSTRAP_ENV_RELATIVE_PATH
@@ -450,6 +454,7 @@ def write_pilot_runtime_env(
         env_path,
         "\n".join(
             [
+                f"ETL_IDENTITY_PILOT_NAME={pilot_name}",
                 f"ETL_IDENTITY_STATE_DB={state_db}",
                 f"ETL_IDENTITY_PILOT_SOURCE_RUN_ID={run_id}",
                 f"ETL_IDENTITY_PILOT_POSTGRES_CONTAINER={runtime.container_name}",
@@ -458,6 +463,7 @@ def write_pilot_runtime_env(
                 f"ETL_IDENTITY_SERVICE_OPERATOR_API_KEY={DEFAULT_SERVICE_OPERATOR_API_KEY}",
                 f"ETL_IDENTITY_PILOT_DEMO_HOST={demo_host}",
                 f"ETL_IDENTITY_PILOT_DEMO_PORT={demo_port}",
+                f"ETL_IDENTITY_PILOT_SERVICE_HOST={service_host}",
                 f"ETL_IDENTITY_PILOT_SERVICE_PORT={service_port}",
             ]
         )
@@ -469,14 +475,19 @@ def write_pilot_runtime_env(
 def write_pilot_bootstrap_config(
     *,
     bundle_root: Path,
+    pilot_name: str,
     runtime: PostgreSQLPilotRuntime,
     run_id: str,
     demo_host: str,
     demo_port: int,
+    service_host: str,
     service_port: int,
 ) -> Path:
     config_path = bundle_root / BOOTSTRAP_CONFIG_RELATIVE_PATH
+    log_dir = bundle_root / "runtime" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     payload = {
+        "pilot_name": pilot_name,
         "bundle_root": str(bundle_root),
         "state_db": runtime.state_db,
         "run_id": run_id,
@@ -489,16 +500,34 @@ def write_pilot_bootstrap_config(
         "postgres_image": runtime.image,
         "demo_host": demo_host,
         "demo_port": demo_port,
+        "service_host": service_host,
         "service_port": service_port,
         "runtime_config": str(bundle_root / "runtime" / "config" / "runtime_environments.yml"),
+        "runtime_env": str(bundle_root / BOOTSTRAP_ENV_RELATIVE_PATH),
+        "log_dir": str(log_dir),
         "reader_api_key": DEFAULT_SERVICE_READER_API_KEY,
         "operator_api_key": DEFAULT_SERVICE_OPERATOR_API_KEY,
+        "windows_service_startup": "manual",
+        "windows_services": {
+            "demo_shell": {
+                "service_name": "ETLIdentityPilotDemoShell",
+                "display_name": f"ETL Identity Pilot Demo Shell ({pilot_name})",
+                "host": demo_host,
+                "port": demo_port,
+            },
+            "service_api": {
+                "service_name": "ETLIdentityPilotServiceApi",
+                "display_name": f"ETL Identity Pilot Service API ({pilot_name})",
+                "host": service_host,
+                "port": service_port,
+            },
+        },
     }
     _write_text(config_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return config_path
 
 
-def write_windows_launchers(*, bundle_root: Path) -> tuple[Path, Path, Path]:
+def write_windows_launchers(*, bundle_root: Path) -> tuple[Path, Path, Path, Path]:
     launch_root = bundle_root / "launch"
     launch_root.mkdir(parents=True, exist_ok=True)
 
@@ -539,11 +568,35 @@ if (-not (Test-Path $python)) {
     throw "Pilot venv python was not found. Run .\\launch\\bootstrap_windows_pilot.ps1 first."
 }
 if ($Port -le 0) { $Port = [int]$config.service_port }
-$env:PYTHONPATH = (Join-Path $root "runtime\\src")
 $env:ETL_IDENTITY_STATE_DB = [string]$config.state_db
 $env:ETL_IDENTITY_SERVICE_READER_API_KEY = [string]$config.reader_api_key
 $env:ETL_IDENTITY_SERVICE_OPERATOR_API_KEY = [string]$config.operator_api_key
 & $python -m etl_identity_engine.cli serve-api --environment container --runtime-config (Join-Path $root "runtime\\config\\runtime_environments.yml") --state-db ([string]$config.state_db) --host $Host --port $Port
+""",
+    )
+
+    manage_services_path = launch_root / "manage_pilot_services.ps1"
+    _write_text(
+        manage_services_path,
+        """param(
+    [ValidateSet("install", "start", "stop", "restart", "remove", "status", "install-and-start", "stop-and-remove")]
+    [string]$Action = "status",
+    [ValidateSet("demo_shell", "service_api", "all")]
+    [string]$ServiceKind = "all",
+    [ValidateSet("manual", "auto")]
+    [string]$Startup = ""
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$python = Join-Path $root ".venv\\Scripts\\python.exe"
+if (-not (Test-Path $python)) {
+    throw "Pilot venv python was not found. Run .\\launch\\bootstrap_windows_pilot.ps1 first."
+}
+$arguments = @((Join-Path $root "tools\\manage_windows_pilot_services.py"), "--bundle-root", $root, "--service-kind", $ServiceKind)
+if (-not [string]::IsNullOrWhiteSpace($Startup)) { $arguments += @("--startup", $Startup) }
+$arguments += $Action
+& $python @arguments
 """,
     )
 
@@ -556,7 +609,7 @@ $config = Get-Content (Join-Path $root "runtime\\pilot_bootstrap.json") | Conver
 docker rm -f ([string]$config.postgres_container_name)
 """,
     )
-    return demo_shell_path, service_path, stop_postgres_path
+    return demo_shell_path, service_path, manage_services_path, stop_postgres_path
 
 
 def bootstrap_windows_customer_pilot(
@@ -617,19 +670,23 @@ def bootstrap_windows_customer_pilot(
     )
     runtime_env_path = write_pilot_runtime_env(
         bundle_root=resolved_bundle_root,
+        pilot_name=context.pilot_name,
         state_db=runtime.state_db,
         run_id=run_id,
         runtime=runtime,
         demo_host=demo_host,
         demo_port=demo_port,
+        service_host=DEFAULT_SERVICE_HOST,
         service_port=service_port,
     )
     bootstrap_config_path = write_pilot_bootstrap_config(
         bundle_root=resolved_bundle_root,
+        pilot_name=context.pilot_name,
         runtime=runtime,
         run_id=run_id,
         demo_host=demo_host,
         demo_port=demo_port,
+        service_host=DEFAULT_SERVICE_HOST,
         service_port=service_port,
     )
     write_windows_launchers(bundle_root=resolved_bundle_root)

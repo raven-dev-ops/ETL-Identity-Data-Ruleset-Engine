@@ -636,6 +636,7 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
         "crosswalk:read",
         "public_safety:read",
         "review_cases:read",
+        "audit_events:read",
         "runs:replay",
         "runs:publish",
         "review_cases:write",

@@ -300,7 +300,10 @@ def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, sou
                 "- `launch/`: quick startup helpers for local walkthroughs",
                 "- `tools/rebuild_demo_shell.py`: rebuild the demo shell from the shipped persisted state",
                 "- `tools/bootstrap_windows_pilot.py`: Windows-first bootstrap for the PostgreSQL-backed single-host pilot path",
+                "- `tools/manage_windows_pilot_services.py`: installs, starts, stops, queries, and removes the supported Windows pilot services",
                 "- `tools/check_pilot_readiness.py`: validates the target host, handoff hashes, and an optional detached handoff signature",
+                "- `tools/package_customer_pilot_support_bundle.py`: collects a redacted troubleshooting bundle for support handoff",
+                "- `tools/patch_upgrade_customer_pilot.py`: applies a patch upgrade in preserve-state or reseed mode",
                 "- `tools/verify_handoff_signature.py`: verifies detached handoff signatures using a trusted Ed25519 public key",
                 "- `pilot_handoff_manifest.json`: hashed manifest of the delivered pilot artifacts",
                 "- `pilot_handoff_manifest.sig.json`: optional detached signature for the handoff manifest",
@@ -315,6 +318,8 @@ def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, sou
                 "   `ETL_IDENTITY_TRUSTED_SIGNER_PUBLIC_KEY` before running the check.",
                 "3. On Windows with Docker Desktop available, run:",
                 "   `powershell -ExecutionPolicy Bypass -File .\\launch\\bootstrap_windows_pilot.ps1`",
+                "4. Manage the supported Windows services after bootstrap with:",
+                "   `powershell -ExecutionPolicy Bypass -File .\\launch\\manage_pilot_services.ps1 -Action status`",
                 "4. Or use the portable seeded SQLite walkthrough:",
                 "   - Windows PowerShell: `./launch/start_demo_shell.ps1`",
                 "   - Bash: `./launch/start_demo_shell.sh`",
@@ -446,6 +451,24 @@ def _write_readiness_tool(*, destination_root: Path) -> None:
     shutil.copy2(REPO_ROOT / "scripts" / "check_customer_pilot_readiness.py", tool_path)
 
 
+def _write_manage_services_tool(*, destination_root: Path) -> None:
+    tool_path = destination_root / "tools" / "manage_windows_pilot_services.py"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / "scripts" / "manage_windows_customer_pilot_services.py", tool_path)
+
+
+def _write_support_bundle_tool(*, destination_root: Path) -> None:
+    tool_path = destination_root / "tools" / "package_customer_pilot_support_bundle.py"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / "scripts" / "package_customer_pilot_support_bundle.py", tool_path)
+
+
+def _write_patch_upgrade_tool(*, destination_root: Path) -> None:
+    tool_path = destination_root / "tools" / "patch_upgrade_customer_pilot.py"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / "scripts" / "patch_upgrade_customer_pilot.py", tool_path)
+
+
 def _write_signature_tool(*, destination_root: Path) -> None:
     tool_path = destination_root / "tools" / "verify_handoff_signature.py"
     tool_path.parent.mkdir(parents=True, exist_ok=True)
@@ -498,14 +521,84 @@ python "${ROOT_DIR}/tools/rebuild_demo_shell.py" --host "${HOST}" --port "${PORT
         REPO_ROOT / "scripts" / "check_customer_pilot_readiness.ps1",
         readiness_powershell_path,
     )
+    manage_services_powershell_path = launch_root / "manage_pilot_services.ps1"
+    manage_services_powershell_path.write_text(
+        """param(
+    [ValidateSet("install", "start", "stop", "restart", "remove", "status", "install-and-start", "stop-and-remove")]
+    [string]$Action = "status",
+    [ValidateSet("demo_shell", "service_api", "all")]
+    [string]$ServiceKind = "all",
+    [ValidateSet("manual", "auto")]
+    [string]$Startup = ""
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$python = Join-Path $root ".venv\\Scripts\\python.exe"
+if (-not (Test-Path $python)) {
+    $python = Get-Command python -ErrorAction Stop | Select-Object -ExpandProperty Source
+}
+$arguments = @((Join-Path $root "tools\\manage_windows_pilot_services.py"), "--bundle-root", $root, "--service-kind", $ServiceKind)
+if (-not [string]::IsNullOrWhiteSpace($Startup)) { $arguments += @("--startup", $Startup) }
+$arguments += $Action
+& $python @arguments
+""",
+        encoding="utf-8",
+    )
+    support_bundle_powershell_path = launch_root / "collect_support_bundle.ps1"
+    support_bundle_powershell_path.write_text(
+        """param(
+    [string]$OutputDir = "",
+    [string]$StateDb = "",
+    [int]$AuditEventLimit = 50
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$python = Join-Path $root ".venv\\Scripts\\python.exe"
+if (-not (Test-Path $python)) {
+    $python = Get-Command python -ErrorAction Stop | Select-Object -ExpandProperty Source
+}
+$arguments = @((Join-Path $root "tools\\package_customer_pilot_support_bundle.py"), "--bundle-root", $root, "--audit-event-limit", [string]$AuditEventLimit)
+if (-not [string]::IsNullOrWhiteSpace($OutputDir)) { $arguments += @("--output-dir", $OutputDir) }
+if (-not [string]::IsNullOrWhiteSpace($StateDb)) { $arguments += @("--state-db", $StateDb) }
+& $python @arguments
+""",
+        encoding="utf-8",
+    )
+    patch_upgrade_powershell_path = launch_root / "patch_upgrade_pilot.ps1"
+    patch_upgrade_powershell_path.write_text(
+        """param(
+    [Parameter(Mandatory = $true)]
+    [string]$SourceBundle,
+    [ValidateSet("preserve_state", "reseed")]
+    [string]$Mode = "preserve_state"
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$python = Join-Path $root ".venv\\Scripts\\python.exe"
+if (-not (Test-Path $python)) {
+    $python = Get-Command python -ErrorAction Stop | Select-Object -ExpandProperty Source
+}
+& $python (Join-Path $root "tools\\patch_upgrade_customer_pilot.py") --install-root $root --source-bundle $SourceBundle --mode $Mode
+""",
+        encoding="utf-8",
+    )
     return (
         "launch/start_demo_shell.ps1",
         "launch/start_demo_shell.sh",
         "launch/bootstrap_windows_pilot.ps1",
         "launch/check_pilot_readiness.ps1",
+        "launch/manage_pilot_services.ps1",
+        "launch/collect_support_bundle.ps1",
+        "launch/patch_upgrade_pilot.ps1",
         "tools/rebuild_demo_shell.py",
         "tools/bootstrap_windows_pilot.py",
+        "tools/manage_windows_pilot_services.py",
         "tools/check_pilot_readiness.py",
+        "tools/package_customer_pilot_support_bundle.py",
+        "tools/patch_upgrade_customer_pilot.py",
         "tools/verify_handoff_signature.py",
     )
 
@@ -624,6 +717,9 @@ def package_customer_pilot_bundle(
         _write_rebuild_tool(destination_root=staging_root)
         _write_windows_bootstrap_tool(destination_root=staging_root)
         _write_readiness_tool(destination_root=staging_root)
+        _write_manage_services_tool(destination_root=staging_root)
+        _write_support_bundle_tool(destination_root=staging_root)
+        _write_patch_upgrade_tool(destination_root=staging_root)
         _write_signature_tool(destination_root=staging_root)
         launch_helpers = _write_launch_helpers(destination_root=staging_root)
         _write_pilot_readme(

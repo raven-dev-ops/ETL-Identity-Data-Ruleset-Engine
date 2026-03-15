@@ -77,8 +77,14 @@ def _write_sample_bundle_root(root: Path, *, signing_private_key: Path | None = 
         "runtime/config/runtime_environments.yml": "default_environment: container\nenvironments: {}\n",
         "launch/bootstrap_windows_pilot.ps1": "Write-Host bootstrap\n",
         "launch/check_pilot_readiness.ps1": "Write-Host readiness\n",
+        "launch/manage_pilot_services.ps1": "Write-Host manage\n",
+        "launch/collect_support_bundle.ps1": "Write-Host support\n",
+        "launch/patch_upgrade_pilot.ps1": "Write-Host patch-upgrade\n",
         "tools/bootstrap_windows_pilot.py": "print('bootstrap')\n",
         "tools/check_pilot_readiness.py": "print('readiness')\n",
+        "tools/manage_windows_pilot_services.py": "print('manage')\n",
+        "tools/package_customer_pilot_support_bundle.py": "print('support')\n",
+        "tools/patch_upgrade_customer_pilot.py": "print('patch-upgrade')\n",
         "state/pipeline_state.sqlite": "sqlite\n",
     }
     for relative_path, contents in files.items():

@@ -28,8 +28,14 @@ REQUIRED_BUNDLE_PATHS = (
     "runtime/config/runtime_environments.yml",
     "launch/bootstrap_windows_pilot.ps1",
     "launch/check_pilot_readiness.ps1",
+    "launch/manage_pilot_services.ps1",
+    "launch/collect_support_bundle.ps1",
+    "launch/patch_upgrade_pilot.ps1",
     "tools/bootstrap_windows_pilot.py",
     "tools/check_pilot_readiness.py",
+    "tools/manage_windows_pilot_services.py",
+    "tools/package_customer_pilot_support_bundle.py",
+    "tools/patch_upgrade_customer_pilot.py",
     "state/pipeline_state.sqlite",
 )
 

@@ -14,7 +14,7 @@ available as read-only records:
 - `planning/post-v1.2.0-github-issues-backlog.md`
 
 Date prepared: 2026-03-14
-Last synced to GitHub: 2026-03-14
+Last synced to GitHub: 2026-03-15
 
 ## Milestones
 
@@ -200,7 +200,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 125) Add a one-command Windows service wrapper for the pilot API and demo shell
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.5.0`
 - Labels: `type:feature`, `area:operations`, `priority:p0`
 - Depends on: #122
@@ -218,7 +218,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 126) Add a support-bundle collector for customer pilot troubleshooting
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.5.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
 - Depends on: #123
@@ -235,7 +235,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 127) Add a patch-upgrade and reseed workflow for existing pilot installs
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.5.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
 - Depends on: #125
@@ -253,7 +253,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 128) Add an operator admin console for health, metrics, and recent audit events
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.5.0`
 - Labels: `type:feature`, `area:service`, `priority:p1`
 - Depends on: #122, #126
@@ -287,13 +287,13 @@ Create these 3 epics first, then link child issues:
 
 ## Tracker Status Snapshot
 
-Snapshot date: 2026-03-14
+Snapshot date: 2026-03-15
 
 - This backlog opens the post-`v1.0.0` cycle focused on vendor adapter
   packs, secure operational evidence, and customer supportability.
 - Active epic issues in GitHub for this backlog:
-  `#112` and `#113`
+  none
 - Open child issues represented in this local active catalog:
-  `#121` through `#125`
+  none
 - Open milestones in GitHub for this backlog:
-  `v1.4.0` and `v1.5.0`
+  none

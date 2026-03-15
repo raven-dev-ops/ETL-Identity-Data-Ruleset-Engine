@@ -1,7 +1,7 @@
 # Remaining Work Task List
 
 Date prepared: 2026-03-14
-Last updated: 2026-03-14
+Last updated: 2026-03-15
 
 This checklist mirrors the active post-`v1.0.0` backlog in
 `planning/active-github-issues-backlog.md`. GitHub remains the source
@@ -14,24 +14,20 @@ of truth for tracked work; this file is the short maintainer view.
 - The previous tracked backlog cycle (`v1.0.0` through `v1.2.0`) is now
   complete and archived in
   `planning/post-v1.2.0-github-issues-backlog.md`.
-- The new backlog cycle remains synced to GitHub, with open epics
-  `#113`, open child issues `#122` through `#125`, and open milestone
-  `v1.5.0`.
-- A new backlog cycle is now open for the documented next gaps:
-  packaged vendor adapters, stronger secure-operations evidence, and
-  customer deployment supportability.
-- The active tracked work is now organized in the remaining open
-  milestone group: `v1.5.0`.
-- The `v1.3.0` vendor adapter and onboarding acceleration slice is now
-  complete in GitHub and in the local repo state, and the `v1.4.0`
-  secure-operations evidence slice is now complete as well, leaving
-  `v1.5.0` as the open tracked milestone group.
+- The `v1.3.0` vendor adapter slice, the `v1.4.0` secure-operations
+  evidence slice, and the `v1.5.0` customer deployment supportability
+  slice are now complete both locally and in GitHub.
+- The current backlog cycle was opened for packaged vendor adapters,
+  stronger secure-operations evidence, and customer deployment
+  supportability, and that scope is now complete.
+- There are no open tracked GitHub issues or milestones remaining in
+  the current cycle.
 
 ## Open Task Groups
 
 - [x] `v1.3.0` Vendor adapter packs and onboarding acceleration
 - [x] `v1.4.0` Secure operations and compliance evidence
-- [ ] `v1.5.0` Customer deployment automation and supportability
+- [x] `v1.5.0` Customer deployment automation and supportability
 
 ## Gaps Now Explicitly Tracked
 
@@ -43,11 +39,12 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Secret-file and rotation health checks for auth material
 - [x] Encrypted backup and export-bundle workflows
 - [x] CJIS evidence-pack generation from config and audit artifacts
-- [ ] Windows service wrappers for pilot API and demo shell
-- [ ] Support-bundle collection for pilot troubleshooting
-- [ ] Patch-upgrade and reseed workflow for existing pilot installs
-- [ ] Operator admin console for health, metrics, and audit views
+- [x] Windows service wrappers for pilot API and demo shell
+- [x] Support-bundle collection for pilot troubleshooting
+- [x] Patch-upgrade and reseed workflow for existing pilot installs
+- [x] Operator admin console for health, metrics, and audit views
 
 ## Next Step
 
-- Next: implement local catalog `#125` / GitHub issue `#122`.
+- No open tracked tasks remain in the current backlog cycle. Next step
+  is release/admin work or opening a new backlog cycle.

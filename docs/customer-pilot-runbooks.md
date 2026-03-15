@@ -37,6 +37,9 @@ powershell -ExecutionPolicy Bypass -File .\launch\bootstrap_windows_pilot.ps1 --
 - `runtime/pilot_runtime.env`
 - `launch/start_pilot_demo_shell.ps1`
 - `launch/start_pilot_service.ps1`
+- `launch/manage_pilot_services.ps1`
+- `launch/collect_support_bundle.ps1`
+- `launch/patch_upgrade_pilot.ps1`
 - `launch/stop_pilot_postgres.ps1`
 
 ## Startup
@@ -70,20 +73,63 @@ Default API keys written by the bootstrap:
 - reader: `pilot-reader-key`
 - operator: `pilot-operator-key`
 
+### Windows Services
+
+Install and start the supported Windows services for both surfaces:
+
+```powershell
+.\launch\manage_pilot_services.ps1 -Action install-and-start -ServiceKind all
+```
+
+Check the current Windows service state:
+
+```powershell
+.\launch\manage_pilot_services.ps1 -Action status -ServiceKind all
+```
+
+Stop and remove the services before a rollback or manual cleanup:
+
+```powershell
+.\launch\manage_pilot_services.ps1 -Action stop-and-remove -ServiceKind all
+```
+
+The supported service wrappers are only for the Windows single-host
+pilot baseline. They assume the extracted bundle root remains in place,
+the pilot `.venv` exists, and the generated bootstrap/runtime files
+remain under `runtime/`.
+
+## Operator Console
+
+After the service API is running, operators can use the minimal admin
+console at:
+
+- `http://127.0.0.1:8010/admin/console`
+
+The console is read-only. It requires operator authentication with the
+documented `service:metrics` and `audit_events:read` scopes and surfaces
+health, readiness-style metrics, and recent persisted audit events for
+the single-host pilot.
+
 ## Rollback
 
 For the supported pilot rollback, return to the shipped bundle state:
 
-1. Stop and remove the PostgreSQL pilot container:
+1. Stop and remove the Windows service wrappers if they were installed:
+
+```powershell
+.\launch\manage_pilot_services.ps1 -Action stop-and-remove -ServiceKind all
+```
+
+2. Stop and remove the PostgreSQL pilot container:
 
 ```powershell
 .\launch\stop_pilot_postgres.ps1
 ```
 
-2. Close any open demo shell or service windows.
-3. Delete the extracted working bundle directory.
-4. Re-extract the original customer pilot zip.
-5. Rerun:
+3. Close any open demo shell or service windows.
+4. Delete the extracted working bundle directory.
+5. Re-extract the original customer pilot zip.
+6. Rerun:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1
@@ -119,6 +165,54 @@ python -m etl_identity_engine.cli backup-state-bundle \
 If you used a different PostgreSQL host, port, or database name, read
 them from `runtime/pilot_bootstrap.json`.
 
+## Support Bundle
+
+Generate a redacted troubleshooting bundle before escalation, upgrade,
+or teardown when the pilot behavior differs from the shipped seeded
+walkthrough:
+
+```powershell
+.\launch\collect_support_bundle.ps1
+```
+
+That workflow packages:
+
+- the pilot and handoff manifests
+- redacted runtime config and env material
+- redacted local logs
+- persisted state metadata
+- recent runs and audit events
+- Windows service status when available
+
+The output zip lands under `dist/customer-pilot-support/` by default.
+Share that artifact instead of copying logs and runtime files
+piecemeal.
+
+## Patch Upgrade And Reseed
+
+Apply a new delivered pilot bundle over the current extracted install:
+
+```powershell
+.\launch\patch_upgrade_pilot.ps1 -SourceBundle C:\handoff\etl-identity-engine-vX.Y.Z-customer-pilot-example.zip -Mode preserve_state
+```
+
+Supported modes:
+
+- `preserve_state`
+  - keeps the current `runtime/pilot_bootstrap.json`,
+    `runtime/pilot_runtime.env`, logs, and persisted SQLite state
+  - reinstalls the shipped runtime and rebuilds the demo shell from the
+    current state
+- `reseed`
+  - replaces the install with the new shipped bundle and reruns the
+    supported bootstrap path using the prior runtime settings where
+    possible
+
+Use `reseed` when you want the install to return to the delivered seeded
+state rather than carry forward local changes. After either mode, rerun
+the readiness check and either restart the Windows services or start the
+demo shell and API manually.
+
 ## Demo Execution
 
 Recommended walkthrough order:
@@ -142,3 +236,5 @@ Recommended walkthrough order:
   demo shell or service startup.
 - If the extracted bundle root was modified, re-extract from the
   original zip and rerun the readiness check.
+- If support needs repro details, generate the support bundle before
+  deleting the extracted install or reseeding it.

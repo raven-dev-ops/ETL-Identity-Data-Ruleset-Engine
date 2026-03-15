@@ -38,6 +38,7 @@ environments:
         - golden:read
         - crosswalk:read
         - public_safety:read
+        - audit_events:read
         - review_cases:read
         - review_cases:write
         - exports:run
@@ -70,6 +71,7 @@ environments:
         - golden:read
         - crosswalk:read
         - public_safety:read
+        - audit_events:read
         - review_cases:read
         - review_cases:write
         - exports:run
@@ -111,6 +113,7 @@ environments:
         - golden:read
         - crosswalk:read
         - public_safety:read
+        - audit_events:read
         - review_cases:read
         - review_cases:write
         - exports:run
@@ -153,6 +156,7 @@ environments:
         - golden:read
         - crosswalk:read
         - public_safety:read
+        - audit_events:read
         - review_cases:read
         - review_cases:write
         - exports:run

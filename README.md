@@ -47,6 +47,11 @@ state instead of depending on synthetic sidecar files.
 For explicit merge and no-merge proof cases, the repo also ships
 `fixtures/public_safety_regressions/`, which packages canonical
 same-person, same-household, and false-merge public-safety scenarios.
+The supported Windows-first customer pilot path now also includes
+one-command service management for the Django demo shell and operator
+API, a redacted support-bundle collector, a preserve-state or reseed
+patch-upgrade workflow, and a minimal authenticated operator console for
+health, metrics, and recent audit activity.
 
 ## Core Concepts
 

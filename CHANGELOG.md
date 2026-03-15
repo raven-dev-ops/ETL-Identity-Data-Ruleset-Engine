@@ -29,6 +29,17 @@ All notable changes to this project will be documented in this file.
 - Added `package_cjis_evidence_pack.py`, which builds a CJIS review zip
   from runtime configuration, preflight output, persisted audit events,
   operational metrics, and a machine-readable standards mapping index.
+- Added supported Windows service wrappers for the customer-pilot demo
+  shell and service API, plus bundle-integrated service management
+  tooling for install, start, stop, restart, status, and removal.
+- Added a redacted customer-pilot support-bundle collector that
+  packages runtime config, logs, persisted state metadata, recent runs,
+  and audit events into a single troubleshooting artifact.
+- Added a preserve-state or reseed patch-upgrade workflow for extracted
+  customer-pilot installs, including bundle-integrated launchers and
+  smoke coverage for upgrade from a new handoff bundle.
+- Added `GET /api/v1/audit-events` and an authenticated `/admin/console`
+  operator surface for health, metrics, and recent audit events.
 
 ## [1.0.0] - 2026-03-14
 

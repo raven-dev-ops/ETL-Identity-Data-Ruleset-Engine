@@ -222,6 +222,7 @@ def test_build_runtime_environment_summary_redacts_auth_material(tmp_path: Path)
             "crosswalk:read",
             "public_safety:read",
             "review_cases:read",
+            "audit_events:read",
             "runs:replay",
             "runs:publish",
             "review_cases:write",

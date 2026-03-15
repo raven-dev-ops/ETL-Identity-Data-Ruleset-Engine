@@ -45,6 +45,7 @@ SUPPORTED_SERVICE_SCOPES = frozenset(
         "golden:read",
         "crosswalk:read",
         "public_safety:read",
+        "audit_events:read",
         "review_cases:read",
         "review_cases:write",
         "exports:run",
@@ -61,6 +62,7 @@ DEFAULT_READER_SERVICE_SCOPES = (
 )
 DEFAULT_OPERATOR_SERVICE_SCOPES = (
     *DEFAULT_READER_SERVICE_SCOPES,
+    "audit_events:read",
     "runs:replay",
     "runs:publish",
     "review_cases:write",

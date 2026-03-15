@@ -94,6 +94,9 @@ scope surface is:
   - `GET /api/v1/runs/{run_id}/review-cases`
   - `GET /api/v1/runs/{run_id}/review-cases/page`
   - `GET /api/v1/runs/{run_id}/review-cases/{review_id}`
+- `audit_events:read`
+  - `GET /api/v1/audit-events`
+  - `GET /admin/console`
 - `review_cases:write`
   - `POST /api/v1/runs/{run_id}/review-cases/{review_id}/decision`
 - `runs:replay`
@@ -147,6 +150,10 @@ committed into repo config.
 - `GET /api/v1/metrics`
   - Returns authenticated JSON metrics for service uptime plus
     persisted batch, review, export, and audit counts.
+- `GET /api/v1/audit-events`
+  - Returns recent persisted audit events for the configured state
+    store.
+  - Supports `run_id`, `action`, `status`, and `limit`.
 - `GET /api/v1/runs/latest`
   - Returns the latest completed persisted run.
 - `GET /api/v1/runs`
@@ -195,9 +202,14 @@ committed into repo config.
     `contract_version`.
 - `POST /api/v1/runs/{run_id}/exports/{job_name}`
   - Triggers a configured named export job for the requested persisted
-    run.
+  run.
   - Reuses an existing completed export run when the same job and run
     already produced a completed snapshot.
+- `GET /admin/console`
+  - Returns a minimal authenticated HTML operator console for the
+    single-host pilot and service baseline.
+  - Shows service health/metric cards plus recent audit events from the
+    configured state store.
 
 ## Validation Model
 
@@ -251,6 +263,9 @@ Authenticated callers that have the right role but lack the required
 endpoint scope also return `403`.
 Unsupported replay operations such as non-manifest source runs return
 `409`.
+
+The HTML admin console follows the same auth model as the JSON API. It
+is not a separate login surface.
 
 Privileged review-decision, replay, publish, and export actions also
 persist audit events in the configured state store, and the service
