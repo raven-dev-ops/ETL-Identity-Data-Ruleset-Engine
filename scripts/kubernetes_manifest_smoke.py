@@ -314,7 +314,12 @@ def _wait_for_service_health(port: int, reader_api_key: str, timeout_seconds: in
             with urllib.request.urlopen(request, timeout=5) as response:
                 if response.status == 200:
                     return
-        except (urllib.error.URLError, http.client.RemoteDisconnected, TimeoutError):
+        except (
+            urllib.error.URLError,
+            http.client.RemoteDisconnected,
+            ConnectionResetError,
+            TimeoutError,
+        ):
             time.sleep(1)
             continue
     raise RuntimeError(f"Timed out waiting for service health on port {port}")
