@@ -182,7 +182,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 112) Add regression fixtures for cross-system identity scenarios and false-merge guards
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.1.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
 - Depends on: #110
@@ -297,11 +297,11 @@ Create these 3 epics first, then link child issues:
 Snapshot date: 2026-03-14
 
 - Active epic issues in GitHub for this backlog:
-  `#96`, `#97`, `#98`
+  `#98`
 - Open child issues represented in this local active catalog:
-  `#106` through `#110`
+  `#107` through `#110`
 - Open milestones in GitHub for this backlog:
-  `v1.0.0`, `v1.1.0`, and `v1.2.0`
+  `v1.2.0`
 - Closed backlog history remains in:
   `planning/github-issues-backlog.md`,
   `planning/post-v0.1.0-github-issues-backlog.md`,

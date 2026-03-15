@@ -1,0 +1,4 @@
+source_record_id,person_entity_id,source_system,first_name,last_name,dob,address,city,state,postal_code,phone,updated_at,is_conflict_variant,conflict_types
+B-SP-001,P-SP-001,source_b,JORDAN,SMITH,1987-04-12,700 METRO PLAZA,COLUMBUS,OH,43004,5551110001,2026-03-14T08:15:00Z,false,
+B-HH-001,P-HH-002,source_b,CASEY,JOHNSON,2001-11-02,88 MAPLE AVENUE UNIT 2,COLUMBUS,OH,43005,5552221002,2026-03-14T08:20:00Z,false,
+B-FM-001,P-FM-002,source_b,STEPHEN,CLARKE,1979-05-05,77 LAKE ROAD,COLUMBUS,OH,43007,5553332999,2026-03-14T08:25:00Z,false,

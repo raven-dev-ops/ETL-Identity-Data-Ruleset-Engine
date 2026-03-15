@@ -138,6 +138,25 @@ This is the fastest concrete story for a demo:
 6. Show that multiple operational incident records roll up to one
    resolved identity.
 
+## Canonical Regression Scenarios
+
+The demo and onboarding story now has a checked-in regression set in
+`fixtures/public_safety_regressions/`.
+
+Use those scenarios when someone asks for the sharp edge cases behind
+the dashboard:
+
+- `Same Person Across CAD And RMS`
+  - expected result: one golden person across both systems
+- `Same Household, Different People`
+  - expected result: separate golden people despite shared address and
+    surname
+- `Cross-System False Merge Guard`
+  - expected result: no merge for a soundalike pair with the same DOB
+
+That fixture tree is the canonical proof set for the current public-
+safety onboarding path.
+
 ## Read-Model Contract
 
 The demo shell and the authenticated service now share the same stable

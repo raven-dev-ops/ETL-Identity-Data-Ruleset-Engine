@@ -21,6 +21,7 @@ It includes:
 - `rms_bundle/`
 - `cad_vendor_bundle/`
 - `rms_vendor_bundle/`
+- `../public_safety_regressions/`
 - `landing/source_a.csv`
 - `landing/source_b.csv`
 - `example_manifest.yml`
@@ -75,3 +76,25 @@ The current onboarding model now supports two source-bundle shapes:
 
 This remains the intended first pass for source owners and integration
 teams before persisted public-safety activity ingestion work.
+
+## Canonical Regression Scenarios
+
+The repo also ships `fixtures/public_safety_regressions/` as the
+canonical onboarding regression set for buyer and pilot discussions.
+
+That fixture tree locks three scenarios:
+
+- `same_person_cross_system`
+  - one person appears in both CAD and RMS and must merge
+- `same_household_separate_people`
+  - two people share a household footprint and must remain distinct
+- `cross_system_false_merge_guard`
+  - a soundalike cross-system pair shares DOB but must not merge
+
+Use it when you need to prove expected merge and no-merge outcomes, not
+just contract validity:
+
+```bash
+etl-identity-engine check-public-safety-onboarding --manifest fixtures/public_safety_regressions/manifest.yml
+python -m etl_identity_engine.cli run-all --base-dir dist/public-safety-regressions --manifest fixtures/public_safety_regressions/manifest.yml
+```

@@ -1,0 +1,64 @@
+{
+  "fixture_id": "public_safety_regressions_v1",
+  "scenarios": [
+    {
+      "scenario_id": "same_person_cross_system",
+      "title": "Same Person Across CAD And RMS",
+      "left_id": "A-SP-001",
+      "right_id": "B-SP-001",
+      "expected_decision": "auto_merge",
+      "expected_score": 1.0,
+      "expected_matched_fields": [
+        "canonical_name",
+        "canonical_dob",
+        "canonical_phone",
+        "canonical_address"
+      ],
+      "expected_same_golden": true
+    },
+    {
+      "scenario_id": "same_household_separate_people",
+      "title": "Same Household, Different People",
+      "left_id": "A-HH-001",
+      "right_id": "B-HH-001",
+      "expected_decision": "no_match",
+      "expected_score": 0.06,
+      "expected_matched_fields": [
+        "canonical_address_partial"
+      ],
+      "expected_same_golden": false
+    },
+    {
+      "scenario_id": "cross_system_false_merge_guard",
+      "title": "Cross-System False Merge Guard",
+      "left_id": "A-FM-001",
+      "right_id": "B-FM-001",
+      "expected_decision": "no_match",
+      "expected_score": 0.55,
+      "expected_matched_fields": [
+        "canonical_name_phonetic",
+        "canonical_dob"
+      ],
+      "expected_same_golden": false
+    }
+  ],
+  "expected_summary": {
+    "candidate_pair_count": 3,
+    "decision_counts": {
+      "auto_merge": 1,
+      "manual_review": 0,
+      "no_match": 2
+    },
+    "cluster_count": 5,
+    "golden_record_count": 5,
+    "review_queue_count": 0,
+    "public_safety_activity": {
+      "incident_count": 6,
+      "incident_person_link_count": 6,
+      "resolved_link_count": 6,
+      "unresolved_link_count": 0,
+      "linked_golden_person_count": 5,
+      "cross_system_golden_person_count": 1
+    }
+  }
+}

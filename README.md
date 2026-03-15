@@ -32,6 +32,9 @@ Manifest-driven runs with `--state-db` now also persist the derived
 incident-to-identity activity view from those validated CAD/RMS
 bundles, so the demo slice can be restored directly from persisted
 state instead of depending on synthetic sidecar files.
+For explicit merge and no-merge proof cases, the repo also ships
+`fixtures/public_safety_regressions/`, which packages canonical
+same-person, same-household, and false-merge public-safety scenarios.
 
 ## Core Concepts
 

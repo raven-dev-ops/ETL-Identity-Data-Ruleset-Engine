@@ -99,6 +99,7 @@ ETL-Identity-Data-Ruleset-Engine/
     remaining-work-task-list.md
   fixtures/
     public_safety_onboarding/
+    public_safety_regressions/
   scripts/
     bootstrap_venv.ps1
     bootstrap_venv.sh

@@ -1,6 +1,9 @@
+import pytest
+
 from etl_identity_engine.matching.blocking import generate_candidates, generate_candidates_with_metrics
 from etl_identity_engine.matching.clustering import assign_cluster_ids
 from etl_identity_engine.matching.scoring import classify_score, explain_pair_score, score_pair
+from public_safety_regression_fixture import load_normalized_landing_rows, load_scenario_expectations
 
 
 def test_generate_candidates_blocks_on_last_initial_and_dob() -> None:
@@ -313,4 +316,27 @@ def test_assign_cluster_ids_is_deterministic_for_links_and_singletons() -> None:
         "A-2": "C-00002",
         "B-2": "C-00002",
     }
+
+
+def test_public_safety_regression_cases_lock_expected_match_decisions() -> None:
+    normalized_rows = load_normalized_landing_rows()
+    expectations = load_scenario_expectations()
+
+    for scenario in expectations["scenarios"]:
+        detail = explain_pair_score(
+            normalized_rows[scenario["left_id"]],
+            normalized_rows[scenario["right_id"]],
+        )
+
+        assert detail.score == pytest.approx(scenario["expected_score"])
+        assert detail.matched_fields == tuple(scenario["expected_matched_fields"])
+        assert (
+            classify_score(
+                detail.score,
+                auto_merge=0.9,
+                manual_review_min=0.6,
+                no_match_max=0.59,
+            )
+            == scenario["expected_decision"]
+        )
 

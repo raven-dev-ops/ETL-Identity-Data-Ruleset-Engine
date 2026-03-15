@@ -1,0 +1,4 @@
+source_record_id,person_entity_id,source_system,first_name,last_name,dob,address,city,state,postal_code,phone,updated_at,is_conflict_variant,conflict_types
+CAD-SP-001,P-SP-001,cad,JORDAN,SMITH,1987-04-12,700 METRO PLAZA,COLUMBUS,OH,43004,5551110001,2026-03-14T07:45:00Z,false,
+CAD-HH-001,P-HH-001,cad,TAYLOR,JOHNSON,2001-07-11,88 MAPLE AVENUE,COLUMBUS,OH,43005,5552221001,2026-03-14T07:50:00Z,false,
+CAD-FM-001,P-FM-001,cad,STEVEN,CLARK,1979-05-05,9 PINE STREET,COLUMBUS,OH,43006,5553332001,2026-03-14T07:55:00Z,false,

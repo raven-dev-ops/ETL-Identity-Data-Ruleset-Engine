@@ -27,6 +27,10 @@ All notable changes to this project will be documented in this file.
   including authenticated service endpoints for incident-to-identity
   and golden-activity views plus standalone Django demo-shell loading
   directly from a persisted run or a packaged demo bundle.
+- Added a checked-in `fixtures/public_safety_regressions/` proof set for
+  same-person, same-household, and false-merge public-safety scenarios,
+  plus matching, survivorship, and end-to-end tests that lock those
+  outcomes.
 
 ## [0.9.2] - 2026-03-14
 

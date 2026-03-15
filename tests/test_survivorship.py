@@ -3,6 +3,7 @@ from etl_identity_engine.survivorship.rules_engine import (
     choose_value,
     merge_records,
 )
+from public_safety_regression_fixture import load_landing_rows
 
 
 def test_choose_value_prefers_higher_source_priority() -> None:
@@ -161,4 +162,41 @@ def test_build_golden_records_prefers_cluster_id_when_present() -> None:
     golden_records = build_golden_records(records)
 
     assert [row["cluster_id"] for row in golden_records] == ["C-00001", "C-00002"]
+
+
+def test_public_safety_regression_clusters_only_merge_the_intended_same_person_case() -> None:
+    landing_rows = load_landing_rows()
+    cluster_assignments = {
+        "A-SP-001": "C-00001",
+        "B-SP-001": "C-00001",
+        "A-HH-001": "C-00002",
+        "B-HH-001": "C-00003",
+        "A-FM-001": "C-00004",
+        "B-FM-001": "C-00005",
+    }
+
+    golden_records = build_golden_records(
+        [
+            {
+                **landing_rows[source_record_id],
+                "cluster_id": cluster_id,
+            }
+            for source_record_id, cluster_id in cluster_assignments.items()
+        ]
+    )
+
+    assert len(golden_records) == 5
+    merged_record = next(row for row in golden_records if row["cluster_id"] == "C-00001")
+    assert merged_record["source_record_count"] == "2"
+    assert merged_record["person_entity_id"] == "P-SP-001"
+    assert merged_record["first_name"] == "JORDAN"
+    assert merged_record["last_name"] == "SMITH"
+    assert merged_record["phone"] == "5551110001"
+    assert {row["cluster_id"] for row in golden_records} == {
+        "C-00001",
+        "C-00002",
+        "C-00003",
+        "C-00004",
+        "C-00005",
+    }
 

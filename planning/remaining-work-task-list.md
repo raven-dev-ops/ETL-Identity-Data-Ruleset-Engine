@@ -28,14 +28,14 @@ of truth for tracked work; this file is the short maintainer view.
   and customer-facing pilot packaging.
 - The active tracked work is organized into three milestone groups:
   `v1.0.0`, `v1.1.0`, and `v1.2.0`.
-- GitHub sync is complete for the new backlog cycle with open epics
-  `#96`, `#97`, and `#98`.
+- The `v1.1.0` milestone is now complete in-repo with the public-safety
+  regression fixture set and expected merge/no-merge outcomes locked in
+  tests.
+- GitHub sync is complete for the new backlog cycle with the remaining
+  open epic `#98`.
 
 ## Open Task Groups
 
-- [ ] `v1.1.0` Public safety onboarding and identity mapping
-  - Local catalog issues: `#112`
-  - Open GitHub issues: `#106`
 - [ ] `v1.2.0` Customer deployment packaging and pilot handoff
   - Local catalog issues: `#113` through `#116`
   - Open GitHub issues: `#107` through `#110`
@@ -49,7 +49,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Vendor-specific CAD/RMS field mapping overlays
 - [x] Persisted public-safety activity ingestion from formal contracts
 - [x] Service and demo-shell read models over persisted public-safety activity
-- [ ] Regression fixtures for cross-system same-person and false-merge cases
+- [x] Regression fixtures for cross-system same-person and false-merge cases
 - [ ] Standalone customer pilot bundle with seeded state and launch helpers
 - [ ] Windows-first single-host pilot bootstrap
 - [ ] Customer readiness check and handoff manifest
@@ -57,5 +57,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Next: local catalog issue `#112`: regression fixtures for
-  cross-system same-person and false-merge cases.
+- Next: local catalog issue `#113`: standalone customer pilot bundle
+  with seeded state and launch helpers.
