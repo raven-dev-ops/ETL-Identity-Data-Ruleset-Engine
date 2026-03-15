@@ -25,6 +25,9 @@ versioned CAD and RMS bundle contracts so source-system owners can
 validate onboarding extracts before they are wired into the runtime, and
 the production batch manifest can now declare those CAD/RMS bundles as
 named contract-bound source classes alongside the landed person inputs.
+Those public-safety bundles can now also carry vendor-column mapping
+overlays so real CAD/RMS extracts do not have to rename themselves into
+the synthetic canonical headers before onboarding validation starts.
 
 ## Core Concepts
 

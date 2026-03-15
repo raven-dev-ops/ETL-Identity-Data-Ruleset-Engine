@@ -64,6 +64,7 @@ class BatchSourceBundleSpec:
     path: str
     contract_name: str
     contract_version: str
+    mapping_overlay: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,7 @@ class ResolvedBatchSourceBundle:
     contract_name: str
     contract_version: str
     source_system: str
+    mapping_overlay_reference: str | None
     files: tuple[ResolvedBatchSourceBundleFile, ...]
 
 
@@ -186,6 +188,21 @@ def _require_non_empty_string(
     context: str,
 ) -> str:
     value = mapping.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise _manifest_error(path, f"{context}.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _optional_non_empty_string(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    path: Path,
+    context: str,
+) -> str | None:
+    value = mapping.get(key)
+    if value is None:
+        return None
     if not isinstance(value, str) or not value.strip():
         raise _manifest_error(path, f"{context}.{key} must be a non-empty string")
     return value.strip()
@@ -526,7 +543,14 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
             raise _manifest_error(path, f"{context} must be a mapping")
         _validate_allowed_keys(
             bundle_value,
-            allowed_keys={"bundle_id", "source_class", "path", "contract_name", "contract_version"},
+            allowed_keys={
+                "bundle_id",
+                "source_class",
+                "path",
+                "contract_name",
+                "contract_version",
+                "mapping_overlay",
+            },
             path=path,
             context=context,
         )
@@ -600,6 +624,12 @@ def _load_batch_manifest(path: Path) -> BatchManifest:
                 ),
                 contract_name=contract_name,
                 contract_version=contract_version,
+                mapping_overlay=_optional_non_empty_string(
+                    bundle_value,
+                    "mapping_overlay",
+                    path=path,
+                    context=context,
+                ),
             )
         )
 
@@ -669,6 +699,18 @@ def _resolve_local_bundle_path(
     return _resolve_local_base_path(manifest_path, landing_zone) / bundle_path
 
 
+def _resolve_local_bundle_overlay_path(
+    bundle_path: Path,
+    bundle: BatchSourceBundleSpec,
+) -> Path | None:
+    if bundle.mapping_overlay is None:
+        return None
+    overlay_path = Path(bundle.mapping_overlay)
+    if overlay_path.is_absolute():
+        return overlay_path
+    return bundle_path / overlay_path
+
+
 def _resolve_object_bundle_location(
     landing_zone: LandingZoneSpec,
     bundle: BatchSourceBundleSpec,
@@ -676,18 +718,44 @@ def _resolve_object_bundle_location(
     return _resolve_object_uri(landing_zone.base_location, bundle.path)
 
 
+def _resolve_object_bundle_overlay_location(
+    bundle_location: str,
+    bundle: BatchSourceBundleSpec,
+) -> str | None:
+    if bundle.mapping_overlay is None:
+        return None
+    return _resolve_object_uri(bundle_location, bundle.mapping_overlay)
+
+
 def _build_resolved_source_bundle(
     bundle: BatchSourceBundleSpec,
     *,
     bundle_reference: str,
+    mapping_overlay_reference: str | None,
     validated_bundle: ValidatedPublicSafetyContractBundle,
 ) -> ResolvedBatchSourceBundle:
+    effective_mapping_overlay_reference = mapping_overlay_reference
+    if (
+        effective_mapping_overlay_reference is None
+        and validated_bundle.mapping_overlay_relative_path is not None
+    ):
+        if _is_uri(bundle_reference):
+            effective_mapping_overlay_reference = _resolve_object_uri(
+                bundle_reference,
+                validated_bundle.mapping_overlay_relative_path,
+            )
+        else:
+            effective_mapping_overlay_reference = str(
+                Path(bundle_reference) / validated_bundle.mapping_overlay_relative_path
+            )
+
     return ResolvedBatchSourceBundle(
         spec=bundle,
         bundle_reference=bundle_reference,
         contract_name=validated_bundle.contract_name,
         contract_version=validated_bundle.contract_version,
         source_system=validated_bundle.source_system,
+        mapping_overlay_reference=effective_mapping_overlay_reference,
         files=tuple(
             ResolvedBatchSourceBundleFile(
                 logical_name=file.logical_name,
@@ -794,6 +862,40 @@ def _materialize_object_storage_bundle(
         staged_bundle_dir = Path(temp_dir_name)
         marker_path = staged_bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
         marker_path.write_bytes(marker_payload)
+        staged_mapping_overlay_path = None
+
+        raw_mapping_overlay = marker.get("mapping_overlay")
+        if raw_mapping_overlay is not None and (
+            not isinstance(raw_mapping_overlay, str) or not raw_mapping_overlay.strip()
+        ):
+            raise _manifest_error(
+                manifest_path,
+                (
+                    f"source_bundle {bundle.bundle_id!r} contract marker mapping_overlay "
+                    "must be a non-empty string"
+                ),
+            )
+        resolved_mapping_overlay = bundle.mapping_overlay or (
+            raw_mapping_overlay.strip() if isinstance(raw_mapping_overlay, str) else None
+        )
+        if resolved_mapping_overlay is not None:
+            overlay_location = _resolve_object_uri(bundle_location, resolved_mapping_overlay)
+            try:
+                overlay_payload = _load_object_storage_payload(
+                    overlay_location,
+                    storage_options=storage_options,
+                )
+            except FileNotFoundError as exc:
+                raise _manifest_error(
+                    manifest_path,
+                    (
+                        f"source_bundle {bundle.bundle_id!r} is missing mapping overlay "
+                        f"{resolved_mapping_overlay!r}"
+                    ),
+                ) from exc
+            staged_mapping_overlay_path = staged_bundle_dir / Path(resolved_mapping_overlay)
+            staged_mapping_overlay_path.parent.mkdir(parents=True, exist_ok=True)
+            staged_mapping_overlay_path.write_bytes(overlay_payload)
 
         for logical_name, relative_path_value in file_mapping.items():
             if not isinstance(logical_name, str) or not logical_name.strip():
@@ -829,7 +931,10 @@ def _materialize_object_storage_bundle(
             staged_path.write_bytes(payload)
 
         try:
-            return validate_public_safety_contract_bundle(staged_bundle_dir)
+            return validate_public_safety_contract_bundle(
+                staged_bundle_dir,
+                mapping_overlay_path=staged_mapping_overlay_path,
+            )
         except PublicSafetyContractValidationError as exc:
             raise _manifest_error(
                 manifest_path,
@@ -913,17 +1018,26 @@ def resolve_batch_manifest(manifest_path: Path) -> ResolvedBatchManifest:
                 manifest.landing_zone,
                 bundle,
             )
+            mapping_overlay_path = _resolve_local_bundle_overlay_path(bundle_path, bundle)
             try:
-                validated_bundle = validate_public_safety_contract_bundle(bundle_path)
+                validated_bundle = validate_public_safety_contract_bundle(
+                    bundle_path,
+                    mapping_overlay_path=mapping_overlay_path,
+                )
             except PublicSafetyContractValidationError as exc:
                 raise _manifest_error(
                     resolved_manifest_path,
                     f"source_bundle {bundle.bundle_id!r} failed contract validation: {exc}",
                 ) from exc
             bundle_reference = str(bundle_path)
+            mapping_overlay_reference = None if mapping_overlay_path is None else str(mapping_overlay_path)
         else:
             bundle_reference = _resolve_object_bundle_location(
                 manifest.landing_zone,
+                bundle,
+            )
+            mapping_overlay_reference = _resolve_object_bundle_overlay_location(
+                bundle_reference,
                 bundle,
             )
             validated_bundle = _materialize_object_storage_bundle(
@@ -942,6 +1056,7 @@ def resolve_batch_manifest(manifest_path: Path) -> ResolvedBatchManifest:
             _build_resolved_source_bundle(
                 bundle,
                 bundle_reference=bundle_reference,
+                mapping_overlay_reference=mapping_overlay_reference,
                 validated_bundle=validated_bundle,
             )
         )

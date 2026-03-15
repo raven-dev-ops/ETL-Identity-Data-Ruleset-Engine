@@ -60,6 +60,23 @@ files:
   incident_person_links: cad_incident_person_links.csv
 ```
 
+Vendor-shaped bundles may also include an optional bundle-local
+`mapping_overlay` entry:
+
+```yaml
+contract_name: cad_call_for_service
+contract_version: v1
+mapping_overlay: overlays/vendor_columns.yml
+files:
+  person_records: vendor_person_records.csv
+  incident_records: vendor_incident_records.csv
+  incident_person_links: vendor_incident_person_links.csv
+```
+
+The mapping overlay translates vendor-specific person, incident, and
+link column names into the canonical CAD contract fields before bundle
+validation continues.
+
 ## Validation Rules
 
 - `person_records.source_system` must be `cad`.

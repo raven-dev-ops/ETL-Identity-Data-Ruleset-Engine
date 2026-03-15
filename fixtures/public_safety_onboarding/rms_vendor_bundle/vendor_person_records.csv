@@ -1,0 +1,2 @@
+vendor_person_record_key,vendor_master_person_key,given_name,surname,date_of_birth,street_line,municipality,region_code,zip_code,contact_phone,record_last_updated_at,variant_flag,variant_codes
+RMS-200,PS-200,Alex,Rivera,1990-05-10,456 Broad Avenue,Columbus,OH,43005,5557654321,2026-03-14T01:00:00Z,false,

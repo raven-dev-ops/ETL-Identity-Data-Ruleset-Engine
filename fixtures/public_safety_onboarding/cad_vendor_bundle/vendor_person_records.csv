@@ -1,0 +1,2 @@
+vendor_person_record_key,vendor_master_person_key,given_name,surname,date_of_birth,street_line,municipality,region_code,zip_code,contact_phone,record_last_updated_at,variant_flag,variant_codes
+CAD-100,PS-100,Jamie,Lane,1985-03-12,123 Main Street,Columbus,OH,43004,5551234567,2026-03-14T00:00:00Z,false,

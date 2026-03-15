@@ -13,6 +13,12 @@ from etl_identity_engine.generate.synth_generator import (
     INCIDENT_LINK_HEADERS,
     PERSON_HEADERS,
 )
+from etl_identity_engine.ingest.public_safety_mapping import (
+    PublicSafetyMappingOverlay,
+    PublicSafetyMappingOverlayError,
+    apply_public_safety_mapping_overlay,
+    load_public_safety_mapping_overlay,
+)
 from etl_identity_engine.io.read import read_dict_fieldnames, read_dict_rows
 
 
@@ -51,6 +57,7 @@ class ValidatedPublicSafetyContractFile:
     logical_name: str
     path: Path
     format: str
+    source_fieldnames: tuple[str, ...]
     fieldnames: tuple[str, ...]
     row_count: int
 
@@ -62,6 +69,8 @@ class ValidatedPublicSafetyContractBundle:
     contract_name: str
     contract_version: str
     source_system: str
+    mapping_overlay_path: Path | None
+    mapping_overlay_relative_path: str | None
     files: tuple[ValidatedPublicSafetyContractFile, ...]
 
     def to_summary(self) -> dict[str, object]:
@@ -71,12 +80,15 @@ class ValidatedPublicSafetyContractBundle:
             "contract_name": self.contract_name,
             "contract_version": self.contract_version,
             "source_system": self.source_system,
+            "mapping_overlay_path": None if self.mapping_overlay_path is None else str(self.mapping_overlay_path),
+            "mapping_overlay_relative_path": self.mapping_overlay_relative_path,
             "files": {
                 file.logical_name: {
                     "path": str(file.path),
                     "relative_path": str(file.path.relative_to(self.bundle_dir)).replace("\\", "/"),
                     "format": file.format,
                     "row_count": file.row_count,
+                    "source_fieldnames": list(file.source_fieldnames),
                     "fieldnames": list(file.fieldnames),
                 }
                 for file in self.files
@@ -191,10 +203,25 @@ def _require_string_mapping(
     return resolved
 
 
-def _resolve_bundle_file_path(bundle_dir: Path, relative_path: str) -> Path:
+def _optional_non_empty_string(
+    mapping: Mapping[str, object],
+    key: str,
+    *,
+    bundle_dir: Path,
+    context: str,
+) -> str | None:
+    value = mapping.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise _bundle_error(bundle_dir, f"{context}.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _resolve_bundle_relative_path(bundle_dir: Path, relative_path: str, *, label: str) -> Path:
     candidate = Path(relative_path)
     if candidate.is_absolute():
-        raise _bundle_error(bundle_dir, f"contract file paths must be relative: {relative_path}")
+        raise _bundle_error(bundle_dir, f"{label} paths must be relative: {relative_path}")
 
     resolved = (bundle_dir / candidate).resolve()
     bundle_root = bundle_dir.resolve()
@@ -203,9 +230,13 @@ def _resolve_bundle_file_path(bundle_dir: Path, relative_path: str) -> Path:
     except ValueError as exc:
         raise _bundle_error(
             bundle_dir,
-            f"contract file path escapes the bundle root: {relative_path}",
+            f"{label} path escapes the bundle root: {relative_path}",
         ) from exc
     return resolved
+
+
+def _resolve_bundle_file_path(bundle_dir: Path, relative_path: str) -> Path:
+    return _resolve_bundle_relative_path(bundle_dir, relative_path, label="contract file")
 
 
 def _validate_required_file_keys(
@@ -229,29 +260,85 @@ def _validate_required_file_keys(
         )
 
 
-def _validate_required_columns(
+def _allowed_fields_by_file(
+    spec: PublicSafetyContractSpec,
+) -> dict[str, tuple[str, ...]]:
+    return {
+        file_spec.logical_name: file_spec.required_columns
+        for file_spec in spec.file_specs
+    }
+
+
+def _load_mapping_overlay(
+    bundle_dir: Path,
+    *,
+    marker: Mapping[str, object],
+    spec: PublicSafetyContractSpec,
+    explicit_mapping_overlay_path: Path | None,
+) -> PublicSafetyMappingOverlay | None:
+    marker_overlay_reference = _optional_non_empty_string(
+        marker,
+        "mapping_overlay",
+        bundle_dir=bundle_dir,
+        context="contract manifest",
+    )
+    resolved_overlay_path = explicit_mapping_overlay_path
+    if resolved_overlay_path is None and marker_overlay_reference is not None:
+        resolved_overlay_path = _resolve_bundle_relative_path(
+            bundle_dir,
+            marker_overlay_reference,
+            label="mapping overlay",
+        )
+    if resolved_overlay_path is None:
+        return None
+    try:
+        return load_public_safety_mapping_overlay(
+            resolved_overlay_path,
+            contract_name=spec.contract_name,
+            contract_version=spec.contract_version,
+            allowed_fields_by_file=_allowed_fields_by_file(spec),
+        )
+    except PublicSafetyMappingOverlayError as exc:
+        raise _bundle_error(bundle_dir, f"mapping overlay is invalid: {exc}") from exc
+
+
+def _load_and_canonicalize_rows(
     bundle_dir: Path,
     logical_name: str,
     path: Path,
     required_columns: tuple[str, ...],
-) -> tuple[tuple[str, ...], list[dict[str, str]]]:
+    *,
+    overlay: PublicSafetyMappingOverlay | None,
+) -> tuple[tuple[str, ...], tuple[str, ...], list[dict[str, str]]]:
     try:
-        fieldnames = read_dict_fieldnames(path)
-        rows = read_dict_rows(path)
+        source_fieldnames = read_dict_fieldnames(path)
+        source_rows = read_dict_rows(path)
     except FileNotFoundError as exc:
         raise _bundle_error(
             bundle_dir,
             f"contract file '{logical_name}' not found: {path.relative_to(bundle_dir)}",
         ) from exc
 
-    missing_columns = [column for column in required_columns if column not in fieldnames]
-    if missing_columns:
-        raise _bundle_error(
-            bundle_dir,
-            f"contract file '{logical_name}' is missing required columns: "
-            f"{', '.join(missing_columns)}",
+    if overlay is None:
+        missing_columns = [column for column in required_columns if column not in source_fieldnames]
+        if missing_columns:
+            raise _bundle_error(
+                bundle_dir,
+                f"contract file '{logical_name}' is missing required columns: "
+                f"{', '.join(missing_columns)}",
+            )
+
+    try:
+        rows = apply_public_safety_mapping_overlay(
+            logical_name=logical_name,
+            rows=source_rows,
+            source_fieldnames=source_fieldnames,
+            required_columns=required_columns,
+            overlay=overlay,
         )
-    return fieldnames, rows
+    except PublicSafetyMappingOverlayError as exc:
+        raise _bundle_error(bundle_dir, f"contract file '{logical_name}' failed field mapping: {exc}") from exc
+    return source_fieldnames, required_columns, rows
 
 
 def _require_non_empty_values(
@@ -367,7 +454,11 @@ def _validate_link_references(
         )
 
 
-def validate_public_safety_contract_bundle(bundle_dir: Path) -> ValidatedPublicSafetyContractBundle:
+def validate_public_safety_contract_bundle(
+    bundle_dir: Path,
+    *,
+    mapping_overlay_path: Path | None = None,
+) -> ValidatedPublicSafetyContractBundle:
     """Validate a versioned CAD or RMS source bundle and return its summary."""
     if not bundle_dir.exists():
         raise FileNotFoundError(f"Public-safety bundle not found: {bundle_dir}")
@@ -377,7 +468,7 @@ def validate_public_safety_contract_bundle(bundle_dir: Path) -> ValidatedPublicS
     marker_path = bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
     marker = _load_marker_mapping(marker_path)
 
-    unexpected_keys = sorted(set(marker) - {"contract_name", "contract_version", "files"})
+    unexpected_keys = sorted(set(marker) - {"contract_name", "contract_version", "files", "mapping_overlay"})
     if unexpected_keys:
         raise _bundle_error(
             bundle_dir,
@@ -412,6 +503,14 @@ def validate_public_safety_contract_bundle(bundle_dir: Path) -> ValidatedPublicS
             f"unsupported {contract_name} contract_version: {contract_version}",
         )
 
+    resolved_mapping_overlay_path = None if mapping_overlay_path is None else mapping_overlay_path.resolve()
+    overlay = _load_mapping_overlay(
+        bundle_dir,
+        marker=marker,
+        spec=spec,
+        explicit_mapping_overlay_path=resolved_mapping_overlay_path,
+    )
+
     _validate_required_file_keys(bundle_dir, spec, file_mapping)
 
     validated_files: list[ValidatedPublicSafetyContractFile] = []
@@ -425,17 +524,19 @@ def validate_public_safety_contract_bundle(bundle_dir: Path) -> ValidatedPublicS
                 bundle_dir,
                 f"contract file '{file_spec.logical_name}' must be CSV or Parquet: {relative_path}",
             )
-        fieldnames, rows = _validate_required_columns(
+        source_fieldnames, fieldnames, rows = _load_and_canonicalize_rows(
             bundle_dir,
             file_spec.logical_name,
             resolved_path,
             file_spec.required_columns,
+            overlay=overlay,
         )
         validated_files.append(
             ValidatedPublicSafetyContractFile(
                 logical_name=file_spec.logical_name,
                 path=resolved_path,
                 format=resolved_path.suffix.lower().lstrip("."),
+                source_fieldnames=source_fieldnames,
                 fieldnames=fieldnames,
                 row_count=len(rows),
             )
@@ -515,11 +616,22 @@ def validate_public_safety_contract_bundle(bundle_dir: Path) -> ValidatedPublicS
         link_rows=link_rows,
     )
 
+    mapping_overlay_relative_path = None
+    if overlay is not None:
+        try:
+            mapping_overlay_relative_path = str(
+                overlay.overlay_path.relative_to(bundle_dir.resolve())
+            ).replace("\\", "/")
+        except ValueError:
+            mapping_overlay_relative_path = None
+
     return ValidatedPublicSafetyContractBundle(
         bundle_dir=bundle_dir.resolve(),
         marker_path=marker_path.resolve(),
         contract_name=contract_name,
         contract_version=contract_version,
         source_system=spec.source_system,
+        mapping_overlay_path=None if overlay is None else overlay.overlay_path,
+        mapping_overlay_relative_path=mapping_overlay_relative_path,
         files=tuple(validated_files),
     )

@@ -8,7 +8,11 @@ import pytest
 import yaml
 
 from etl_identity_engine.cli import main
-from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
+from etl_identity_engine.generate.synth_generator import (
+    INCIDENT_HEADERS,
+    INCIDENT_LINK_HEADERS,
+    PERSON_HEADERS,
+)
 from etl_identity_engine.ingest.public_safety_contracts import (
     CAD_CALL_FOR_SERVICE_CONTRACT,
     PUBLIC_SAFETY_CONTRACT_MARKER,
@@ -163,6 +167,30 @@ def _write_contract_manifest(bundle_dir: Path, *, contract_name: str, files: dic
     )
 
 
+def _write_mapping_overlay(
+    root_dir: Path,
+    *,
+    relative_path: str,
+    contract_name: str,
+    files: dict[str, dict[str, dict[str, str]]],
+) -> Path:
+    overlay_path = root_dir / relative_path
+    overlay_path.parent.mkdir(parents=True, exist_ok=True)
+    overlay_path.write_text(
+        yaml.safe_dump(
+            {
+                "overlay_version": "v1",
+                "contract_name": contract_name,
+                "contract_version": "v1",
+                "files": files,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return overlay_path
+
+
 def _build_public_safety_bundle(
     root_dir: Path,
     *,
@@ -229,6 +257,126 @@ def _build_public_safety_bundle(
     return root_dir
 
 
+def _build_vendor_public_safety_bundle(
+    root_dir: Path,
+    *,
+    contract_name: str,
+    include_marker_overlay: bool,
+) -> tuple[Path, Path]:
+    root_dir.mkdir(parents=True, exist_ok=True)
+    if contract_name == CAD_CALL_FOR_SERVICE_CONTRACT.contract_name:
+        contract = CAD_CALL_FOR_SERVICE_CONTRACT
+    else:
+        contract = RMS_REPORT_PERSON_CONTRACT
+
+    source_system = contract.source_system
+    source_prefix = source_system.upper()
+    person_rows = [
+        {
+            "vendor_person_record_key": f"{source_prefix}-1",
+            "vendor_master_person_key": "PS-1",
+            "given_name": "Jamie",
+            "surname": "Lane",
+            "date_of_birth": "1985-03-12",
+            "street_line": "123 Main St",
+            "municipality": "Columbus",
+            "region_code": "OH",
+            "zip_code": "43004",
+            "contact_phone": "(555) 123-4567",
+            "record_last_updated_at": "2026-03-14T00:00:00Z",
+            "variant_flag": "false",
+            "variant_codes": "",
+        }
+    ]
+    incident_rows = [
+        {
+            "vendor_incident_key": f"{source_prefix}-INC-1",
+            "reported_at": "2026-03-14T12:00:00Z",
+            "location_text": "100 WEST MAIN STREET",
+            "municipality": "Columbus",
+            "region_code": "OH",
+        }
+    ]
+    link_rows = [
+        {
+            "vendor_link_key": f"{source_prefix}-LINK-1",
+            "vendor_incident_key": incident_rows[0]["vendor_incident_key"],
+            "vendor_master_person_key": person_rows[0]["vendor_master_person_key"],
+            "vendor_person_record_key": person_rows[0]["vendor_person_record_key"],
+            "involvement_role": "REPORTING_PARTY",
+        }
+    ]
+
+    person_filename = "vendor_person_records.csv"
+    incident_filename = "vendor_incident_records.csv"
+    link_filename = "vendor_incident_person_links.csv"
+    _write_csv(root_dir / person_filename, person_rows)
+    _write_csv(root_dir / incident_filename, incident_rows)
+    _write_csv(root_dir / link_filename, link_rows)
+
+    overlay_path = _write_mapping_overlay(
+        root_dir,
+        relative_path="overlays/vendor_columns.yml",
+        contract_name=contract_name,
+        files={
+            "person_records": {
+                "columns": {
+                    "source_record_id": "vendor_person_record_key",
+                    "person_entity_id": "vendor_master_person_key",
+                    "first_name": "given_name",
+                    "last_name": "surname",
+                    "dob": "date_of_birth",
+                    "address": "street_line",
+                    "city": "municipality",
+                    "state": "region_code",
+                    "postal_code": "zip_code",
+                    "phone": "contact_phone",
+                    "updated_at": "record_last_updated_at",
+                    "is_conflict_variant": "variant_flag",
+                    "conflict_types": "variant_codes",
+                },
+                "defaults": {"source_system": source_system},
+            },
+            "incident_records": {
+                "columns": {
+                    "incident_id": "vendor_incident_key",
+                    "occurred_at": "reported_at",
+                    "location": "location_text",
+                    "city": "municipality",
+                    "state": "region_code",
+                },
+                "defaults": {"source_system": source_system},
+            },
+            "incident_person_links": {
+                "columns": {
+                    "incident_person_link_id": "vendor_link_key",
+                    "incident_id": "vendor_incident_key",
+                    "person_entity_id": "vendor_master_person_key",
+                    "source_record_id": "vendor_person_record_key",
+                    "role": "involvement_role",
+                },
+                "defaults": {},
+            },
+        },
+    )
+    manifest_payload: dict[str, object] = {
+        "contract_name": contract_name,
+        "contract_version": "v1",
+        "files": {
+            "person_records": person_filename,
+            "incident_records": incident_filename,
+            "incident_person_links": link_filename,
+        },
+    }
+    if include_marker_overlay:
+        manifest_payload["mapping_overlay"] = "overlays/vendor_columns.yml"
+    (root_dir / PUBLIC_SAFETY_CONTRACT_MARKER).write_text(
+        yaml.safe_dump(manifest_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    return root_dir, overlay_path
+
+
 def _source_bundles_block(*, cad_path: str, rms_path: str) -> str:
     return f"""
 source_bundles:
@@ -242,6 +390,28 @@ source_bundles:
     path: {rms_path}
     contract_name: rms_report_person
     contract_version: v1
+"""
+
+
+def _source_bundles_block_with_overlay(
+    *,
+    cad_path: str,
+    rms_path: str,
+    rms_overlay_path: str,
+) -> str:
+    return f"""
+source_bundles:
+  - bundle_id: cad_primary
+    source_class: cad
+    path: {cad_path}
+    contract_name: cad_call_for_service
+    contract_version: v1
+  - bundle_id: rms_primary
+    source_class: rms
+    path: {rms_path}
+    contract_name: rms_report_person
+    contract_version: v1
+    mapping_overlay: {rms_overlay_path}
 """
 
 
@@ -455,6 +625,52 @@ def test_resolve_batch_manifest_validates_named_public_safety_source_bundles(
     ]
 
 
+def test_resolve_batch_manifest_supports_vendor_mapped_public_safety_bundle_overlays(
+    tmp_path: Path,
+) -> None:
+    landing_dir = tmp_path / "landing"
+    _write_csv(
+        landing_dir / "agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_parquet(
+        landing_dir / "agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    cad_bundle_dir = _build_public_safety_bundle(
+        landing_dir / "cad_bundle",
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+    )
+    rms_bundle_dir, rms_overlay_path = _build_vendor_public_safety_bundle(
+        landing_dir / "rms_vendor_bundle",
+        contract_name=RMS_REPORT_PERSON_CONTRACT.contract_name,
+        include_marker_overlay=False,
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "manifest-with-vendor-bundles.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            source_bundles_block=_source_bundles_block_with_overlay(
+                cad_path=cad_bundle_dir.name,
+                rms_path=rms_bundle_dir.name,
+                rms_overlay_path=str(rms_overlay_path.relative_to(rms_bundle_dir)).replace("\\", "/"),
+            ),
+        ),
+    )
+
+    resolved = resolve_batch_manifest(manifest_path)
+
+    assert len(resolved.source_bundles) == 2
+    rms_bundle = next(bundle for bundle in resolved.source_bundles if bundle.spec.bundle_id == "rms_primary")
+    assert rms_bundle.mapping_overlay_reference == str(rms_overlay_path)
+    assert [file.fieldnames for file in rms_bundle.files] == [
+        PERSON_HEADERS,
+        INCIDENT_HEADERS,
+        INCIDENT_LINK_HEADERS,
+    ]
+
+
 def test_normalize_manifest_rejects_invalid_public_safety_source_bundle_without_partial_output(
     tmp_path: Path,
 ) -> None:
@@ -540,6 +756,45 @@ def test_run_all_supports_manifest_inputs_with_mixed_cad_rms_source_bundles(tmp_
     assert main(["run-all", "--base-dir", str(base_dir), "--manifest", str(manifest_path)]) == 0
 
     assert (base_dir / "data" / "normalized" / "normalized_person_records.csv").exists()
+    assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
+
+
+def test_run_all_supports_vendor_mapped_public_safety_source_bundles(tmp_path: Path) -> None:
+    landing_dir = tmp_path / "landing"
+    _write_csv(
+        landing_dir / "agency_a.csv",
+        [_person_row(source_record_id="A-1", person_entity_id="P-1", source_system="source_a")],
+    )
+    _write_parquet(
+        landing_dir / "agency_b.parquet",
+        [_person_row(source_record_id="B-1", person_entity_id="P-1", source_system="source_b")],
+    )
+    cad_bundle_dir, _cad_overlay = _build_vendor_public_safety_bundle(
+        landing_dir / "cad_vendor_bundle",
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        include_marker_overlay=True,
+    )
+    rms_bundle_dir = _build_public_safety_bundle(
+        landing_dir / "rms_bundle",
+        contract_name=RMS_REPORT_PERSON_CONTRACT.contract_name,
+    )
+    manifest_path = _write_manifest(
+        tmp_path / "vendor-run-all-manifest.yml",
+        _manifest_body(
+            source_a_path="agency_a.csv",
+            source_b_path="agency_b.parquet",
+            source_bundles_block=_source_bundles_block(
+                cad_path=cad_bundle_dir.name,
+                rms_path=rms_bundle_dir.name,
+            ),
+        ),
+    )
+    base_dir = tmp_path / "vendor-run"
+
+    assert main(["run-all", "--base-dir", str(base_dir), "--manifest", str(manifest_path)]) == 0
+
+    normalized_rows = _read_csv(base_dir / "data" / "normalized" / "normalized_person_records.csv")
+    assert {row["source_record_id"] for row in normalized_rows} == {"A-1", "B-1"}
     assert (base_dir / "data" / "golden" / "golden_person_records.csv").exists()
 
 

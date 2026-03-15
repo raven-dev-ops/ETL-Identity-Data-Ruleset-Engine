@@ -19,9 +19,12 @@ It includes:
 
 - `cad_bundle/`
 - `rms_bundle/`
+- `cad_vendor_bundle/`
+- `rms_vendor_bundle/`
 - `landing/source_a.csv`
 - `landing/source_b.csv`
 - `example_manifest.yml`
+- `example_vendor_overlay_manifest.yml`
 
 ## Self-Check Commands
 
@@ -29,6 +32,12 @@ Validate both public-safety bundles plus the example manifest:
 
 ```bash
 etl-identity-engine check-public-safety-onboarding --manifest fixtures/public_safety_onboarding/example_manifest.yml --bundle-dir fixtures/public_safety_onboarding/cad_bundle --bundle-dir fixtures/public_safety_onboarding/rms_bundle
+```
+
+Validate the shipped vendor-column overlay example:
+
+```bash
+etl-identity-engine check-public-safety-onboarding --manifest fixtures/public_safety_onboarding/example_vendor_overlay_manifest.yml --bundle-dir fixtures/public_safety_onboarding/cad_vendor_bundle --bundle-dir fixtures/public_safety_onboarding/rms_vendor_bundle
 ```
 
 Validate a single bundle directly:
@@ -55,6 +64,14 @@ pipeline onboarding. The current scope of this check is structural:
 - `source_system` values match the declared source class
 - incident/link references are internally consistent
 - manifest-declared source bundles match the resolved contract markers
+- vendor-column overlays resolve the shipped file shapes into the
+  canonical CAD/RMS contract fields
 
-This is the intended first pass for source owners and integration teams
-before any field-mapping or persisted public-safety ingestion work.
+The current onboarding model now supports two source-bundle shapes:
+
+- canonical bundles that already use the documented contract columns
+- vendor bundles that keep vendor-native columns and add a
+  `mapping_overlay` YAML file
+
+This remains the intended first pass for source owners and integration
+teams before persisted public-safety activity ingestion work.

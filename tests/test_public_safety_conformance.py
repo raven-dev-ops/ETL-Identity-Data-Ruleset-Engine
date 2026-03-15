@@ -53,3 +53,21 @@ def test_cli_check_public_safety_onboarding_accepts_shipped_fixture_tree(
         "cad_call_for_service",
         "rms_report_person",
     ]
+
+
+def test_check_public_safety_onboarding_accepts_vendor_overlay_fixture_tree() -> None:
+    summary = check_public_safety_onboarding(
+        manifest_path=FIXTURE_ROOT / "example_vendor_overlay_manifest.yml",
+        bundle_dirs=(FIXTURE_ROOT / "cad_vendor_bundle",),
+    )
+
+    assert summary["status"] == "passed"
+    bundles = summary["bundles"]
+    assert isinstance(bundles, list)
+    assert bundles[0]["mapping_overlay_path"]
+    manifest = summary["manifest"]
+    assert isinstance(manifest, dict)
+    source_bundles = manifest["source_bundles"]
+    assert isinstance(source_bundles, list)
+    assert source_bundles[0]["mapping_overlay_reference"] is not None
+    assert source_bundles[1]["mapping_overlay_reference"] is not None

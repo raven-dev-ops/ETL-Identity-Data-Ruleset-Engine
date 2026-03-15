@@ -1,0 +1,7 @@
+contract_name: cad_call_for_service
+contract_version: v1
+mapping_overlay: overlays/vendor_columns.yml
+files:
+  person_records: vendor_person_records.csv
+  incident_records: vendor_incident_records.csv
+  incident_person_links: vendor_incident_person_links.csv

@@ -69,6 +69,10 @@ Each entry in `source_bundles` must contain:
 - `contract_name`
 - `contract_version`
 
+Optional source-bundle fields:
+
+- `mapping_overlay`
+
 Supported `source_class` values:
 
 - `cad`
@@ -83,6 +87,12 @@ Supported contract identities:
 bundles in addition to the core landed person sources. The current
 runtime validates those bundles during manifest resolution, but it does
 not yet ingest incident activity from them into persisted state.
+
+When a source bundle arrives with vendor-specific column names, add a
+bundle-local or manifest-declared `mapping_overlay` YAML file. The
+overlay translates vendor columns into the canonical contract fields for
+`person_records`, `incident_records`, and `incident_person_links`
+before contract validation continues.
 
 ## Supported Schema
 
@@ -248,6 +258,7 @@ source_bundles:
     path: rms_bundle
     contract_name: rms_report_person
     contract_version: v1
+    mapping_overlay: overlays/vendor_columns.yml
 ```
 
 ## Validation Behavior
@@ -263,6 +274,7 @@ Before normalization starts, the runtime validates:
 - required-column presence
 - `source_system` values against `source_id`
 - declared CAD/RMS bundle contract identity and source class
+- optional vendor-column mapping overlays for declared CAD/RMS bundles
 - bundle required-file completeness and row-shape validation
 - incident/link referential integrity inside each declared CAD/RMS bundle
 

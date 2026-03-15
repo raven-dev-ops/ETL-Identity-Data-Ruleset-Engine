@@ -60,6 +60,23 @@ files:
   incident_person_links: rms_incident_person_links.csv
 ```
 
+Vendor-shaped bundles may also keep their vendor-native file headers
+and rely on a manifest-declared or bundle-local mapping overlay:
+
+```yaml
+contract_name: rms_report_person
+contract_version: v1
+files:
+  person_records: vendor_person_records.csv
+  incident_records: vendor_incident_records.csv
+  incident_person_links: vendor_incident_person_links.csv
+```
+
+When the manifest declares `mapping_overlay: overlays/vendor_columns.yml`
+for the RMS source bundle, the runtime remaps vendor-specific person,
+incident, and link columns into the canonical RMS contract fields before
+bundle validation continues.
+
 ## Validation Rules
 
 - `person_records.source_system` must be `rms`.

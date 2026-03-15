@@ -100,6 +100,30 @@ def _write_contract_manifest(bundle_dir: Path, *, contract_name: str, files: dic
     return marker_path
 
 
+def _write_mapping_overlay(
+    bundle_dir: Path,
+    *,
+    relative_path: str,
+    contract_name: str,
+    files: dict[str, dict[str, dict[str, str]]],
+) -> Path:
+    overlay_path = bundle_dir / relative_path
+    overlay_path.parent.mkdir(parents=True, exist_ok=True)
+    overlay_path.write_text(
+        yaml.safe_dump(
+            {
+                "overlay_version": "v1",
+                "contract_name": contract_name,
+                "contract_version": "v1",
+                "files": files,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return overlay_path
+
+
 def _build_bundle(
     tmp_path: Path,
     *,
@@ -176,6 +200,120 @@ def _build_bundle(
     return bundle_dir
 
 
+def _build_vendor_overlay_bundle(tmp_path: Path, *, contract_name: str) -> tuple[Path, Path]:
+    bundle_dir = tmp_path / f"{contract_name}_vendor"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    source_system = "cad" if contract_name == CAD_CALL_FOR_SERVICE_CONTRACT.contract_name else "rms"
+    source_prefix = source_system.upper()
+    person_rows = [
+        {
+            "vendor_person_record_key": f"{source_prefix}-1",
+            "vendor_master_person_key": "P-1",
+            "given_name": "Taylor",
+            "surname": "Jordan",
+            "date_of_birth": "1985-03-12",
+            "street_line": "123 Main Street",
+            "municipality": "Columbus",
+            "region_code": "OH",
+            "zip_code": "43004",
+            "contact_phone": "5551234567",
+            "record_last_updated_at": "2026-03-14T00:00:00Z",
+            "variant_flag": "false",
+            "variant_codes": "",
+        }
+    ]
+    incident_rows = [
+        {
+            "vendor_incident_key": f"{source_prefix}-INC-1",
+            "reported_at": "2026-03-14T12:00:00Z",
+            "location_text": "100 WEST MAIN STREET",
+            "municipality": "Columbus",
+            "region_code": "OH",
+        }
+    ]
+    link_rows = [
+        {
+            "vendor_link_key": f"{source_prefix}-LINK-1",
+            "vendor_incident_key": incident_rows[0]["vendor_incident_key"],
+            "vendor_master_person_key": person_rows[0]["vendor_master_person_key"],
+            "vendor_person_record_key": person_rows[0]["vendor_person_record_key"],
+            "involvement_role": "REPORTING_PARTY",
+        }
+    ]
+
+    person_filename = "vendor_person_records.csv"
+    incident_filename = "vendor_incident_records.csv"
+    link_filename = "vendor_incident_person_links.csv"
+    _write_csv(bundle_dir / person_filename, person_rows, tuple(person_rows[0]))
+    _write_csv(bundle_dir / incident_filename, incident_rows, tuple(incident_rows[0]))
+    _write_csv(bundle_dir / link_filename, link_rows, tuple(link_rows[0]))
+
+    overlay_path = _write_mapping_overlay(
+        bundle_dir,
+        relative_path="overlays/vendor_columns.yml",
+        contract_name=contract_name,
+        files={
+            "person_records": {
+                "columns": {
+                    "source_record_id": "vendor_person_record_key",
+                    "person_entity_id": "vendor_master_person_key",
+                    "first_name": "given_name",
+                    "last_name": "surname",
+                    "dob": "date_of_birth",
+                    "address": "street_line",
+                    "city": "municipality",
+                    "state": "region_code",
+                    "postal_code": "zip_code",
+                    "phone": "contact_phone",
+                    "updated_at": "record_last_updated_at",
+                    "is_conflict_variant": "variant_flag",
+                    "conflict_types": "variant_codes",
+                },
+                "defaults": {"source_system": source_system},
+            },
+            "incident_records": {
+                "columns": {
+                    "incident_id": "vendor_incident_key",
+                    "occurred_at": "reported_at",
+                    "location": "location_text",
+                    "city": "municipality",
+                    "state": "region_code",
+                },
+                "defaults": {"source_system": source_system},
+            },
+            "incident_person_links": {
+                "columns": {
+                    "incident_person_link_id": "vendor_link_key",
+                    "incident_id": "vendor_incident_key",
+                    "person_entity_id": "vendor_master_person_key",
+                    "source_record_id": "vendor_person_record_key",
+                    "role": "involvement_role",
+                },
+                "defaults": {},
+            },
+        },
+    )
+    marker_path = bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
+    marker_path.write_text(
+        yaml.safe_dump(
+            {
+                "contract_name": contract_name,
+                "contract_version": "v1",
+                "mapping_overlay": "overlays/vendor_columns.yml",
+                "files": {
+                    "person_records": person_filename,
+                    "incident_records": incident_filename,
+                    "incident_person_links": link_filename,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return bundle_dir, overlay_path
+
+
 def test_validate_cad_contract_bundle_accepts_valid_csv_bundle(tmp_path: Path) -> None:
     bundle_dir = _build_bundle(tmp_path, contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name)
 
@@ -204,6 +342,34 @@ def test_validate_rms_contract_bundle_accepts_valid_parquet_bundle(tmp_path: Pat
 
     assert validated.contract_name == RMS_REPORT_PERSON_CONTRACT.contract_name
     assert {file.format for file in validated.files} == {"parquet"}
+
+
+def test_validate_public_safety_contract_accepts_vendor_overlay_bundle(tmp_path: Path) -> None:
+    bundle_dir, overlay_path = _build_vendor_overlay_bundle(
+        tmp_path,
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+    )
+
+    validated = validate_public_safety_contract_bundle(bundle_dir)
+
+    assert validated.contract_name == CAD_CALL_FOR_SERVICE_CONTRACT.contract_name
+    assert validated.mapping_overlay_path == overlay_path.resolve()
+    assert validated.files[0].source_fieldnames == (
+        "vendor_person_record_key",
+        "vendor_master_person_key",
+        "given_name",
+        "surname",
+        "date_of_birth",
+        "street_line",
+        "municipality",
+        "region_code",
+        "zip_code",
+        "contact_phone",
+        "record_last_updated_at",
+        "variant_flag",
+        "variant_codes",
+    )
+    assert validated.files[0].fieldnames == PERSON_HEADERS
 
 
 def test_validate_public_safety_contract_rejects_missing_marker(tmp_path: Path) -> None:

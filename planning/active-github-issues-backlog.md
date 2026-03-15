@@ -126,7 +126,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 109) Add CAD/RMS field-mapping overlays for vendor-specific source columns
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.1.0`
 - Labels: `type:feature`, `area:normalize`, `priority:p0`
 - Depends on: #107
@@ -299,7 +299,7 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#96`, `#97`, `#98`
 - Open child issues represented in this local active catalog:
-  `#99` through `#110`
+  `#104` through `#110`
 - Open milestones in GitHub for this backlog:
   `v1.0.0`, `v1.1.0`, and `v1.2.0`
 - Closed backlog history remains in:

@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
   `fixtures/public_safety_onboarding/` example tree, and onboarding
   docs so source owners can self-check CAD/RMS bundles and example
   manifests before pipeline onboarding.
+- Added vendor-column mapping overlays for CAD/RMS source bundles, with
+  bundle-local and manifest-declared overlay support plus shipped
+  vendor-shaped onboarding fixtures for both CAD and RMS examples.
 
 ## [0.9.2] - 2026-03-14
 
