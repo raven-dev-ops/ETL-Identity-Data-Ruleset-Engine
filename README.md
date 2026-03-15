@@ -36,6 +36,10 @@ The onboarding path now also emits machine-readable per-file diff
 reports for mapped canonical fields, unused source columns, and
 required fields that still have no resolvable source mapping, so vendor
 drift is visible without digging through raw CSV headers by hand.
+The repo now also ships a rehearsal generator that can emit fully
+synthetic vendor-shaped CAD and RMS onboarding bundles for the shipped
+profiles, so pre-sales and pilot walkthroughs can use realistic vendor
+shapes without touching operational extracts.
 Manifest-driven runs with `--state-db` now also persist the derived
 incident-to-identity activity view from those validated CAD/RMS
 bundles, so the demo slice can be restored directly from persisted
@@ -418,6 +422,13 @@ That produces:
 - `data/public_safety_demo/public_safety_demo_scenarios.json`
 - `data/public_safety_demo/public_safety_demo_summary.json`
 - `data/public_safety_demo/public_safety_demo_walkthrough.md`
+
+To rehearse vendor-shaped CAD and RMS onboarding with synthetic data:
+
+```bash
+python -m etl_identity_engine.cli generate-public-safety-vendor-batches --output-dir dist/public-safety-vendor-rehearsal --profile small --seed 42
+python -m etl_identity_engine.cli check-public-safety-onboarding --manifest dist/public-safety-vendor-rehearsal/synthetic_vendor_manifest.yml
+```
 
 To hand the demo to someone as one artifact:
 

@@ -34,6 +34,9 @@ from etl_identity_engine.ingest.public_safety_contracts import (
     PUBLIC_SAFETY_CONTRACT_MARKER,
     validate_public_safety_contract_bundle,
 )
+from etl_identity_engine.ingest.public_safety_rehearsal import (
+    generate_public_safety_vendor_batches,
+)
 from etl_identity_engine.ingest.public_safety_vendor_profiles import (
     list_public_safety_vendor_profiles,
 )
@@ -1374,6 +1377,18 @@ def _cmd_check_public_safety_onboarding(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2, sort_keys=True))
     if summary["status"] != "passed":
         raise SystemExit(1)
+
+
+def _cmd_generate_public_safety_vendor_batches(args: argparse.Namespace) -> None:
+    result = generate_public_safety_vendor_batches(
+        Path(args.output_dir),
+        profile=args.profile,
+        seed=args.seed,
+        person_count_override=args.person_count,
+        cad_profiles=tuple(args.cad_profile or ()),
+        rms_profiles=tuple(args.rms_profile or ()),
+    )
+    print(json.dumps(result.summary, indent=2, sort_keys=True))
 
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
@@ -3894,6 +3909,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional production batch manifest path to validate alongside the source bundles.",
     )
     check_public_safety_onboarding_parser.set_defaults(func=_cmd_check_public_safety_onboarding)
+
+    generate_public_safety_vendor_batches_parser = subparsers.add_parser(
+        "generate-public-safety-vendor-batches",
+        help="Generate synthetic vendor-shaped CAD/RMS onboarding bundles and a matching manifest.",
+    )
+    generate_public_safety_vendor_batches_parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory where the rehearsal landing files, bundles, and manifest should be written.",
+    )
+    generate_public_safety_vendor_batches_parser.add_argument(
+        "--profile",
+        default="small",
+        choices=["small", "medium", "large"],
+        help="Synthetic seed profile used to derive the rehearsal bundles.",
+    )
+    generate_public_safety_vendor_batches_parser.add_argument(
+        "--seed",
+        default=42,
+        type=int,
+        help="Deterministic seed for the synthetic rehearsal dataset.",
+    )
+    generate_public_safety_vendor_batches_parser.add_argument(
+        "--person-count",
+        default=None,
+        type=int,
+        help="Optional synthetic person count override for the rehearsal seed data.",
+    )
+    generate_public_safety_vendor_batches_parser.add_argument(
+        "--cad-profile",
+        action="append",
+        default=[],
+        help="Packaged CAD vendor profile to generate. Repeat to select multiple profiles. Defaults to all shipped CAD profiles.",
+    )
+    generate_public_safety_vendor_batches_parser.add_argument(
+        "--rms-profile",
+        action="append",
+        default=[],
+        help="Packaged RMS vendor profile to generate. Repeat to select multiple profiles. Defaults to all shipped RMS profiles.",
+    )
+    generate_public_safety_vendor_batches_parser.set_defaults(func=_cmd_generate_public_safety_vendor_batches)
 
     report_parser = subparsers.add_parser("report", help="Produce run report.")
     report_parser.add_argument("--input", default="data/normalized/normalized_person_records.csv")

@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
   and manifests, including mapped, unused, and unresolved column
   reporting plus JSON-first failure output from
   `check-public-safety-onboarding`.
+- Added `generate-public-safety-vendor-batches`, which writes
+  synthetic vendor-profile-shaped CAD and RMS onboarding bundles plus a
+  matching manifest for rehearsal, demo, and pre-sales use.
 
 ## [1.0.0] - 2026-03-14
 

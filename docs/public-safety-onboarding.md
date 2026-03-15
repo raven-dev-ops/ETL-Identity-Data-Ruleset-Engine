@@ -51,6 +51,21 @@ Validate the shipped vendor-column overlay example:
 etl-identity-engine check-public-safety-onboarding --manifest fixtures/public_safety_onboarding/example_vendor_overlay_manifest.yml --bundle-dir fixtures/public_safety_onboarding/cad_vendor_bundle --bundle-dir fixtures/public_safety_onboarding/rms_vendor_bundle
 ```
 
+Generate a full synthetic vendor-shaped rehearsal tree for all shipped
+CAD and RMS profiles:
+
+```bash
+etl-identity-engine generate-public-safety-vendor-batches --output-dir dist/public-safety-vendor-rehearsal --profile small --seed 42
+etl-identity-engine check-public-safety-onboarding --manifest dist/public-safety-vendor-rehearsal/synthetic_vendor_manifest.yml
+```
+
+Generate a narrower rehearsal tree for one CAD profile and one RMS
+profile:
+
+```bash
+etl-identity-engine generate-public-safety-vendor-batches --output-dir dist/public-safety-vendor-rehearsal --profile small --seed 42 --cad-profile cad_county_dispatch_v1 --rms-profile rms_case_management_v1
+```
+
 Validate a single bundle directly:
 
 ```bash
@@ -111,6 +126,14 @@ For the supported CAD profiles, there is now also a third option:
   `vendor_profile`
 
 The same pattern now applies to the shipped RMS profiles.
+
+For rehearsal and pre-sales work, the repo now also ships
+`generate-public-safety-vendor-batches`. That command derives canonical
+synthetic seed data, materializes vendor-native CAD/RMS bundle files for
+the selected shipped profiles, copies the matching landed person-source
+files, and writes a manifest that passes the current onboarding checks.
+Use it when you need vendor-shaped mock data without inventing bundle
+rows by hand.
 
 This remains the intended first pass for source owners and integration
 teams before persisted public-safety activity ingestion work.

@@ -105,7 +105,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 120) Add a syntheticized vendor-batch example generator for onboarding rehearsals
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.3.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
 - Depends on: #117, #118
@@ -292,8 +292,8 @@ Snapshot date: 2026-03-14
 - This backlog opens the post-`v1.0.0` cycle focused on vendor adapter
   packs, secure operational evidence, and customer supportability.
 - Active epic issues in GitHub for this backlog:
-  `#111`, `#112`, and `#113`
+  `#112` and `#113`
 - Open child issues represented in this local active catalog:
-  `#117` through `#125`
+  `#118` through `#125`
 - Open milestones in GitHub for this backlog:
-  `v1.3.0`, `v1.4.0`, and `v1.5.0`
+  `v1.4.0` and `v1.5.0`

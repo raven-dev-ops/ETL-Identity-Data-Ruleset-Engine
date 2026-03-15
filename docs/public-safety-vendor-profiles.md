@@ -85,3 +85,19 @@ Operators should pair profile validation with
 per-file diff report showing mapped canonical fields, unused source
 columns, and unresolved required mappings when a vendor extract drifts
 away from the shipped profile.
+
+For rehearsal and demo prep, `generate-public-safety-vendor-batches`
+can also emit synthetic vendor-native bundles for the shipped profiles.
+That path writes:
+
+- landed `source_a` / `source_b` person files
+- one vendor bundle directory per selected CAD or RMS profile
+- `synthetic_vendor_manifest.yml`
+- `public_safety_vendor_batch_summary.json`
+
+Example:
+
+```bash
+etl-identity-engine generate-public-safety-vendor-batches --output-dir dist/public-safety-vendor-rehearsal --profile small --seed 42
+etl-identity-engine check-public-safety-onboarding --manifest dist/public-safety-vendor-rehearsal/synthetic_vendor_manifest.yml
+```

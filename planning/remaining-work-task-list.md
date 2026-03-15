@@ -14,18 +14,21 @@ of truth for tracked work; this file is the short maintainer view.
 - The previous tracked backlog cycle (`v1.0.0` through `v1.2.0`) is now
   complete and archived in
   `planning/post-v1.2.0-github-issues-backlog.md`.
-- The new backlog cycle is now synced to GitHub with epics `#111`
-  through `#113`, child issues `#114` through `#125`, and milestones
-  `v1.3.0` through `v1.5.0`.
+- The new backlog cycle remains synced to GitHub, with open epics
+  `#112` and `#113`, open child issues `#118` through `#125`, and open
+  milestones `v1.4.0` and `v1.5.0`.
 - A new backlog cycle is now open for the documented next gaps:
   packaged vendor adapters, stronger secure-operations evidence, and
   customer deployment supportability.
-- The active tracked work is organized into three milestone groups:
-  `v1.3.0`, `v1.4.0`, and `v1.5.0`.
+- The active tracked work is now organized into the two open milestone
+  groups: `v1.4.0` and `v1.5.0`.
+- The `v1.3.0` vendor adapter and onboarding acceleration slice is now
+  complete in GitHub and in the local repo state, leaving `v1.4.0` and
+  `v1.5.0` as the open tracked milestone groups.
 
 ## Open Task Groups
 
-- [ ] `v1.3.0` Vendor adapter packs and onboarding acceleration
+- [x] `v1.3.0` Vendor adapter packs and onboarding acceleration
 - [ ] `v1.4.0` Secure operations and compliance evidence
 - [ ] `v1.5.0` Customer deployment automation and supportability
 
@@ -34,7 +37,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Packaged CAD vendor profile overlays
 - [x] Packaged RMS vendor profile overlays
 - [x] Onboarding diff reports for unmapped columns and contract drift
-- [ ] Syntheticized vendor-batch example generation
+- [x] Syntheticized vendor-batch example generation
 - [ ] Detached-signature support for customer handoff manifests
 - [ ] Secret-file and rotation health checks for auth material
 - [ ] Encrypted backup and export-bundle workflows
@@ -46,4 +49,4 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Next: implement local catalog `#120` / GitHub issue `#117`.
+- Next: implement local catalog `#121` / GitHub issue `#118`.
