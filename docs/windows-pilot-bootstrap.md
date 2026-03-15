@@ -20,6 +20,16 @@ powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1
 powershell -ExecutionPolicy Bypass -File .\launch\bootstrap_windows_pilot.ps1 --prepare-only
 ```
 
+If the bundle includes `pilot_handoff_manifest.sig.json`, pass the
+trusted Ed25519 public key during the readiness step:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1 -TrustedPublicKey C:\keys\etl-identity-engine-signing-public.pem
+```
+
+You can also set `ETL_IDENTITY_TRUSTED_SIGNER_PUBLIC_KEY` before
+running the wrapper.
+
 That bootstrap path:
 
 1. creates a local `.venv`
@@ -46,7 +56,8 @@ After bootstrap, the bundle root includes:
 - `launch/start_pilot_service.ps1`
 - `launch/stop_pilot_postgres.ps1`
 
-The readiness check and hashed handoff manifest are documented in
+The readiness check, hashed handoff manifest, and optional detached
+signature workflow are documented in
 [customer-pilot-readiness.md](customer-pilot-readiness.md).
 
 ## Follow-On Commands

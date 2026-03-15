@@ -34,6 +34,41 @@ RELEASE_ARTIFACTS = (
 )
 
 
+def _ensure_repo_src_on_path() -> None:
+    src_dir = REPO_ROOT / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
+
+def _signature_sidecar_name(manifest_name: str) -> str:
+    _ensure_repo_src_on_path()
+    from etl_identity_engine.handoff_signing import signature_sidecar_name
+
+    return signature_sidecar_name(manifest_name)
+
+
+def _write_detached_signature(
+    *,
+    destination: Path,
+    manifest_path: str,
+    manifest_bytes: bytes,
+    private_key_path: Path,
+    signer_identity: str | None,
+    key_id: str | None,
+) -> dict[str, str]:
+    _ensure_repo_src_on_path()
+    from etl_identity_engine.handoff_signing import write_detached_signature
+
+    return write_detached_signature(
+        destination=destination,
+        manifest_path=manifest_path,
+        manifest_bytes=manifest_bytes,
+        private_key_path=private_key_path,
+        signer_identity=signer_identity,
+        key_id=key_id,
+    )
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Package the documented release sample bundle for a tagged release."
@@ -54,6 +89,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--version",
         default=None,
         help="Release version to embed in the bundle name and manifest. Defaults to pyproject.toml.",
+    )
+    parser.add_argument(
+        "--signing-key",
+        default=None,
+        help="Optional Ed25519 private key PEM used to emit a detached manifest signature.",
+    )
+    parser.add_argument(
+        "--signer-identity",
+        default=None,
+        help="Optional signer identity to record in the detached signature metadata.",
+    )
+    parser.add_argument(
+        "--key-id",
+        default=None,
+        help="Optional key identifier to record in the detached signature metadata.",
     )
     return parser.parse_args(argv)
 
@@ -246,6 +296,9 @@ def package_release_sample(
     repo_root: Path = REPO_ROOT,
     generated_at_utc: str | None = None,
     source_commit: str | None = None,
+    signing_key: Path | None = None,
+    signer_identity: str | None = None,
+    key_id: str | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = output_dir / build_bundle_name(version, profile)
@@ -264,6 +317,22 @@ def package_release_sample(
         artifacts=artifact_names,
     )
     zip_timestamp = _zip_entry_timestamp(resolved_generated_at_utc)
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    signature_bytes: bytes | None = None
+    signature_name: str | None = None
+    if signing_key is not None:
+        signature_name = _signature_sidecar_name(MANIFEST_NAME)
+        with tempfile.TemporaryDirectory(prefix="etl-release-signature-") as signature_dir:
+            signature_path = Path(signature_dir) / signature_name
+            _write_detached_signature(
+                destination=signature_path,
+                manifest_path=MANIFEST_NAME,
+                manifest_bytes=manifest_bytes,
+                private_key_path=signing_key,
+                signer_identity=signer_identity,
+                key_id=key_id,
+            )
+            signature_bytes = signature_path.read_bytes()
 
     with tempfile.TemporaryDirectory(prefix="etl-release-sample-") as temp_dir:
         base_dir = Path(temp_dir)
@@ -288,10 +357,13 @@ def package_release_sample(
             manifest_info = zipfile.ZipInfo(MANIFEST_NAME, date_time=zip_timestamp)
             manifest_info.compress_type = zipfile.ZIP_DEFLATED
             manifest_info.external_attr = 0o100644 << 16
-            archive.writestr(
-                manifest_info,
-                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-            )
+            archive.writestr(manifest_info, manifest_bytes)
+
+            if signature_bytes is not None and signature_name is not None:
+                signature_info = zipfile.ZipInfo(signature_name, date_time=zip_timestamp)
+                signature_info.compress_type = zipfile.ZIP_DEFLATED
+                signature_info.external_attr = 0o100644 << 16
+                archive.writestr(signature_info, signature_bytes)
 
     return bundle_path
 
@@ -306,6 +378,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
         formats=formats,
         version=version,
+        signing_key=None if args.signing_key is None else Path(args.signing_key).resolve(),
+        signer_identity=args.signer_identity,
+        key_id=args.key_id,
     )
     print(f"release sample bundle written: {bundle_path}")
     return 0

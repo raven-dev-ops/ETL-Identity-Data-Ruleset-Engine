@@ -6,6 +6,9 @@ from pathlib import Path
 import sys
 import zipfile
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "package_customer_pilot_bundle.py"
 sys.path.insert(0, str(SCRIPT_PATH.parent))
@@ -14,6 +17,18 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+def _write_ed25519_private_key(path: Path) -> Path:
+    private_key = Ed25519PrivateKey.generate()
+    path.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    return path
 
 
 def test_build_bundle_name_uses_expected_pattern() -> None:
@@ -163,3 +178,26 @@ def test_package_customer_pilot_bundle_builds_expected_zip(tmp_path: Path) -> No
         handoff_paths = {entry["path"] for entry in handoff_manifest["artifacts"]}
         assert MODULE.MANIFEST_NAME in handoff_paths
         assert "tools/check_pilot_readiness.py" in handoff_paths
+
+
+def test_package_customer_pilot_bundle_can_emit_detached_signature(tmp_path: Path) -> None:
+    signing_key_path = _write_ed25519_private_key(tmp_path / "pilot-signing-private.pem")
+
+    bundle_path = MODULE.package_customer_pilot_bundle(
+        output_dir=tmp_path,
+        source_manifest=Path("fixtures/public_safety_regressions/manifest.yml"),
+        pilot_name="public-safety-regressions",
+        version="1.0.0",
+        signing_key=signing_key_path,
+        signer_identity="pilot-signer@example.test",
+        key_id="pilot-ed25519",
+    )
+
+    with zipfile.ZipFile(bundle_path) as archive:
+        members = set(archive.namelist())
+        assert MODULE.HANDOFF_SIGNATURE_NAME in members
+        assert "tools/verify_handoff_signature.py" in members
+        signature_payload = json.loads(archive.read(MODULE.HANDOFF_SIGNATURE_NAME).decode("utf-8"))
+        assert signature_payload["manifest_path"] == MODULE.HANDOFF_MANIFEST_NAME
+        assert signature_payload["key_id"] == "pilot-ed25519"
+        assert signature_payload["signer_identity"] == "pilot-signer@example.test"

@@ -15,6 +15,10 @@ All notable changes to this project will be documented in this file.
 - Added `generate-public-safety-vendor-batches`, which writes
   synthetic vendor-profile-shaped CAD and RMS onboarding bundles plus a
   matching manifest for rehearsal, demo, and pre-sales use.
+- Added shared Ed25519 detached-signature support for release and
+  customer-handoff manifests, including signed bundle packaging,
+  standalone signature verification tooling, and customer-pilot
+  readiness enforcement when signed handoff manifests are present.
 
 ## [1.0.0] - 2026-03-14
 

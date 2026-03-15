@@ -6,6 +6,9 @@ from pathlib import Path
 import sys
 import zipfile
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "package_release_sample.py"
 SPEC = importlib.util.spec_from_file_location("package_release_sample_script", SCRIPT_PATH)
@@ -13,6 +16,18 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+def _write_ed25519_private_key(path: Path) -> Path:
+    private_key = Ed25519PrivateKey.generate()
+    path.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    return path
 
 
 def test_read_project_version_reads_pyproject_version(tmp_path: Path) -> None:
@@ -147,3 +162,46 @@ def test_package_release_sample_builds_expected_zip(tmp_path: Path) -> None:
         assert manifest["seed"] == 42
         assert manifest["formats"] == ["csv", "parquet"]
         assert manifest["artifacts"] == [path.as_posix() for path in MODULE.RELEASE_ARTIFACTS]
+
+
+def test_package_release_sample_can_emit_detached_signature(tmp_path: Path, monkeypatch) -> None:
+    signing_key_path = _write_ed25519_private_key(tmp_path / "release-signing-private.pem")
+
+    def fake_run_pipeline(
+        *,
+        base_dir: Path,
+        profile: str,
+        seed: int,
+        formats: tuple[str, ...],
+        repo_root: Path,
+    ) -> None:
+        for relative_artifact in MODULE.RELEASE_ARTIFACTS:
+            destination = base_dir / relative_artifact
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                f"{profile}|{seed}|{','.join(formats)}|{relative_artifact.as_posix()}\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(MODULE, "_run_pipeline", fake_run_pipeline)
+
+    bundle_path = MODULE.package_release_sample(
+        output_dir=tmp_path,
+        profile="small",
+        seed=42,
+        formats=("csv", "parquet"),
+        version="1.0.0",
+        generated_at_utc="2026-03-15T00:00:00Z",
+        source_commit="abc123",
+        signing_key=signing_key_path,
+        signer_identity="release-bot@example.test",
+        key_id="release-ed25519",
+    )
+
+    with zipfile.ZipFile(bundle_path) as archive:
+        members = set(archive.namelist())
+        assert "manifest.sig.json" in members
+        signature_payload = json.loads(archive.read("manifest.sig.json").decode("utf-8"))
+        assert signature_payload["manifest_path"] == MODULE.MANIFEST_NAME
+        assert signature_payload["key_id"] == "release-ed25519"
+        assert signature_payload["signer_identity"] == "release-bot@example.test"

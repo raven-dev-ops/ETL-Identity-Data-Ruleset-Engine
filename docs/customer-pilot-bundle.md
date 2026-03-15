@@ -19,6 +19,13 @@ Package the default seeded pilot bundle with:
 python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot
 ```
 
+To emit a detached signature for the handoff manifest, add a trusted
+Ed25519 private key:
+
+```bash
+python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot --signing-key C:\keys\etl-identity-engine-signing-private.pem --signer-identity "pilot-release@example.test" --key-id "pilot-ed25519"
+```
+
 You can also point at a different seeded manifest:
 
 ```bash
@@ -36,6 +43,7 @@ The packaged zip includes:
 - `README.md`
 - `pilot_manifest.json`
 - `pilot_handoff_manifest.json`
+- `pilot_handoff_manifest.sig.json` when signing is enabled
 - `seed_dataset/`
 - `seed_run/data/`
 - `state/pipeline_state.sqlite`
@@ -44,6 +52,7 @@ The packaged zip includes:
 - `tools/rebuild_demo_shell.py`
 - `tools/bootstrap_windows_pilot.py`
 - `tools/check_pilot_readiness.py`
+- `tools/verify_handoff_signature.py`
 - `launch/start_demo_shell.ps1`
 - `launch/start_demo_shell.sh`
 - `launch/bootstrap_windows_pilot.ps1`
@@ -55,6 +64,9 @@ From the extracted bundle root:
 
 1. Run the readiness check first:
    `powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1`
+   If the bundle includes `pilot_handoff_manifest.sig.json`, also pass
+   `-TrustedPublicKey <path-to-public-key.pem>` or set
+   `ETL_IDENTITY_TRUSTED_SIGNER_PUBLIC_KEY`.
 2. For the supported Windows-first PostgreSQL pilot path, run:
    `powershell -ExecutionPolicy Bypass -File .\launch\bootstrap_windows_pilot.ps1`
 3. For the portable seeded SQLite walkthrough, install the shipped
@@ -81,7 +93,8 @@ deployment package.
 - It is designed for local walkthroughs.
 - It uses synthetic public-safety data only.
 - It now includes the Windows-first single-host bootstrap path and the
-  hashed handoff-manifest readiness check, but it does not replace the
-  operator runbook and acceptance material documented in
+  hashed handoff-manifest readiness check plus optional detached
+  signature verification, but it does not replace the operator runbook
+  and acceptance material documented in
   [customer-pilot-runbooks.md](customer-pilot-runbooks.md) and
   [customer-pilot-acceptance-checklist.md](customer-pilot-acceptance-checklist.md).

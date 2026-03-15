@@ -38,7 +38,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Packaged RMS vendor profile overlays
 - [x] Onboarding diff reports for unmapped columns and contract drift
 - [x] Syntheticized vendor-batch example generation
-- [ ] Detached-signature support for customer handoff manifests
+- [x] Detached-signature support for customer handoff manifests
 - [ ] Secret-file and rotation health checks for auth material
 - [ ] Encrypted backup and export-bundle workflows
 - [ ] CJIS evidence-pack generation from config and audit artifacts
@@ -49,4 +49,4 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Next: implement local catalog `#121` / GitHub issue `#118`.
+- Next: implement local catalog `#122` / GitHub issue `#119`.

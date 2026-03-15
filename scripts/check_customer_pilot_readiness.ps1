@@ -3,6 +3,7 @@ param(
     [string]$BundleRoot = "",
     [string]$InstallRoot = "",
     [string]$Output = "",
+    [string]$TrustedPublicKey = "",
     [string]$Python = "python",
     [int]$DemoPort = 8000,
     [int]$ServicePort = 8010,
@@ -21,6 +22,7 @@ if (-not [string]::IsNullOrWhiteSpace($Bundle)) { $arguments += @("--bundle", $B
 if (-not [string]::IsNullOrWhiteSpace($BundleRoot)) { $arguments += @("--bundle-root", $BundleRoot) }
 if (-not [string]::IsNullOrWhiteSpace($InstallRoot)) { $arguments += @("--install-root", $InstallRoot) }
 if (-not [string]::IsNullOrWhiteSpace($Output)) { $arguments += @("--output", $Output) }
+if (-not [string]::IsNullOrWhiteSpace($TrustedPublicKey)) { $arguments += @("--trusted-public-key", $TrustedPublicKey) }
 if ([string]::IsNullOrWhiteSpace($Bundle) -and [string]::IsNullOrWhiteSpace($BundleRoot)) {
     $arguments += @("--bundle-root", $root)
 }

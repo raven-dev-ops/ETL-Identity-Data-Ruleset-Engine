@@ -17,6 +17,7 @@ import zipfile
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PILOT_MANIFEST_NAME = "pilot_manifest.json"
 HANDOFF_MANIFEST_NAME = "pilot_handoff_manifest.json"
+TRUSTED_PUBLIC_KEY_ENVVAR = "ETL_IDENTITY_TRUSTED_SIGNER_PUBLIC_KEY"
 DEFAULT_MIN_FREE_GIB = 2.0
 DEFAULT_DEMO_PORT = 8000
 DEFAULT_SERVICE_PORT = 8010
@@ -31,6 +32,49 @@ REQUIRED_BUNDLE_PATHS = (
     "tools/check_pilot_readiness.py",
     "state/pipeline_state.sqlite",
 )
+
+
+def _bundle_relative_path(root: Path, relative_path: str) -> Path:
+    return root.joinpath(*relative_path.split("/"))
+
+
+def _ensure_runtime_src_on_path(bundle_root: Path | None = None) -> None:
+    candidate_paths = [
+        REPO_ROOT / "src",
+        REPO_ROOT / "runtime" / "src",
+    ]
+    if bundle_root is not None:
+        candidate_paths.insert(0, bundle_root / "runtime" / "src")
+    for candidate in candidate_paths:
+        if candidate.exists() and str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+            return
+
+
+def _signature_sidecar_name(manifest_name: str, *, bundle_root: Path | None = None) -> str:
+    _ensure_runtime_src_on_path(bundle_root)
+    from etl_identity_engine.handoff_signing import signature_sidecar_name
+
+    return signature_sidecar_name(manifest_name)
+
+
+def _verify_detached_signature(
+    *,
+    manifest_path: str,
+    manifest_bytes: bytes,
+    signature_payload: dict[str, object],
+    trusted_public_key_path: Path,
+    bundle_root: Path | None = None,
+) -> dict[str, object]:
+    _ensure_runtime_src_on_path(bundle_root)
+    from etl_identity_engine.handoff_signing import verify_detached_signature
+
+    return verify_detached_signature(
+        manifest_path=manifest_path,
+        manifest_bytes=manifest_bytes,
+        signature_payload=signature_payload,
+        trusted_public_key_path=trusted_public_key_path,
+    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -55,6 +99,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--output",
         default=None,
         help="Optional JSON output path for the readiness summary.",
+    )
+    parser.add_argument(
+        "--trusted-public-key",
+        default=None,
+        help=(
+            "Trusted Ed25519 public key PEM used to verify a detached handoff signature. "
+            f"Defaults to ${TRUSTED_PUBLIC_KEY_ENVVAR} when set."
+        ),
     )
     parser.add_argument("--demo-port", default=DEFAULT_DEMO_PORT, type=int)
     parser.add_argument("--service-port", default=DEFAULT_SERVICE_PORT, type=int)
@@ -222,7 +274,86 @@ def _verify_handoff_manifest_payload(
     return checks, errors
 
 
-def _inspect_bundle_zip(bundle_path: Path) -> tuple[dict[str, object], list[dict[str, object]], list[str]]:
+def _resolve_trusted_public_key_path(value: str | None) -> Path | None:
+    candidate = value or os.environ.get(TRUSTED_PUBLIC_KEY_ENVVAR, "").strip()
+    if not candidate:
+        return None
+    resolved = Path(candidate).resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(f"Trusted public key not found: {resolved}")
+    return resolved
+
+
+def _verify_optional_detached_signature(
+    *,
+    manifest_name: str,
+    manifest_bytes: bytes,
+    signature_bytes: bytes | None,
+    trusted_public_key_path: Path | None,
+    bundle_root: Path | None = None,
+) -> tuple[list[dict[str, object]], list[str]]:
+    checks: list[dict[str, object]] = []
+    errors: list[str] = []
+    signature_name = _signature_sidecar_name(manifest_name, bundle_root=bundle_root)
+    if signature_bytes is None:
+        checks.append(
+            {
+                "check": "handoff_signature",
+                "status": "ok" if trusted_public_key_path is None else "error",
+                "detail": "not_present",
+            }
+        )
+        if trusted_public_key_path is not None:
+            errors.append(f"detached handoff signature is missing: {signature_name}")
+        return checks, errors
+
+    if trusted_public_key_path is None:
+        checks.append(
+            {
+                "check": "handoff_signature",
+                "status": "error",
+                "detail": "trusted_public_key_required",
+            }
+        )
+        errors.append(
+            "detached handoff signature is present but no trusted public key was provided"
+        )
+        return checks, errors
+
+    try:
+        verification = _verify_detached_signature(
+            manifest_path=manifest_name,
+            manifest_bytes=manifest_bytes,
+            signature_payload=_load_json_bytes(signature_bytes),
+            trusted_public_key_path=trusted_public_key_path,
+            bundle_root=bundle_root,
+        )
+    except ValueError as exc:
+        checks.append(
+            {
+                "check": "handoff_signature",
+                "status": "error",
+                "detail": str(exc),
+            }
+        )
+        errors.append(f"detached handoff signature verification failed: {exc}")
+        return checks, errors
+
+    checks.append(
+        {
+            "check": "handoff_signature",
+            "status": "ok",
+            "detail": verification,
+        }
+    )
+    return checks, errors
+
+
+def _inspect_bundle_zip(
+    bundle_path: Path,
+    *,
+    trusted_public_key_path: Path | None,
+) -> tuple[dict[str, object], list[dict[str, object]], list[str]]:
     checks: list[dict[str, object]] = []
     errors: list[str] = []
     with zipfile.ZipFile(bundle_path) as archive:
@@ -239,7 +370,8 @@ def _inspect_bundle_zip(bundle_path: Path) -> tuple[dict[str, object], list[dict
             errors.append(
                 "customer pilot bundle is missing required paths: " + ", ".join(missing_required)
             )
-        handoff_manifest = _load_json_bytes(archive.read(HANDOFF_MANIFEST_NAME))
+        handoff_manifest_bytes = archive.read(HANDOFF_MANIFEST_NAME)
+        handoff_manifest = _load_json_bytes(handoff_manifest_bytes)
 
         def artifact_lookup(relative_path: str) -> bytes:
             if relative_path not in members:
@@ -252,14 +384,28 @@ def _inspect_bundle_zip(bundle_path: Path) -> tuple[dict[str, object], list[dict
         )
         checks.extend(handoff_checks)
         errors.extend(handoff_errors)
+        signature_name = _signature_sidecar_name(HANDOFF_MANIFEST_NAME)
+        signature_bytes = archive.read(signature_name) if signature_name in members else None
+        signature_checks, signature_errors = _verify_optional_detached_signature(
+            manifest_name=HANDOFF_MANIFEST_NAME,
+            manifest_bytes=handoff_manifest_bytes,
+            signature_bytes=signature_bytes,
+            trusted_public_key_path=trusted_public_key_path,
+        )
+        checks.extend(signature_checks)
+        errors.extend(signature_errors)
     return handoff_manifest, checks, errors
 
 
-def _inspect_bundle_root(bundle_root: Path) -> tuple[dict[str, object], list[dict[str, object]], list[str]]:
+def _inspect_bundle_root(
+    bundle_root: Path,
+    *,
+    trusted_public_key_path: Path | None,
+) -> tuple[dict[str, object], list[dict[str, object]], list[str]]:
     checks: list[dict[str, object]] = []
     errors: list[str] = []
     missing_required = [
-        path for path in REQUIRED_BUNDLE_PATHS if not (bundle_root / path.replace("/", os.sep)).exists()
+        path for path in REQUIRED_BUNDLE_PATHS if not _bundle_relative_path(bundle_root, path).exists()
     ]
     checks.append(
         {
@@ -272,10 +418,12 @@ def _inspect_bundle_root(bundle_root: Path) -> tuple[dict[str, object], list[dic
         errors.append(
             "customer pilot bundle root is missing required paths: " + ", ".join(missing_required)
         )
-    handoff_manifest = _load_json_bytes((bundle_root / HANDOFF_MANIFEST_NAME).read_bytes())
+    handoff_manifest_path = _bundle_relative_path(bundle_root, HANDOFF_MANIFEST_NAME)
+    handoff_manifest_bytes = handoff_manifest_path.read_bytes()
+    handoff_manifest = _load_json_bytes(handoff_manifest_bytes)
 
     def artifact_lookup(relative_path: str) -> bytes:
-        target = bundle_root / relative_path.replace("/", os.sep)
+        target = _bundle_relative_path(bundle_root, relative_path)
         if not target.exists():
             raise FileNotFoundError(relative_path)
         return target.read_bytes()
@@ -286,6 +434,19 @@ def _inspect_bundle_root(bundle_root: Path) -> tuple[dict[str, object], list[dic
     )
     checks.extend(handoff_checks)
     errors.extend(handoff_errors)
+    signature_path = _bundle_relative_path(
+        bundle_root,
+        _signature_sidecar_name(HANDOFF_MANIFEST_NAME, bundle_root=bundle_root),
+    )
+    signature_checks, signature_errors = _verify_optional_detached_signature(
+        manifest_name=HANDOFF_MANIFEST_NAME,
+        manifest_bytes=handoff_manifest_bytes,
+        signature_bytes=signature_path.read_bytes() if signature_path.exists() else None,
+        trusted_public_key_path=trusted_public_key_path,
+        bundle_root=bundle_root,
+    )
+    checks.extend(signature_checks)
+    errors.extend(signature_errors)
     return handoff_manifest, checks, errors
 
 
@@ -297,6 +458,7 @@ def evaluate_customer_pilot_readiness(
     demo_port: int = DEFAULT_DEMO_PORT,
     service_port: int = DEFAULT_SERVICE_PORT,
     min_free_gib: float = DEFAULT_MIN_FREE_GIB,
+    trusted_public_key: str | None = None,
     python_version: Sequence[int] | None = None,
     system_name: str | None = None,
     docker_available: bool | None = None,
@@ -316,12 +478,19 @@ def evaluate_customer_pilot_readiness(
     checks: list[dict[str, object]] = []
     errors: list[str] = []
     warnings: list[str] = []
+    trusted_public_key_path = _resolve_trusted_public_key_path(trusted_public_key)
 
     if resolved_bundle_path is not None:
-        handoff_manifest, bundle_checks, bundle_errors = _inspect_bundle_zip(resolved_bundle_path)
+        handoff_manifest, bundle_checks, bundle_errors = _inspect_bundle_zip(
+            resolved_bundle_path,
+            trusted_public_key_path=trusted_public_key_path,
+        )
     else:
         assert resolved_bundle_root is not None
-        handoff_manifest, bundle_checks, bundle_errors = _inspect_bundle_root(resolved_bundle_root)
+        handoff_manifest, bundle_checks, bundle_errors = _inspect_bundle_root(
+            resolved_bundle_root,
+            trusted_public_key_path=trusted_public_key_path,
+        )
     checks.extend(bundle_checks)
     errors.extend(bundle_errors)
 
@@ -431,6 +600,9 @@ def evaluate_customer_pilot_readiness(
         "pilot_name": handoff_manifest.get("pilot_name"),
         "version": handoff_manifest.get("version"),
         "verification_type": handoff_manifest.get("verification_type"),
+        "trusted_public_key": (
+            None if trusted_public_key_path is None else str(trusted_public_key_path)
+        ),
         "checks": checks,
         "warnings": warnings,
         "errors": errors,
@@ -446,6 +618,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         demo_port=args.demo_port,
         service_port=args.service_port,
         min_free_gib=args.min_free_gib,
+        trusted_public_key=args.trusted_public_key,
     )
     if args.output:
         output_path = Path(args.output)

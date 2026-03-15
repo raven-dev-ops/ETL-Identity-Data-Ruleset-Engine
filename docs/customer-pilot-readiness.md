@@ -29,6 +29,8 @@ powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1
 - required bundle files
 - `pilot_handoff_manifest.json` integrity against delivered artifact
   hashes
+- optional detached-signature trust for `pilot_handoff_manifest.json`
+  when the bundle includes `pilot_handoff_manifest.sig.json`
 
 ## Outputs
 
@@ -36,6 +38,7 @@ The readiness command prints a JSON summary with:
 
 - overall `status`
 - bundle identity (`pilot_name`, `version`)
+- trusted signer key path when detached-signature verification is used
 - per-check results
 - warnings
 - blocking errors
@@ -64,6 +67,22 @@ pilot bundle. It includes:
 The readiness checker replays those hashes against the extracted bundle
 or packaged zip so customer handoff can prove which artifact set was
 delivered.
+
+When the bundle also includes `pilot_handoff_manifest.sig.json`, the
+same readiness path can verify detached-signature trust before
+bootstrap. Provide the trusted Ed25519 public key with either:
+
+- `--trusted-public-key <path-to-public-key.pem>`
+- `ETL_IDENTITY_TRUSTED_SIGNER_PUBLIC_KEY=<path-to-public-key.pem>`
+
+Example:
+
+```bash
+python scripts/check_customer_pilot_readiness.py --bundle dist/customer-pilot/etl-identity-engine-vX.Y.Z-customer-pilot-public-safety-regressions.zip --trusted-public-key C:\keys\etl-identity-engine-signing-public.pem
+```
+
+If a signature is present and no trusted public key is supplied, the
+readiness check fails closed.
 
 ## Operator Use
 

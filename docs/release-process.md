@@ -101,6 +101,13 @@ Generate a release-candidate sample bundle with:
 python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet
 ```
 
+To emit a detached signature for the bundled `manifest.json`, add a
+trusted Ed25519 private key:
+
+```bash
+python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet --signing-key C:\keys\etl-identity-engine-signing-private.pem --signer-identity "release-bot@example.test" --key-id "release-ed25519"
+```
+
 The script writes a zip archive named like
 `etl-identity-engine-vX.Y.Z-sample-small.zip`.
 
@@ -124,6 +131,13 @@ That bundle should include at least:
 - `data/exceptions/run_summary.json`
 - `data/exceptions/run_report.md`
 - `manifest.json`
+
+When signing is enabled, the bundle also includes `manifest.sig.json`.
+Verify it with:
+
+```bash
+python scripts/verify_handoff_signature.py --bundle dist/release-samples/etl-identity-engine-vX.Y.Z-sample-small.zip --trusted-public-key C:\keys\etl-identity-engine-signing-public.pem
+```
 
 See [output-contracts.md](output-contracts.md) for the stable file
 shapes.
@@ -209,6 +223,9 @@ The CI `container-supply-chain` job publishes the same directory as the
   - For historical backlog validation, use `--include-closed`.
 - Build the packaged release sample:
   - `python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet`
+- If you are shipping a signed release handoff, rerun the bundle build
+  with `--signing-key ...` and verify it with
+  `python scripts/verify_handoff_signature.py --bundle ... --trusted-public-key ...`
 - Review the packaged output set against
   [output-contracts.md](output-contracts.md).
 - Verify the required GitHub checks passed on the release commit.

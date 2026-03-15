@@ -256,6 +256,13 @@ Package the documented release sample archive with:
 python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet
 ```
 
+To emit a detached signature for the bundled `manifest.json`, add:
+
+```bash
+python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet --signing-key C:\keys\etl-identity-engine-signing-private.pem --signer-identity "release-bot@example.test" --key-id "release-ed25519"
+python scripts/verify_handoff_signature.py --bundle dist/release-samples/etl-identity-engine-v<version>-sample-small.zip --trusted-public-key C:\keys\etl-identity-engine-signing-public.pem
+```
+
 The release process treats that script as the authoritative bundle
 entrypoint, and the resulting zip should be attached to the GitHub
 release for the matching tag.
@@ -463,10 +470,17 @@ with persisted state, the prepared demo shell, and startup helpers:
 python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot
 ```
 
+To sign the customer handoff manifest:
+
+```bash
+python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot --signing-key C:\keys\etl-identity-engine-signing-private.pem --signer-identity "pilot-release@example.test" --key-id "pilot-ed25519"
+```
+
 That bundle is documented in
 [docs/customer-pilot-bundle.md](docs/customer-pilot-bundle.md) and is
 the current handoff path for a local public-safety pilot walkthrough.
-The readiness and hashed handoff-manifest path is documented in
+The readiness, hashed handoff-manifest path, and detached-signature
+verification flow are documented in
 [docs/customer-pilot-readiness.md](docs/customer-pilot-readiness.md).
 The operator/admin runbooks and the acceptance checklist are documented
 in [docs/customer-pilot-runbooks.md](docs/customer-pilot-runbooks.md)

@@ -19,6 +19,7 @@ from package_release_sample import (
     PROJECT_NAME,
     REPO_ROOT,
     _build_pythonpath,
+    _ensure_repo_src_on_path,
     _zip_entry_timestamp,
     read_project_version,
     resolve_generated_at_utc,
@@ -31,12 +32,7 @@ DEFAULT_OUTPUT_DIR = Path("dist") / "customer-pilot"
 DEFAULT_SOURCE_MANIFEST = REPO_ROOT / "fixtures" / "public_safety_regressions" / "manifest.yml"
 MANIFEST_NAME = "pilot_manifest.json"
 HANDOFF_MANIFEST_NAME = "pilot_handoff_manifest.json"
-
-
-def _ensure_repo_src_on_path() -> None:
-    src_dir = REPO_ROOT / "src"
-    if str(src_dir) not in sys.path:
-        sys.path.insert(0, str(src_dir))
+HANDOFF_SIGNATURE_NAME = "pilot_handoff_manifest.sig.json"
 
 
 def _prepare_public_safety_demo_shell(**kwargs: object) -> object:
@@ -84,6 +80,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--version",
         default=None,
         help="Version to embed in the bundle name and manifest. Defaults to pyproject.toml.",
+    )
+    parser.add_argument(
+        "--signing-key",
+        default=None,
+        help="Optional Ed25519 private key PEM used to emit a detached handoff-manifest signature.",
+    )
+    parser.add_argument(
+        "--signer-identity",
+        default=None,
+        help="Optional signer identity to record in the detached signature metadata.",
+    )
+    parser.add_argument(
+        "--key-id",
+        default=None,
+        help="Optional key identifier to record in the detached signature metadata.",
     )
     return parser.parse_args(argv)
 
@@ -196,6 +207,28 @@ def _artifact_hash_entries(
     return tuple(entries)
 
 
+def _write_detached_signature(
+    *,
+    destination: Path,
+    manifest_path: str,
+    manifest_bytes: bytes,
+    private_key_path: Path,
+    signer_identity: str | None,
+    key_id: str | None,
+) -> dict[str, str]:
+    _ensure_repo_src_on_path()
+    from etl_identity_engine.handoff_signing import write_detached_signature
+
+    return write_detached_signature(
+        destination=destination,
+        manifest_path=manifest_path,
+        manifest_bytes=manifest_bytes,
+        private_key_path=private_key_path,
+        signer_identity=signer_identity,
+        key_id=key_id,
+    )
+
+
 def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, source_run_id: str) -> None:
     destination.write_text(
         "\n".join(
@@ -216,14 +249,19 @@ def _write_pilot_readme(*, destination: Path, pilot_name: str, version: str, sou
                 "- `launch/`: quick startup helpers for local walkthroughs",
                 "- `tools/rebuild_demo_shell.py`: rebuild the demo shell from the shipped persisted state",
                 "- `tools/bootstrap_windows_pilot.py`: Windows-first bootstrap for the PostgreSQL-backed single-host pilot path",
-                "- `tools/check_pilot_readiness.py`: validates the target host and verifies the hashed handoff manifest",
+                "- `tools/check_pilot_readiness.py`: validates the target host, handoff hashes, and an optional detached handoff signature",
+                "- `tools/verify_handoff_signature.py`: verifies detached handoff signatures using a trusted Ed25519 public key",
                 "- `pilot_handoff_manifest.json`: hashed manifest of the delivered pilot artifacts",
+                "- `pilot_handoff_manifest.sig.json`: optional detached signature for the handoff manifest",
                 "",
                 "## Quick Start",
                 "",
                 "1. Install Python 3.11 or newer.",
                 "2. Run the readiness check before bootstrap:",
                 "   `powershell -ExecutionPolicy Bypass -File .\\launch\\check_pilot_readiness.ps1`",
+                "   If the bundle includes `pilot_handoff_manifest.sig.json`, also supply",
+                "   `-TrustedPublicKey <path-to-trusted-public-key.pem>` or set",
+                "   `ETL_IDENTITY_TRUSTED_SIGNER_PUBLIC_KEY` before running the check.",
                 "3. On Windows with Docker Desktop available, run:",
                 "   `powershell -ExecutionPolicy Bypass -File .\\launch\\bootstrap_windows_pilot.ps1`",
                 "4. Or use the portable seeded SQLite walkthrough:",
@@ -357,6 +395,12 @@ def _write_readiness_tool(*, destination_root: Path) -> None:
     shutil.copy2(REPO_ROOT / "scripts" / "check_customer_pilot_readiness.py", tool_path)
 
 
+def _write_signature_tool(*, destination_root: Path) -> None:
+    tool_path = destination_root / "tools" / "verify_handoff_signature.py"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / "scripts" / "verify_handoff_signature.py", tool_path)
+
+
 def _write_launch_helpers(*, destination_root: Path) -> tuple[str, ...]:
     launch_root = destination_root / "launch"
     launch_root.mkdir(parents=True, exist_ok=True)
@@ -411,6 +455,7 @@ python "${ROOT_DIR}/tools/rebuild_demo_shell.py" --host "${HOST}" --port "${PORT
         "tools/rebuild_demo_shell.py",
         "tools/bootstrap_windows_pilot.py",
         "tools/check_pilot_readiness.py",
+        "tools/verify_handoff_signature.py",
     )
 
 
@@ -483,6 +528,9 @@ def package_customer_pilot_bundle(
     repo_root: Path = REPO_ROOT,
     generated_at_utc: str | None = None,
     source_commit: str | None = None,
+    signing_key: Path | None = None,
+    signer_identity: str | None = None,
+    key_id: str | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     resolved_pilot_name = sanitize_pilot_name(pilot_name)
@@ -520,6 +568,7 @@ def package_customer_pilot_bundle(
         _write_rebuild_tool(destination_root=staging_root)
         _write_windows_bootstrap_tool(destination_root=staging_root)
         _write_readiness_tool(destination_root=staging_root)
+        _write_signature_tool(destination_root=staging_root)
         launch_helpers = _write_launch_helpers(destination_root=staging_root)
         _write_pilot_readme(
             destination=staging_root / "README.md",
@@ -530,7 +579,10 @@ def package_customer_pilot_bundle(
 
         artifact_names = _artifact_names(
             staging_root,
-            extra_paths=(HANDOFF_MANIFEST_NAME,),
+            extra_paths=(
+                HANDOFF_MANIFEST_NAME,
+                *( (HANDOFF_SIGNATURE_NAME,) if signing_key is not None else () ),
+            ),
         )
         manifest = build_manifest(
             version=version,
@@ -544,10 +596,8 @@ def package_customer_pilot_bundle(
             launch_helpers=launch_helpers,
             artifacts=artifact_names,
         )
-        (staging_root / MANIFEST_NAME).write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        (staging_root / MANIFEST_NAME).write_bytes(manifest_bytes)
         handoff_manifest = build_handoff_manifest(
             version=version,
             pilot_name=resolved_pilot_name,
@@ -561,10 +611,19 @@ def package_customer_pilot_bundle(
                 exclude_names=(HANDOFF_MANIFEST_NAME,),
             ),
         )
-        (staging_root / HANDOFF_MANIFEST_NAME).write_text(
-            json.dumps(handoff_manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        handoff_manifest_bytes = (
+            json.dumps(handoff_manifest, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        (staging_root / HANDOFF_MANIFEST_NAME).write_bytes(handoff_manifest_bytes)
+        if signing_key is not None:
+            _write_detached_signature(
+                destination=staging_root / HANDOFF_SIGNATURE_NAME,
+                manifest_path=HANDOFF_MANIFEST_NAME,
+                manifest_bytes=handoff_manifest_bytes,
+                private_key_path=signing_key,
+                signer_identity=signer_identity,
+                key_id=key_id,
+            )
 
         with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for source_path in sorted(staging_root.rglob("*")):
@@ -589,6 +648,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_manifest=source_manifest,
         pilot_name=pilot_name,
         version=version,
+        signing_key=None if args.signing_key is None else Path(args.signing_key).resolve(),
+        signer_identity=args.signer_identity,
+        key_id=args.key_id,
     )
     print(f"customer pilot bundle written: {bundle_path}")
     return 0
