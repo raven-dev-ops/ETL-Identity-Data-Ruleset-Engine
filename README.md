@@ -228,6 +228,7 @@ is included in the repository.
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)
+- [Encrypted Backup Bundles](docs/encrypted-backup-bundles.md)
 - [Export Jobs](docs/export-jobs.md)
 - [Persistent State](docs/persistent-state.md)
 - [Recovery Runbooks](docs/recovery-runbooks.md)
@@ -476,6 +477,13 @@ To sign the customer handoff manifest:
 python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot --signing-key C:\keys\etl-identity-engine-signing-private.pem --signer-identity "pilot-release@example.test" --key-id "pilot-ed25519"
 ```
 
+To deliver the same pilot handoff as an encrypted bundle:
+
+```bash
+python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot --passphrase-file C:\secrets\pilot-bundle-passphrase.txt
+python scripts/restore_encrypted_bundle.py --bundle dist/customer-pilot/etl-identity-engine-v<version>-customer-pilot-public-safety-regressions-encrypted.zip --output-dir dist/customer-pilot/extracted --passphrase-file C:\secrets\pilot-bundle-passphrase.txt
+```
+
 That bundle is documented in
 [docs/customer-pilot-bundle.md](docs/customer-pilot-bundle.md) and is
 the current handoff path for a local public-safety pilot walkthrough.
@@ -492,6 +500,18 @@ python -m etl_identity_engine.cli check-runtime-auth-material --environment prod
 That same age gate is available on `serve-api` and on the stricter
 `scripts/cjis_preflight_check.py` baseline for CJIS-aligned
 deployments.
+Persisted-state backup and restore can now also be handled through the
+encrypted operator workflow:
+
+```bash
+python -m etl_identity_engine.cli backup-state-bundle --state-db data/state/pipeline_state.sqlite --output dist/state-backups/pipeline_state_backup_encrypted.zip --include-path data/replay_bundles/RUN-20260315T000000Z-EXAMPLE --passphrase-file C:\secrets\state-backup-passphrase.txt
+python -m etl_identity_engine.cli restore-state-bundle --state-db recovery/state/pipeline_state.sqlite --bundle dist/state-backups/pipeline_state_backup_encrypted.zip --attachments-output-dir recovery/replay_bundles --passphrase-file C:\secrets\state-backup-passphrase.txt
+```
+
+That workflow is documented in
+[docs/encrypted-backup-bundles.md](docs/encrypted-backup-bundles.md)
+and
+[docs/recovery-runbooks.md](docs/recovery-runbooks.md).
 The operator/admin runbooks and the acceptance checklist are documented
 in [docs/customer-pilot-runbooks.md](docs/customer-pilot-runbooks.md)
 and

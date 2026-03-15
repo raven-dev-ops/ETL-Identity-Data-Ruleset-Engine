@@ -11,6 +11,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
+import tempfile
 import time
 from typing import Sequence
 
@@ -20,6 +21,12 @@ from etl_identity_engine.benchmarking import (
 )
 from etl_identity_engine.benchmark_runtime import benchmark_execution_context
 from etl_identity_engine.delivery_publish import publish_delivery_snapshot
+from etl_identity_engine.encrypted_bundle import (
+    EncryptionSecret,
+    create_encrypted_bundle,
+    extract_encrypted_bundle,
+    resolve_encryption_secret,
+)
 from etl_identity_engine.generate.synth_generator import generate_synthetic_sources
 from etl_identity_engine.incremental_refresh import refresh_incremental_run
 from etl_identity_engine.ingest.manifest import (
@@ -114,6 +121,11 @@ from etl_identity_engine.storage.migration_runner import (
     head_revision,
     upgrade_state_store,
 )
+from etl_identity_engine.storage.backup_bundle import (
+    STATE_BACKUP_BUNDLE_TYPE,
+    export_state_backup,
+    restore_state_backup,
+)
 from etl_identity_engine.storage.sqlite_store import (
     EXPORT_RUN_STATUSES,
     ExportJobRunRecord,
@@ -165,6 +177,8 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
     if command in {
         "state-db-upgrade",
         "state-db-current",
+        "backup-state-bundle",
+        "restore-state-bundle",
         "review-case-list",
         "review-case-update",
         "apply-review-decision",
@@ -207,6 +221,43 @@ def _resolve_max_secret_file_age_hours(args: argparse.Namespace) -> float | None
     if not raw_env_value:
         return None
     return float(raw_env_value)
+
+
+def _add_bundle_secret_arguments(parser: argparse.ArgumentParser, *, required: bool) -> None:
+    secret_group = parser.add_mutually_exclusive_group(required=required)
+    secret_group.add_argument(
+        "--passphrase-env",
+        default=None,
+        help="Environment variable containing the encryption passphrase.",
+    )
+    secret_group.add_argument(
+        "--passphrase-file",
+        default=None,
+        help="File containing the encryption passphrase.",
+    )
+    secret_group.add_argument(
+        "--key-env",
+        default=None,
+        help="Environment variable containing a base64-encoded 32-byte AES key.",
+    )
+    secret_group.add_argument(
+        "--key-file",
+        default=None,
+        help="File containing a base64-encoded 32-byte AES key.",
+    )
+
+
+def _resolve_bundle_secret(args: argparse.Namespace) -> EncryptionSecret:
+    return resolve_encryption_secret(
+        passphrase_env=getattr(args, "passphrase_env", None),
+        passphrase_file=(
+            None
+            if getattr(args, "passphrase_file", None) is None
+            else Path(args.passphrase_file).resolve()
+        ),
+        key_env=getattr(args, "key_env", None),
+        key_file=None if getattr(args, "key_file", None) is None else Path(args.key_file).resolve(),
+    )
 
 
 def _config_fingerprint(config: PipelineConfig) -> str:
@@ -1413,6 +1464,121 @@ def _cmd_state_db_current(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     current_revision = current_state_store_revision(state_db) or "uninitialized"
     print(f"state db revision: {current_revision} (head={head_revision()})")
+
+
+def _cmd_backup_state_bundle(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
+    state_db = _require_state_db(args)
+    encryption_secret = _resolve_bundle_secret(args)
+    output_path = Path(args.output).resolve()
+    include_paths = tuple(Path(path).resolve() for path in (args.include_path or ()))
+
+    with tempfile.TemporaryDirectory(prefix="etl-identity-engine-state-backup-") as temp_dir:
+        staging_root = Path(temp_dir) / "backup_bundle"
+        export_result = export_state_backup(
+            state_db=state_db,
+            destination_root=staging_root,
+            include_paths=include_paths,
+        )
+        create_encrypted_bundle(
+            staging_root=staging_root,
+            destination=output_path,
+            bundle_type=STATE_BACKUP_BUNDLE_TYPE,
+            encryption_secret=encryption_secret,
+            metadata={
+                "source_state_store": state_store_display_name(state_db),
+                "schema_revision": current_state_store_revision(state_db) or "uninitialized",
+                "row_counts": export_result["row_counts"],
+                "attachment_names": [
+                    str(entry.get("name", ""))
+                    for entry in export_result["attachments"]
+                    if isinstance(entry, dict)
+                ],
+            },
+        )
+
+    emit_structured_log(
+        "state_backup_bundle_created",
+        component="cli",
+        command="backup-state-bundle",
+        state_db=state_db,
+        bundle_path=output_path,
+        attachment_count=len(include_paths),
+        duration_seconds=seconds_since(started),
+    )
+    print(
+        json.dumps(
+            {
+                "action": "created",
+                "bundle_path": str(output_path),
+                "bundle_type": STATE_BACKUP_BUNDLE_TYPE,
+                "state_db": state_store_display_name(state_db),
+                "secret_mode": encryption_secret.mode,
+                "secret_source": encryption_secret.source,
+                "attachments": export_result["attachments"],
+                "row_counts": export_result["row_counts"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _cmd_restore_state_bundle(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
+    state_db = _require_state_db(args)
+    encryption_secret = _resolve_bundle_secret(args)
+    bundle_path = Path(args.bundle).resolve()
+
+    with tempfile.TemporaryDirectory(prefix="etl-identity-engine-state-restore-") as temp_dir:
+        extraction_root = Path(temp_dir) / "backup_bundle"
+        decrypted_summary = extract_encrypted_bundle(
+            bundle_path=bundle_path,
+            output_dir=extraction_root,
+            encryption_secret=encryption_secret,
+        )
+        if decrypted_summary.get("bundle_type") != STATE_BACKUP_BUNDLE_TYPE:
+            raise ValueError(
+                "Encrypted bundle is not a persisted-state backup bundle: "
+                f"{decrypted_summary.get('bundle_type')!r}"
+            )
+        restore_result = restore_state_backup(
+            source_root=extraction_root,
+            state_db=state_db,
+            attachments_output_root=(
+                None
+                if args.attachments_output_dir is None
+                else Path(args.attachments_output_dir).resolve()
+            ),
+            replace_existing=bool(args.replace_existing),
+        )
+
+    emit_structured_log(
+        "state_backup_bundle_restored",
+        component="cli",
+        command="restore-state-bundle",
+        state_db=state_db,
+        bundle_path=bundle_path,
+        restored_attachment_count=len(restore_result["restored_attachments"]),
+        duration_seconds=seconds_since(started),
+    )
+    print(
+        json.dumps(
+            {
+                "action": "restored",
+                "bundle_path": str(bundle_path),
+                "bundle_type": decrypted_summary["bundle_type"],
+                "state_db": state_store_display_name(state_db),
+                "secret_mode": encryption_secret.mode,
+                "secret_source": encryption_secret.source,
+                "replace_existing": bool(args.replace_existing),
+                "restored_row_counts": restore_result["restored_row_counts"],
+                "restored_attachments": restore_result["restored_attachments"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 def _resolve_review_case_run_id(args: argparse.Namespace, store: PipelineStateStore) -> str:
@@ -4048,6 +4214,52 @@ def build_parser() -> argparse.ArgumentParser:
     state_db_current_parser.add_argument("--runtime-config", default=None)
     state_db_current_parser.add_argument("--state-db", default=None)
     state_db_current_parser.set_defaults(func=_cmd_state_db_current)
+
+    backup_state_bundle_parser = subparsers.add_parser(
+        "backup-state-bundle",
+        help="Export persisted state plus optional attachments into an encrypted backup bundle.",
+    )
+    backup_state_bundle_parser.add_argument("--environment", default=None)
+    backup_state_bundle_parser.add_argument("--runtime-config", default=None)
+    backup_state_bundle_parser.add_argument("--state-db", default=None)
+    backup_state_bundle_parser.add_argument(
+        "--output",
+        required=True,
+        help="Encrypted bundle zip to write.",
+    )
+    backup_state_bundle_parser.add_argument(
+        "--include-path",
+        action="append",
+        default=[],
+        help="Optional file or directory to include alongside the persisted state export. Repeat as needed.",
+    )
+    _add_bundle_secret_arguments(backup_state_bundle_parser, required=True)
+    backup_state_bundle_parser.set_defaults(func=_cmd_backup_state_bundle)
+
+    restore_state_bundle_parser = subparsers.add_parser(
+        "restore-state-bundle",
+        help="Restore an encrypted persisted-state backup bundle into a target state store.",
+    )
+    restore_state_bundle_parser.add_argument("--environment", default=None)
+    restore_state_bundle_parser.add_argument("--runtime-config", default=None)
+    restore_state_bundle_parser.add_argument("--state-db", default=None)
+    restore_state_bundle_parser.add_argument(
+        "--bundle",
+        required=True,
+        help="Encrypted bundle zip produced by backup-state-bundle.",
+    )
+    restore_state_bundle_parser.add_argument(
+        "--attachments-output-dir",
+        default=None,
+        help="Optional directory where included attachment files or directories should be restored.",
+    )
+    restore_state_bundle_parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Overwrite an existing non-empty target state store.",
+    )
+    _add_bundle_secret_arguments(restore_state_bundle_parser, required=True)
+    restore_state_bundle_parser.set_defaults(func=_cmd_restore_state_bundle)
 
     review_case_list_parser = subparsers.add_parser(
         "review-case-list",

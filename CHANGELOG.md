@@ -23,6 +23,9 @@ All notable changes to this project will be documented in this file.
   `check-runtime-auth-material` plus `serve-api` startup gates for auth
   and JWT signing material, and CJIS preflight support for optional
   secret-rotation age checks.
+- Added encrypted persisted-state backup and restore workflows, the
+  shared encrypted-bundle format plus generic extract tooling, and
+  optional encrypted customer-pilot delivery packaging.
 
 ## [1.0.0] - 2026-03-14
 

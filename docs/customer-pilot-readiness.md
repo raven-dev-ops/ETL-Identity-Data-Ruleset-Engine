@@ -12,6 +12,13 @@ The authoritative repo-side entrypoint is:
 python scripts/check_customer_pilot_readiness.py --bundle dist/customer-pilot/etl-identity-engine-vX.Y.Z-customer-pilot-public-safety-regressions.zip
 ```
 
+If the delivered pilot handoff is the encrypted form, decrypt it first:
+
+```bash
+python scripts/restore_encrypted_bundle.py --bundle dist/customer-pilot/etl-identity-engine-vX.Y.Z-customer-pilot-public-safety-regressions-encrypted.zip --output-dir dist/customer-pilot/extracted --passphrase-file C:\secrets\pilot-bundle-passphrase.txt
+python scripts/check_customer_pilot_readiness.py --bundle-root dist/customer-pilot/extracted
+```
+
 For an extracted bundle on Windows, the shipped wrapper is:
 
 ```powershell

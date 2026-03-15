@@ -14,7 +14,8 @@ advanced through the published `v1.0.0` release, the tracked
 `v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, and
 the current backlog cycle has completed the `v1.3.0` vendor-adapter
 slice and is now focused on secure operations evidence plus customer
-deployment supportability.
+deployment supportability, with encrypted backup/export workflows now
+implemented in-repo.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -75,6 +76,7 @@ ETL-Identity-Data-Ruleset-Engine/
     kubernetes-deployment.md
     data-model.md
     delivery-contracts.md
+    encrypted-backup-bundles.md
     evaluation-and-metrics.md
     export-jobs.md
     matching-and-thresholds.md
@@ -127,6 +129,7 @@ ETL-Identity-Data-Ruleset-Engine/
     cjis_preflight_check.py
     persisted_state_recovery_smoke.py
     release_hardening_check.py
+    restore_encrypted_bundle.py
     run_checks.py
     run_checks.ps1
     run_checks.sh
@@ -141,6 +144,7 @@ ETL-Identity-Data-Ruleset-Engine/
       benchmark_runtime.py
       cli.py
       demo_shell/
+      encrypted_bundle.py
       generate/
       ingest/
       io/
@@ -180,8 +184,10 @@ ETL-Identity-Data-Ruleset-Engine/
     test_survivorship.py
     test_create_github_backlog.py
     test_deployment_assets.py
+    test_encrypted_bundle.py
     test_github_issue_templates.py
     test_verify_github_issue_metadata.py
+    test_state_backup_bundle.py
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
   LICENSE

@@ -26,6 +26,13 @@ Ed25519 private key:
 python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot --signing-key C:\keys\etl-identity-engine-signing-private.pem --signer-identity "pilot-release@example.test" --key-id "pilot-ed25519"
 ```
 
+To wrap the delivered pilot bundle in the encrypted handoff format, add
+one encryption secret input:
+
+```bash
+python scripts/package_customer_pilot_bundle.py --output-dir dist/customer-pilot --passphrase-file C:\secrets\pilot-bundle-passphrase.txt
+```
+
 You can also point at a different seeded manifest:
 
 ```bash
@@ -35,6 +42,10 @@ python scripts/package_customer_pilot_bundle.py --manifest fixtures/public_safet
 The script writes a deterministic bundle name like:
 
 `etl-identity-engine-vX.Y.Z-customer-pilot-public-safety-regressions.zip`
+
+When encryption is enabled, the output bundle name is:
+
+`etl-identity-engine-vX.Y.Z-customer-pilot-public-safety-regressions-encrypted.zip`
 
 ## Bundle Contents
 
@@ -61,6 +72,12 @@ The packaged zip includes:
 ## Local Walkthrough
 
 From the extracted bundle root:
+
+If the delivered pilot bundle is encrypted, decrypt it first:
+
+```bash
+python scripts/restore_encrypted_bundle.py --bundle dist/customer-pilot/etl-identity-engine-vX.Y.Z-customer-pilot-public-safety-regressions-encrypted.zip --output-dir dist/customer-pilot/extracted --passphrase-file C:\secrets\pilot-bundle-passphrase.txt
+```
 
 1. Run the readiness check first:
    `powershell -ExecutionPolicy Bypass -File .\launch\check_pilot_readiness.ps1`

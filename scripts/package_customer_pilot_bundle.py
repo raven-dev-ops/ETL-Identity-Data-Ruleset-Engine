@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 import zipfile
 
 import tomllib
@@ -28,11 +28,21 @@ from package_release_sample import (
 )
 
 
+SCRIPT_REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_SRC_ROOT = SCRIPT_REPO_ROOT / "src"
 DEFAULT_OUTPUT_DIR = Path("dist") / "customer-pilot"
 DEFAULT_SOURCE_MANIFEST = REPO_ROOT / "fixtures" / "public_safety_regressions" / "manifest.yml"
 MANIFEST_NAME = "pilot_manifest.json"
 HANDOFF_MANIFEST_NAME = "pilot_handoff_manifest.json"
 HANDOFF_SIGNATURE_NAME = "pilot_handoff_manifest.sig.json"
+
+
+def _load_encrypted_bundle_helpers():
+    if str(SCRIPT_SRC_ROOT) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_SRC_ROOT))
+    from etl_identity_engine.encrypted_bundle import create_encrypted_bundle, resolve_encryption_secret
+
+    return create_encrypted_bundle, resolve_encryption_secret
 
 
 def _prepare_public_safety_demo_shell(**kwargs: object) -> object:
@@ -96,6 +106,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Optional key identifier to record in the detached signature metadata.",
     )
+    encryption_group = parser.add_mutually_exclusive_group(required=False)
+    encryption_group.add_argument(
+        "--passphrase-env",
+        default=None,
+        help="Environment variable containing the encryption passphrase for the delivered bundle.",
+    )
+    encryption_group.add_argument(
+        "--passphrase-file",
+        default=None,
+        help="File containing the encryption passphrase for the delivered bundle.",
+    )
+    encryption_group.add_argument(
+        "--key-env",
+        default=None,
+        help="Environment variable containing a base64-encoded 32-byte AES key for the delivered bundle.",
+    )
+    encryption_group.add_argument(
+        "--key-file",
+        default=None,
+        help="File containing a base64-encoded 32-byte AES key for the delivered bundle.",
+    )
     return parser.parse_args(argv)
 
 
@@ -106,8 +137,9 @@ def sanitize_pilot_name(value: str) -> str:
     return normalized
 
 
-def build_bundle_name(version: str, pilot_name: str) -> str:
-    return f"etl-identity-engine-v{version}-customer-pilot-{pilot_name}.zip"
+def build_bundle_name(version: str, pilot_name: str, *, encrypted: bool = False) -> str:
+    suffix = "-encrypted" if encrypted else ""
+    return f"etl-identity-engine-v{version}-customer-pilot-{pilot_name}{suffix}.zip"
 
 
 def build_manifest(
@@ -226,6 +258,25 @@ def _write_detached_signature(
         private_key_path=private_key_path,
         signer_identity=signer_identity,
         key_id=key_id,
+    )
+
+
+def _resolve_optional_encryption_secret(args: argparse.Namespace) -> Any | None:
+    if not any(
+        (
+            args.passphrase_env,
+            args.passphrase_file,
+            args.key_env,
+            args.key_file,
+        )
+    ):
+        return None
+    _, resolve_encryption_secret = _load_encrypted_bundle_helpers()
+    return resolve_encryption_secret(
+        passphrase_env=args.passphrase_env,
+        passphrase_file=None if args.passphrase_file is None else Path(args.passphrase_file).resolve(),
+        key_env=args.key_env,
+        key_file=None if args.key_file is None else Path(args.key_file).resolve(),
     )
 
 
@@ -531,10 +582,15 @@ def package_customer_pilot_bundle(
     signing_key: Path | None = None,
     signer_identity: str | None = None,
     key_id: str | None = None,
+    encryption_secret: Any | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     resolved_pilot_name = sanitize_pilot_name(pilot_name)
-    bundle_path = output_dir / build_bundle_name(version, resolved_pilot_name)
+    bundle_path = output_dir / build_bundle_name(
+        version,
+        resolved_pilot_name,
+        encrypted=encryption_secret is not None,
+    )
     resolved_generated_at_utc = resolve_generated_at_utc(
         repo_root=repo_root,
         explicit_value=generated_at_utc,
@@ -625,15 +681,31 @@ def package_customer_pilot_bundle(
                 key_id=key_id,
             )
 
-        with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for source_path in sorted(staging_root.rglob("*")):
-                if not source_path.is_file():
-                    continue
-                relative_path = source_path.relative_to(staging_root).as_posix()
-                zip_info = zipfile.ZipInfo(relative_path, date_time=zip_timestamp)
-                zip_info.compress_type = zipfile.ZIP_DEFLATED
-                zip_info.external_attr = 0o100644 << 16
-                archive.writestr(zip_info, source_path.read_bytes())
+        if encryption_secret is None:
+            with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for source_path in sorted(staging_root.rglob("*")):
+                    if not source_path.is_file():
+                        continue
+                    relative_path = source_path.relative_to(staging_root).as_posix()
+                    zip_info = zipfile.ZipInfo(relative_path, date_time=zip_timestamp)
+                    zip_info.compress_type = zipfile.ZIP_DEFLATED
+                    zip_info.external_attr = 0o100644 << 16
+                    archive.writestr(zip_info, source_path.read_bytes())
+        else:
+            create_encrypted_bundle, _ = _load_encrypted_bundle_helpers()
+            create_encrypted_bundle(
+                staging_root=staging_root,
+                destination=bundle_path,
+                bundle_type="customer_pilot",
+                encryption_secret=encryption_secret,
+                generated_at_utc=resolved_generated_at_utc,
+                metadata={
+                    "pilot_name": resolved_pilot_name,
+                    "version": version,
+                    "source_manifest": "seed_dataset/" + staged_manifest.name,
+                    "source_run_id": source_run_id,
+                },
+            )
 
     return bundle_path
 
@@ -643,6 +715,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     source_manifest = Path(args.manifest)
     pilot_name = args.pilot_name or source_manifest.resolve().parent.name
     version = args.version or read_project_version()
+    encryption_secret = _resolve_optional_encryption_secret(args)
     bundle_path = package_customer_pilot_bundle(
         output_dir=resolve_output_dir(args.output_dir),
         source_manifest=source_manifest,
@@ -651,6 +724,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         signing_key=None if args.signing_key is None else Path(args.signing_key).resolve(),
         signer_identity=args.signer_identity,
         key_id=args.key_id,
+        encryption_secret=encryption_secret,
     )
     print(f"customer pilot bundle written: {bundle_path}")
     return 0

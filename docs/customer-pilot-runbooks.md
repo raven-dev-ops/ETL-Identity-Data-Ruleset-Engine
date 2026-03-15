@@ -16,6 +16,9 @@ not production operations procedures.
 
 From the extracted bundle root:
 
+If the delivered pilot bundle is the encrypted handoff form, decrypt it
+with `scripts/restore_encrypted_bundle.py` before these steps.
+
 1. Run the readiness check:
 
 ```powershell
@@ -101,15 +104,20 @@ changes:
 - `runtime/pilot_bootstrap.json`
 - `runtime/pilot_runtime.env`
 
-If the PostgreSQL bootstrap path has been used, also export the pilot
-database:
+If the PostgreSQL bootstrap path has been used, prefer the encrypted
+persisted-state backup workflow for the pilot database plus replay
+bundle attachments:
 
-```powershell
-docker exec etl-identity-pilot-public-safety-regressions pg_dump -U etl_identity identity_state > pilot_state_backup.sql
+```bash
+python -m etl_identity_engine.cli backup-state-bundle \
+  --state-db postgresql://etl_identity:etl_identity@127.0.0.1:15433/identity_state \
+  --output backups/pilot_state_backup_encrypted.zip \
+  --include-path runtime/replay_bundles \
+  --passphrase-file C:\secrets\pilot-state-backup-passphrase.txt
 ```
 
-If you used a different container name or database name, read them from
-`runtime/pilot_bootstrap.json`.
+If you used a different PostgreSQL host, port, or database name, read
+them from `runtime/pilot_bootstrap.json`.
 
 ## Demo Execution
 

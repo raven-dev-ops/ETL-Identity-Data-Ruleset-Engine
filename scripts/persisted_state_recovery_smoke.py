@@ -261,8 +261,25 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("expected recovery smoke review decision to update the persisted review case")
 
         backup_root.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(state_db, backup_root / "pipeline_state.sqlite")
-        shutil.copytree(replay_bundle_root, backup_root / "replay_bundle")
+        passphrase_file = workspace / "backup-passphrase.txt"
+        passphrase_file.write_text("recovery-smoke-passphrase\n", encoding="utf-8")
+        backup_bundle_path = backup_root / "pipeline_state_backup_encrypted.zip"
+        backup_payload = _run_cli(
+            [
+                "backup-state-bundle",
+                "--state-db",
+                str(state_db),
+                "--output",
+                str(backup_bundle_path),
+                "--include-path",
+                str(replay_bundle_root),
+                "--passphrase-file",
+                str(passphrase_file),
+            ],
+            expect_json=True,
+        )
+        if Path(backup_payload["bundle_path"]) != backup_bundle_path.resolve():
+            raise SystemExit("expected backup-state-bundle to write the requested encrypted bundle path")
 
         if original_base_dir.exists():
             shutil.rmtree(original_base_dir)
@@ -271,18 +288,30 @@ def main(argv: list[str] | None = None) -> int:
         if landing_dir.exists():
             shutil.rmtree(landing_dir)
 
-        backup_replay_bundle_root = backup_root / "replay_bundle"
-        restored_bundle_root = replay_bundle_root
-        restored_bundle_root.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(backup_replay_bundle_root, restored_bundle_root)
-        if manifest_path.exists() or landing_dir.exists():
+        if manifest_path.exists() or landing_dir.exists() or replay_bundle_root.exists():
             raise SystemExit(
-                "expected original manifest and landing paths to remain absent before archived-bundle replay"
+                "expected original manifest, landing paths, and archived replay bundle to remain absent before encrypted restore"
             )
 
         restored_state_db = restored_root / "state" / "pipeline_state.sqlite"
-        restored_state_db.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(backup_root / "pipeline_state.sqlite", restored_state_db)
+        restore_payload = _run_cli(
+            [
+                "restore-state-bundle",
+                "--state-db",
+                str(restored_state_db),
+                "--bundle",
+                str(backup_bundle_path),
+                "--attachments-output-dir",
+                str(replay_bundle_root.parent),
+                "--passphrase-file",
+                str(passphrase_file),
+            ],
+            expect_json=True,
+        )
+        if not replay_bundle_root.exists():
+            raise SystemExit("expected restore-state-bundle to restore the archived replay bundle attachment")
+        if not restore_payload["restored_attachments"]:
+            raise SystemExit("expected restore-state-bundle to report the restored replay bundle attachment")
 
         restored_review_cases = _run_cli(
             [

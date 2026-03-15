@@ -161,7 +161,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 123) Add encrypted backup and export-bundle workflows for persisted state
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.4.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
 - Depends on: #121, #122
@@ -294,6 +294,6 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#112` and `#113`
 - Open child issues represented in this local active catalog:
-  `#120` through `#125`
+  `#121` through `#125`
 - Open milestones in GitHub for this backlog:
   `v1.4.0` and `v1.5.0`

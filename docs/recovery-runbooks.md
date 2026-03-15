@@ -24,8 +24,8 @@ That distinction matters operationally:
 
 The runtime now archives, verifies, and replays from replay bundles.
 Recovery therefore means backing up the persisted state database plus
-the replay bundle, then restoring that bundle to its recorded bundle
-path before using `replay-run`.
+the replay bundle through the encrypted backup workflow, then restoring
+that bundle before using `replay-run`.
 
 ## Minimum Backup Set
 
@@ -48,8 +48,7 @@ manifest-era inputs when operators need replay.
 
 1. Quiesce new writes for the target state DB. The safest point is after
    a batch completes and before the next persisted write begins.
-2. Copy the SQLite DB file to a backup location.
-3. Run replay-bundle verification for the target run:
+2. Run replay-bundle verification for the target run:
 
 ```bash
 python -m etl_identity_engine.cli verify-replay-bundle \
@@ -57,28 +56,44 @@ python -m etl_identity_engine.cli verify-replay-bundle \
   --run-id RUN-20260314T000000Z-ABC12345
 ```
 
-4. Copy the verified replay bundle referenced by the completed run
-   summary.
-5. If the run used a custom `--config-dir` or runtime environment
-   overlay, copy that config snapshot too.
-6. Record the selected `run_id`, `batch_id`, and backup timestamp with
+3. Export the encrypted backup bundle:
+
+```bash
+python -m etl_identity_engine.cli backup-state-bundle \
+  --state-db data/state/pipeline_state.sqlite \
+  --output recovery/pipeline_state_backup_encrypted.zip \
+  --include-path data/replay_bundles/RUN-20260314T000000Z-ABC12345 \
+  --passphrase-file C:\secrets\state-backup-passphrase.txt
+```
+
+4. If the run used a custom `--config-dir` or runtime environment
+   overlay, either include that path with an additional `--include-path`
+   or back it up separately.
+5. Record the selected `run_id`, `batch_id`, and backup timestamp with
    the backup set.
 
 ## Restore Procedure
 
-1. Restore the SQLite DB to the target runtime location.
-2. Restore the replay bundle to the recorded bundle path stored in the
-   completed run summary.
-3. If the original run used a custom config overlay, restore that config
+1. Restore the encrypted bundle to the target runtime location:
+
+```bash
+python -m etl_identity_engine.cli restore-state-bundle \
+  --state-db data/state/pipeline_state.sqlite \
+  --bundle recovery/pipeline_state_backup_encrypted.zip \
+  --attachments-output-dir data/replay_bundles \
+  --passphrase-file C:\secrets\state-backup-passphrase.txt
+```
+
+2. If the original run used a custom config overlay, restore that config
    snapshot before replaying.
-4. Verify the restored DB schema is readable:
+3. Verify the restored DB schema is readable:
 
 ```bash
 python -m etl_identity_engine.cli state-db-current \
   --state-db data/state/pipeline_state.sqlite
 ```
 
-5. Verify review state is present for the target run when applicable:
+4. Verify review state is present for the target run when applicable:
 
 ```bash
 python -m etl_identity_engine.cli review-case-list \
@@ -156,7 +171,7 @@ python scripts/persisted_state_recovery_smoke.py
 
 That smoke path validates:
 
-- verification plus backup of SQLite state and the archived replay bundle
+- verification plus encrypted backup of persisted state and the archived replay bundle
 - restore of persisted review state
 - report rebuild from restored SQLite state
 - replay of a restored manifest-driven run directly from the archived

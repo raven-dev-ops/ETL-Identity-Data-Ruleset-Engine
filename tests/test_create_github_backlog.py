@@ -54,6 +54,7 @@ def test_parse_backlog_active_catalog() -> None:
         120,
         121,
         122,
+        123,
     ]
     assert parsed.epics[0].description_items == (
         "Epic created from planning/active-github-issues-backlog.md",
@@ -68,9 +69,8 @@ def test_select_sync_backlog_skips_closed_catalog_entries_by_default() -> None:
 
     sync_backlog = MODULE.select_sync_backlog(parsed, include_closed=False)
 
-    assert len(sync_backlog.issues) == 6
+    assert len(sync_backlog.issues) == 5
     assert tuple(issue.catalog_number for issue in sync_backlog.issues) == (
-        123,
         124,
         125,
         126,

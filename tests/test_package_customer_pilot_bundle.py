@@ -4,10 +4,13 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import zipfile
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from etl_identity_engine.encrypted_bundle import extract_encrypted_bundle, resolve_encryption_secret
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "package_customer_pilot_bundle.py"
@@ -35,6 +38,10 @@ def test_build_bundle_name_uses_expected_pattern() -> None:
     assert (
         MODULE.build_bundle_name("1.0.0", "public-safety-regressions")
         == "etl-identity-engine-v1.0.0-customer-pilot-public-safety-regressions.zip"
+    )
+    assert (
+        MODULE.build_bundle_name("1.0.0", "public-safety-regressions", encrypted=True)
+        == "etl-identity-engine-v1.0.0-customer-pilot-public-safety-regressions-encrypted.zip"
     )
 
 
@@ -201,3 +208,34 @@ def test_package_customer_pilot_bundle_can_emit_detached_signature(tmp_path: Pat
         assert signature_payload["manifest_path"] == MODULE.HANDOFF_MANIFEST_NAME
         assert signature_payload["key_id"] == "pilot-ed25519"
         assert signature_payload["signer_identity"] == "pilot-signer@example.test"
+
+
+def test_package_customer_pilot_bundle_can_emit_encrypted_bundle(tmp_path: Path) -> None:
+    passphrase_file = tmp_path / "pilot-passphrase.txt"
+    passphrase_file.write_text("customer-pilot-secret\n", encoding="utf-8")
+    encryption_secret = resolve_encryption_secret(passphrase_file=passphrase_file)
+
+    bundle_path = MODULE.package_customer_pilot_bundle(
+        output_dir=tmp_path,
+        source_manifest=Path("fixtures/public_safety_regressions/manifest.yml"),
+        pilot_name="public-safety-regressions",
+        version="1.0.0",
+        encryption_secret=encryption_secret,
+    )
+
+    assert bundle_path.name.endswith("-encrypted.zip")
+
+    with tempfile.TemporaryDirectory(prefix="customer-pilot-encrypted-") as temp_dir:
+        extracted_root = Path(temp_dir) / "bundle"
+        summary = extract_encrypted_bundle(
+            bundle_path=bundle_path,
+            output_dir=extracted_root,
+            encryption_secret=encryption_secret,
+        )
+
+        assert summary["bundle_type"] == "customer_pilot"
+        assert (extracted_root / "README.md").exists()
+        assert (extracted_root / MODULE.MANIFEST_NAME).exists()
+        assert (extracted_root / MODULE.HANDOFF_MANIFEST_NAME).exists()
+        assert (extracted_root / "state" / "pipeline_state.sqlite").exists()
+        assert (extracted_root / "demo_shell" / "db.sqlite3").exists()

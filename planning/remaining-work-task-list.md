@@ -15,7 +15,7 @@ of truth for tracked work; this file is the short maintainer view.
   complete and archived in
   `planning/post-v1.2.0-github-issues-backlog.md`.
 - The new backlog cycle remains synced to GitHub, with open epics
-  `#112` and `#113`, open child issues `#120` through `#125`, and open
+  `#112` and `#113`, open child issues `#121` through `#125`, and open
   milestones `v1.4.0` and `v1.5.0`.
 - A new backlog cycle is now open for the documented next gaps:
   packaged vendor adapters, stronger secure-operations evidence, and
@@ -40,7 +40,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Syntheticized vendor-batch example generation
 - [x] Detached-signature support for customer handoff manifests
 - [x] Secret-file and rotation health checks for auth material
-- [ ] Encrypted backup and export-bundle workflows
+- [x] Encrypted backup and export-bundle workflows
 - [ ] CJIS evidence-pack generation from config and audit artifacts
 - [ ] Windows service wrappers for pilot API and demo shell
 - [ ] Support-bundle collection for pilot troubleshooting
@@ -49,4 +49,4 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Next: implement local catalog `#123` / GitHub issue `#120`.
+- Next: implement local catalog `#124` / GitHub issue `#121`.
