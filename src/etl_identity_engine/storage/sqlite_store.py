@@ -26,6 +26,8 @@ from etl_identity_engine.output_contracts import (
     MANUAL_REVIEW_HEADERS,
     MATCH_SCORE_HEADERS,
     NORMALIZED_HEADERS,
+    PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS,
+    PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS,
 )
 from etl_identity_engine.observability import sanitize_observability_fields
 from etl_identity_engine.storage.migration_runner import upgrade_state_store
@@ -56,6 +58,8 @@ ARTIFACT_TABLE_NAMES = (
     "golden_records",
     "source_to_golden_crosswalk",
     "review_cases",
+    "public_safety_incident_identity",
+    "public_safety_golden_activity",
 )
 
 
@@ -95,6 +99,8 @@ class PersistedRunBundle:
     golden_rows: list[dict[str, str]]
     crosswalk_rows: list[dict[str, str]]
     review_rows: list[dict[str, str]]
+    public_safety_incident_identity_rows: list[dict[str, str]]
+    public_safety_golden_activity_rows: list[dict[str, str]]
 
 
 @dataclass(frozen=True)
@@ -265,6 +271,12 @@ ARTIFACT_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
         ("updated_at_utc", "TEXT"),
         ("resolved_at_utc", "TEXT"),
     ),
+    "public_safety_incident_identity": tuple(
+        (column, "TEXT") for column in PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS
+    ),
+    "public_safety_golden_activity": tuple(
+        (column, "TEXT") for column in PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS
+    ),
 }
 
 ARTIFACT_HEADERS: dict[str, tuple[str, ...]] = {
@@ -275,6 +287,8 @@ ARTIFACT_HEADERS: dict[str, tuple[str, ...]] = {
     "golden_records": GOLDEN_HEADERS,
     "source_to_golden_crosswalk": CROSSWALK_HEADERS,
     "review_cases": MANUAL_REVIEW_HEADERS,
+    "public_safety_incident_identity": PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS,
+    "public_safety_golden_activity": PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS,
 }
 
 ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
@@ -285,6 +299,19 @@ ARTIFACT_INDEXES: dict[str, tuple[tuple[str, ...], ...]] = {
     "golden_records": (("golden_id",), ("cluster_id",), ("person_entity_id",)),
     "source_to_golden_crosswalk": (("source_record_id",), ("golden_id",), ("cluster_id",)),
     "review_cases": (("review_id",), ("queue_status",), ("assigned_to",), ("left_id",), ("right_id",)),
+    "public_safety_incident_identity": (
+        ("incident_id",),
+        ("golden_id",),
+        ("cluster_id",),
+        ("source_record_id",),
+        ("person_entity_id",),
+        ("incident_source_system",),
+    ),
+    "public_safety_golden_activity": (
+        ("golden_id",),
+        ("cluster_id",),
+        ("person_entity_id",),
+    ),
 }
 
 PIPELINE_STATE_TABLES = ("pipeline_runs", "run_checkpoints", "export_job_runs", "audit_events", *ARTIFACT_TABLE_NAMES)
@@ -1024,6 +1051,8 @@ class SQLitePipelineStore:
         golden_rows: list[dict[str, str]],
         crosswalk_rows: list[dict[str, str]],
         review_rows: list[dict[str, str | float]],
+        public_safety_incident_identity_rows: list[dict[str, str]],
+        public_safety_golden_activity_rows: list[dict[str, str]],
         summary: dict[str, object],
     ) -> None:
         if metadata.status != "completed":
@@ -1095,6 +1124,18 @@ class SQLitePipelineStore:
                 metadata.run_id,
                 review_rows,
                 created_at_utc=metadata.finished_at_utc,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "public_safety_incident_identity",
+                metadata.run_id,
+                public_safety_incident_identity_rows,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "public_safety_golden_activity",
+                metadata.run_id,
+                public_safety_golden_activity_rows,
             )
 
     def update_run_summary(
@@ -1818,6 +1859,14 @@ class SQLitePipelineStore:
             golden_rows=self._load_artifact_rows("golden_records", run_id),
             crosswalk_rows=self._load_artifact_rows("source_to_golden_crosswalk", run_id),
             review_rows=self._load_artifact_rows("review_cases", run_id),
+            public_safety_incident_identity_rows=self._load_artifact_rows(
+                "public_safety_incident_identity",
+                run_id,
+            ),
+            public_safety_golden_activity_rows=self._load_artifact_rows(
+                "public_safety_golden_activity",
+                run_id,
+            ),
         )
 
     def load_golden_record(

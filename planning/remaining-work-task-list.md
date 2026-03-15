@@ -34,8 +34,8 @@ of truth for tracked work; this file is the short maintainer view.
 ## Open Task Groups
 
 - [ ] `v1.1.0` Public safety onboarding and identity mapping
-  - Local catalog issues: `#110` through `#112`
-  - Open GitHub issues: `#104` through `#106`
+  - Local catalog issues: `#111` through `#112`
+  - Open GitHub issues: `#105` through `#106`
 - [ ] `v1.2.0` Customer deployment packaging and pilot handoff
   - Local catalog issues: `#113` through `#116`
   - Open GitHub issues: `#107` through `#110`
@@ -47,7 +47,7 @@ of truth for tracked work; this file is the short maintainer view.
 - [x] Manifest-era source-bundle validation for public-safety inputs
 - [x] Contract conformance tooling and onboarding fixtures for CAD/RMS batches
 - [x] Vendor-specific CAD/RMS field mapping overlays
-- [ ] Persisted public-safety activity ingestion from formal contracts
+- [x] Persisted public-safety activity ingestion from formal contracts
 - [ ] Service and demo-shell read models over persisted public-safety activity
 - [ ] Regression fixtures for cross-system same-person and false-merge cases
 - [ ] Standalone customer pilot bundle with seeded state and launch helpers
@@ -57,5 +57,5 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Continue with local catalog issue `#110`: persisted public-safety
-  activity ingestion from formal contract inputs.
+- Next: local catalog issue `#111`: service and demo-shell read models
+  over persisted public-safety activity.

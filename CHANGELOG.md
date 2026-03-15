@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
 - Added vendor-column mapping overlays for CAD/RMS source bundles, with
   bundle-local and manifest-declared overlay support plus shipped
   vendor-shaped onboarding fixtures for both CAD and RMS examples.
+- Added manifest-driven public-safety activity persistence from
+  contract-valid CAD/RMS source bundles, including incident-to-identity
+  and golden-activity SQL artifacts, persisted-run restoration, and
+  end-to-end coverage for the contract-to-state path.
 
 ## [0.9.2] - 2026-03-14
 

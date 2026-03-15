@@ -20,7 +20,9 @@ python -m etl_identity_engine.cli run-all \
 ```
 
 When enabled, the runtime writes one completed run record plus the core
-pipeline artifacts into the configured state store.
+pipeline artifacts into the configured state store. For manifest-driven
+runs with CAD/RMS `source_bundles`, that persisted artifact set now also
+includes the derived incident-to-identity activity view.
 
 You can then reload a persisted run into the reporting stage:
 
@@ -111,6 +113,8 @@ The current schema includes:
 - `golden_records`
 - `source_to_golden_crosswalk`
 - `review_cases`
+- `public_safety_incident_identity`
+- `public_safety_golden_activity`
 - `export_job_runs`
 - `audit_events`
 
@@ -311,6 +315,15 @@ Each artifact table stores:
 
 `row_index` preserves deterministic output order so persisted rows can be
 reloaded in the same sequence as the file artifacts.
+
+For manifest-driven runs that declare CAD/RMS `source_bundles`, the
+artifact set now also includes:
+
+- `public_safety_incident_identity` for the joined incident-to-identity
+  rows derived from the validated contract bundles plus the persisted
+  golden/crosswalk outputs
+- `public_safety_golden_activity` for the per-golden-person activity
+  rollup used by the packaged demo artifacts and standalone demo shell
 
 ## Review Case Workflow
 

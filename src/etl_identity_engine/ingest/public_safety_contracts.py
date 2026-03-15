@@ -60,6 +60,7 @@ class ValidatedPublicSafetyContractFile:
     source_fieldnames: tuple[str, ...]
     fieldnames: tuple[str, ...]
     row_count: int
+    rows: tuple[dict[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -539,6 +540,7 @@ def validate_public_safety_contract_bundle(
                 source_fieldnames=source_fieldnames,
                 fieldnames=fieldnames,
                 row_count=len(rows),
+                rows=tuple(dict(row) for row in rows),
             )
         )
         rows_by_logical_name[file_spec.logical_name] = rows

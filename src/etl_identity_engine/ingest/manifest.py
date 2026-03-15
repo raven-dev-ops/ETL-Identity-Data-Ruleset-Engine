@@ -92,6 +92,7 @@ class ResolvedBatchSourceBundleFile:
     format: str
     fieldnames: tuple[str, ...]
     row_count: int
+    rows: tuple[dict[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -763,6 +764,7 @@ def _build_resolved_source_bundle(
                 format=file.format,
                 fieldnames=file.fieldnames,
                 row_count=file.row_count,
+                rows=tuple(dict(row) for row in file.rows),
             )
             for file in validated_bundle.files
         ),

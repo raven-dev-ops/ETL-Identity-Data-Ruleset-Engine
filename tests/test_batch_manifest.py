@@ -623,6 +623,9 @@ def test_resolve_batch_manifest_validates_named_public_safety_source_bundles(
         CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
         RMS_REPORT_PERSON_CONTRACT.contract_name,
     ]
+    assert [file.row_count for file in resolved.source_bundles[0].files] == [1, 1, 1]
+    assert resolved.source_bundles[0].files[1].rows[0]["source_system"] == "cad"
+    assert resolved.source_bundles[1].files[1].rows[0]["source_system"] == "rms"
 
 
 def test_resolve_batch_manifest_supports_vendor_mapped_public_safety_bundle_overlays(
@@ -669,6 +672,8 @@ def test_resolve_batch_manifest_supports_vendor_mapped_public_safety_bundle_over
         INCIDENT_HEADERS,
         INCIDENT_LINK_HEADERS,
     ]
+    assert rms_bundle.files[0].rows[0]["source_record_id"] == "RMS-1"
+    assert rms_bundle.files[1].rows[0]["incident_id"] == "RMS-INC-1"
 
 
 def test_normalize_manifest_rejects_invalid_public_safety_source_bundle_without_partial_output(

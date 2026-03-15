@@ -49,8 +49,10 @@ golden records, and reporting artifacts.
      assignments, or from already-clustered full rows
    - Writes `data/golden/golden_person_records.csv`
 7. `public-safety-demo`
-   - Reads synthetic `incident_records` and `incident_person_links`
-     plus the current golden records and source-to-golden crosswalk
+   - Reads synthetic `incident_records` and `incident_person_links`,
+     or the persisted manifest-backed CAD/RMS activity model built from
+     validated `source_bundles`, plus the current golden records and
+     source-to-golden crosswalk
    - Writes a joined CAD/RMS incident-to-identity view, a per-golden
      person activity rollup, and a static demo dashboard under
      `data/public_safety_demo/`
@@ -146,6 +148,8 @@ The runtime now supports optional SQL-backed persistence for:
 - golden records
 - source-to-golden crosswalk rows
 - manual-review queue rows
+- public-safety incident-to-identity activity rows for manifest-backed
+  CAD/RMS source bundles
 - audit events
 
 `run-all --state-db ...` persists a completed run into the configured
@@ -200,7 +204,8 @@ The current end-to-end path writes:
 - `data/golden/golden_person_records.csv`
 - `data/golden/source_to_golden_crosswalk.csv`
 - `data/public_safety_demo/` when synthetic CAD/RMS demo inputs are
-  present
+  present, or when manifest-driven runs declare CAD/RMS
+  `source_bundles`
 - `data/review_queue/manual_review_queue.csv`
 - `data/exceptions/run_report.md`
 - `data/exceptions/run_summary.json`

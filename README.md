@@ -28,6 +28,10 @@ named contract-bound source classes alongside the landed person inputs.
 Those public-safety bundles can now also carry vendor-column mapping
 overlays so real CAD/RMS extracts do not have to rename themselves into
 the synthetic canonical headers before onboarding validation starts.
+Manifest-driven runs with `--state-db` now also persist the derived
+incident-to-identity activity view from those validated CAD/RMS
+bundles, so the demo slice can be restored directly from persisted
+state instead of depending on synthetic sidecar files.
 
 ## Core Concepts
 
@@ -317,6 +321,10 @@ affected entities and candidate pairs, and records the refresh outcome
 in `data/exceptions/run_summary.json`.
 Completed persisted runs can then be published into immutable golden and
 crosswalk snapshots with `publish-delivery`.
+When the manifest also declares CAD/RMS `source_bundles`, the persisted
+run now keeps the joined incident-to-identity rows and golden-person
+activity rollup as first-class SQL artifacts so the same demo slice can
+be restored on reuse or replay.
 
 The persisted runtime now also supports near-real-time micro-batch
 refresh through `stream-refresh`. That command applies an ordered JSONL

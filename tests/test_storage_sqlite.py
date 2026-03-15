@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -55,6 +56,12 @@ def _write_parquet_rows(path: Path, rows: list[dict[str, str]]) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(pa.Table.from_pylist(rows), path)
+
+
+def _copy_public_safety_onboarding_fixture(target_dir: Path) -> Path:
+    source_dir = Path(__file__).resolve().parents[1] / "fixtures" / "public_safety_onboarding"
+    shutil.copytree(source_dir, target_dir)
+    return target_dir / "example_manifest.yml"
 
 
 def _person_row(
@@ -216,6 +223,60 @@ def test_run_all_persists_and_reload_state_from_sqlite(tmp_path: Path) -> None:
 
     assert reloaded_summary == summary
     assert f"state-db://{db_path.name}?run_id={run_id}" in reloaded_report_text
+
+
+def test_run_all_persists_public_safety_activity_from_manifest_source_bundles(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = tmp_path / "run"
+    manifest_path = _copy_public_safety_onboarding_fixture(tmp_path / "public_safety_onboarding")
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    run_id = store.latest_run_id()
+    assert run_id is not None
+
+    bundle = store.load_run_bundle(run_id)
+    incident_identity_path = base_dir / "data" / "public_safety_demo" / "incident_identity_view.csv"
+    golden_activity_path = base_dir / "data" / "public_safety_demo" / "golden_person_activity.csv"
+
+    assert bundle.public_safety_incident_identity_rows == _read_csv_rows(incident_identity_path)
+    assert bundle.public_safety_golden_activity_rows == _read_csv_rows(golden_activity_path)
+    assert bundle.run.summary["public_safety_activity"]["incident_count"] >= 1
+    assert bundle.run.summary["public_safety_activity"]["cross_system_golden_person_count"] >= 1
+
+    shutil.rmtree(base_dir / "data")
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+
+    assert _read_csv_rows(incident_identity_path) == bundle.public_safety_incident_identity_rows
+    assert _read_csv_rows(golden_activity_path) == bundle.public_safety_golden_activity_rows
 
 
 def test_store_operational_metrics_and_audit_events_reflect_persisted_batch_state(tmp_path: Path) -> None:

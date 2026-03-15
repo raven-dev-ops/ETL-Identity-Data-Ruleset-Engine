@@ -84,9 +84,10 @@ Supported contract identities:
 - `rms_report_person` `v1`
 
 `source_bundles` let a manifest declare full CAD or RMS onboarding
-bundles in addition to the core landed person sources. The current
-runtime validates those bundles during manifest resolution, but it does
-not yet ingest incident activity from them into persisted state.
+bundles in addition to the core landed person sources. Manifest-driven
+`run-all --state-db ...` executions now validate those bundles during
+manifest resolution and persist the derived incident-to-identity
+activity rows alongside the golden-person outputs.
 
 When a source bundle arrives with vendor-specific column names, add a
 bundle-local or manifest-declared `mapping_overlay` YAML file. The

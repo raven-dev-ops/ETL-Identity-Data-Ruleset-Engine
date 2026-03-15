@@ -365,21 +365,68 @@ def _write_public_safety_demo_outputs(
     if incident_records_file is None or incident_links_file is None:
         return False
 
-    golden_file = Path(golden_file_path) if golden_file_path else base_dir / "data" / "golden" / "golden_person_records.csv"
+    golden_file = (
+        Path(golden_file_path)
+        if golden_file_path
+        else base_dir / "data" / "golden" / "golden_person_records.csv"
+    )
     crosswalk_file = (
         Path(crosswalk_file_path)
         if crosswalk_file_path
         else base_dir / "data" / "golden" / "source_to_golden_crosswalk.csv"
     )
-    output_dir = Path(output_dir_path) if output_dir_path else base_dir / "data" / "public_safety_demo"
-
     result = build_public_safety_demo(
         incident_rows=read_dict_rows(incident_records_file),
         incident_link_rows=read_dict_rows(incident_links_file),
         golden_rows=read_dict_rows(golden_file),
         crosswalk_rows=read_dict_rows(crosswalk_file),
     )
+    _write_public_safety_demo_result_outputs(
+        base_dir=base_dir,
+        incident_identity_rows=result.incident_identity_rows,
+        golden_person_activity_rows=result.golden_person_activity_rows,
+        summary=result.summary,
+        output_dir_path=output_dir_path,
+    )
+    return True
 
+
+def _build_public_safety_demo_result_from_source_bundles(
+    source_bundles,
+    *,
+    golden_rows: list[dict[str, str]],
+    crosswalk_rows: list[dict[str, str]],
+):
+    incident_rows: list[dict[str, str]] = []
+    incident_link_rows: list[dict[str, str]] = []
+
+    for bundle in source_bundles:
+        for bundle_file in bundle.files:
+            if bundle_file.logical_name == "incident_records":
+                incident_rows.extend(dict(row) for row in bundle_file.rows)
+            elif bundle_file.logical_name == "incident_person_links":
+                incident_link_rows.extend(dict(row) for row in bundle_file.rows)
+
+    if not incident_rows or not incident_link_rows:
+        return None
+
+    return build_public_safety_demo(
+        incident_rows=incident_rows,
+        incident_link_rows=incident_link_rows,
+        golden_rows=golden_rows,
+        crosswalk_rows=crosswalk_rows,
+    )
+
+
+def _write_public_safety_demo_result_outputs(
+    *,
+    base_dir: Path,
+    incident_identity_rows: list[dict[str, str]],
+    golden_person_activity_rows: list[dict[str, str]],
+    summary: dict[str, object],
+    output_dir_path: str | None = None,
+) -> None:
+    output_dir = Path(output_dir_path) if output_dir_path else base_dir / "data" / "public_safety_demo"
     incident_identity_path = output_dir / "incident_identity_view.csv"
     golden_activity_path = output_dir / "golden_person_activity.csv"
     dashboard_path = output_dir / "public_safety_demo_dashboard.html"
@@ -390,30 +437,30 @@ def _write_public_safety_demo_outputs(
 
     write_csv_dicts(
         incident_identity_path,
-        result.incident_identity_rows,
+        incident_identity_rows,
         fieldnames=PUBLIC_SAFETY_INCIDENT_IDENTITY_HEADERS,
     )
     write_csv_dicts(
         golden_activity_path,
-        result.golden_person_activity_rows,
+        golden_person_activity_rows,
         fieldnames=PUBLIC_SAFETY_GOLDEN_ACTIVITY_HEADERS,
     )
     write_markdown(
         dashboard_path,
         build_public_safety_demo_dashboard_html(
-            summary=result.summary,
-            golden_person_activity_rows=result.golden_person_activity_rows,
-            incident_identity_rows=result.incident_identity_rows,
+            summary=summary,
+            golden_person_activity_rows=golden_person_activity_rows,
+            incident_identity_rows=incident_identity_rows,
         ),
     )
-    write_markdown(report_path, build_public_safety_demo_report_markdown(result.summary))
+    write_markdown(report_path, build_public_safety_demo_report_markdown(summary))
     scenarios_path.write_text(
-        json.dumps(result.summary.get("demo_scenarios", []), indent=2, sort_keys=True),
+        json.dumps(summary.get("demo_scenarios", []), indent=2, sort_keys=True),
         encoding="utf-8",
     )
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(result.summary, indent=2, sort_keys=True), encoding="utf-8")
-    write_markdown(walkthrough_path, build_public_safety_demo_walkthrough_markdown(result.summary))
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    write_markdown(walkthrough_path, build_public_safety_demo_walkthrough_markdown(summary))
 
     print(f"public safety incident view written: {incident_identity_path}")
     print(f"public safety activity view written: {golden_activity_path}")
@@ -422,6 +469,21 @@ def _write_public_safety_demo_outputs(
     print(f"public safety demo scenarios written: {scenarios_path}")
     print(f"public safety demo summary written: {summary_path}")
     print(f"public safety demo walkthrough written: {walkthrough_path}")
+
+
+def _write_persisted_public_safety_demo_outputs(base_dir: Path, bundle) -> bool:
+    summary = bundle.run.summary.get("public_safety_activity")
+    if not isinstance(summary, dict):
+        return False
+    if not bundle.public_safety_incident_identity_rows or not bundle.public_safety_golden_activity_rows:
+        return False
+
+    _write_public_safety_demo_result_outputs(
+        base_dir=base_dir,
+        incident_identity_rows=bundle.public_safety_incident_identity_rows,
+        golden_person_activity_rows=bundle.public_safety_golden_activity_rows,
+        summary=summary,
+    )
     return True
 
 
@@ -1070,6 +1132,7 @@ def _build_pipeline_summary(
     resume_summary: dict[str, object],
     phase_metrics: dict[str, dict[str, float | int]],
     total_duration_seconds: float,
+    public_safety_summary: dict[str, object] | None = None,
     stream_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
     summary = build_run_summary(
@@ -1087,6 +1150,8 @@ def _build_pipeline_summary(
         "total_duration_seconds": round(total_duration_seconds, 6),
         "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
     }
+    if public_safety_summary is not None:
+        summary["public_safety_activity"] = public_safety_summary
     if stream_summary is not None:
         summary["stream"] = stream_summary
     return summary
@@ -1204,7 +1269,8 @@ def _restore_persisted_run_outputs(base: Path, bundle) -> None:
         json.dumps(bundle.run.summary, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    _write_public_safety_demo_outputs(base_dir=base, missing_ok=True)
+    if not _write_persisted_public_safety_demo_outputs(base, bundle):
+        _write_public_safety_demo_outputs(base_dir=base, missing_ok=True)
 
 
 def _cmd_generate(args: argparse.Namespace) -> None:
@@ -2184,6 +2250,9 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         crosswalk_rows: list[dict[str, str]] = []
         review_rows: list[dict[str, str | float]] = []
         active_review_rows: list[dict[str, str | float]] = []
+        public_safety_incident_identity_rows: list[dict[str, str]] = []
+        public_safety_golden_activity_rows: list[dict[str, str]] = []
+        public_safety_summary: dict[str, object] | None = None
         resume_stage_order = 0
 
         if resume_checkpoint is not None:
@@ -2317,6 +2386,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 ),
                 phase_metrics=phase_metrics,
                 total_duration_seconds=checkpoint_duration_baseline + seconds_since(started),
+                public_safety_summary=public_safety_summary,
             )
             state_store.persist_run_checkpoint(
                 run_id=run_id,
@@ -2587,7 +2657,30 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     refresh_summary["recalculated_cluster_count"] = _cluster_count(clustered_rows)
                     refresh_summary["reused_record_count"] = 0
 
-        _write_public_safety_demo_outputs(base_dir=base, missing_ok=True)
+        if manifest_path and resolved_manifest is None:
+            resolved_manifest = _resolve_manifest_inputs(manifest_path)
+        if resolved_manifest is not None and resolved_manifest.source_bundles:
+            public_safety_result = _build_public_safety_demo_result_from_source_bundles(
+                resolved_manifest.source_bundles,
+                golden_rows=golden_rows,
+                crosswalk_rows=crosswalk_rows,
+            )
+            if public_safety_result is not None:
+                public_safety_incident_identity_rows = [
+                    dict(row) for row in public_safety_result.incident_identity_rows
+                ]
+                public_safety_golden_activity_rows = [
+                    dict(row) for row in public_safety_result.golden_person_activity_rows
+                ]
+                public_safety_summary = dict(public_safety_result.summary)
+                _write_public_safety_demo_result_outputs(
+                    base_dir=base,
+                    incident_identity_rows=public_safety_incident_identity_rows,
+                    golden_person_activity_rows=public_safety_golden_activity_rows,
+                    summary=public_safety_summary,
+                )
+        else:
+            _write_public_safety_demo_outputs(base_dir=base, missing_ok=True)
 
         resume_summary = _build_resume_summary(
             resumed_from_run_id=resumed_from_run_id,
@@ -2596,6 +2689,20 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             available_checkpoint_stage=latest_checkpoint_stage,
         )
         report_started = time.perf_counter()
+        summary_updates = {
+            "run_context": run_context,
+            "refresh": refresh_summary,
+            "resume": resume_summary,
+            "performance": {
+                "total_duration_seconds": round(
+                    checkpoint_duration_baseline + seconds_since(started),
+                    6,
+                ),
+                "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
+            },
+        }
+        if public_safety_summary is not None:
+            summary_updates["public_safety_activity"] = public_safety_summary
         summary = _write_quality_outputs(
             report_file,
             normalized_file,
@@ -2605,18 +2712,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             cluster_count=_cluster_count(clustered_rows),
             golden_record_count=len(golden_rows),
             review_queue_count=len(active_review_rows),
-            summary_updates={
-                "run_context": run_context,
-                "refresh": refresh_summary,
-                "resume": resume_summary,
-                "performance": {
-                    "total_duration_seconds": round(
-                        checkpoint_duration_baseline + seconds_since(started),
-                        6,
-                    ),
-                    "phase_metrics": _deep_copy_phase_metrics(phase_metrics),
-                },
-            },
+            summary_updates=summary_updates,
         )
         phase_metrics["report"] = _build_phase_metric(
             seconds_since(report_started),
@@ -2659,6 +2755,8 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 golden_rows=golden_rows,
                 crosswalk_rows=crosswalk_rows,
                 review_rows=review_rows,
+                public_safety_incident_identity_rows=public_safety_incident_identity_rows,
+                public_safety_golden_activity_rows=public_safety_golden_activity_rows,
                 summary=summary,
             )
             phase_metrics["persist_state"] = _build_phase_metric(
@@ -3254,6 +3352,8 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             golden_rows=golden_rows,
             crosswalk_rows=crosswalk_rows,
             review_rows=review_rows,
+            public_safety_incident_identity_rows=[],
+            public_safety_golden_activity_rows=[],
             summary=summary,
         )
         phase_metrics["persist_state"] = _build_phase_metric(
