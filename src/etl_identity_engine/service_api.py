@@ -46,6 +46,7 @@ ServiceScope = Literal[
     "runs:publish",
     "golden:read",
     "crosswalk:read",
+    "public_safety:read",
     "review_cases:read",
     "review_cases:write",
     "exports:run",
@@ -188,6 +189,58 @@ class CrosswalkLookupResponse(BaseModel):
     person_entity_id: str
     cluster_id: str
     golden_id: str
+
+
+class PublicSafetyGoldenActivityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    golden_id: str
+    cluster_id: str
+    person_entity_id: str
+    golden_first_name: str
+    golden_last_name: str
+    cad_incident_count: str
+    rms_incident_count: str
+    total_incident_count: str
+    linked_source_record_count: str
+    roles: str
+    latest_incident_at: str
+
+
+class PublicSafetyGoldenActivityListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PublicSafetyGoldenActivityResponse]
+    page: PageMetadataResponse
+
+
+class PublicSafetyIncidentIdentityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    incident_id: str
+    incident_source_system: str
+    occurred_at: str
+    incident_location: str
+    incident_city: str
+    incident_state: str
+    incident_role: str
+    person_entity_id: str
+    source_record_id: str
+    person_source_system: str
+    golden_id: str
+    cluster_id: str
+    golden_first_name: str
+    golden_last_name: str
+    golden_dob: str
+    golden_address: str
+    golden_phone: str
+
+
+class PublicSafetyIncidentIdentityListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PublicSafetyIncidentIdentityResponse]
+    page: PageMetadataResponse
 
 
 class RunListResponse(BaseModel):
@@ -644,6 +697,11 @@ def create_service_app(
     run_read_access = require_access("reader", "operator", required_scopes=("runs:read",))
     golden_read_access = require_access("reader", "operator", required_scopes=("golden:read",))
     crosswalk_read_access = require_access("reader", "operator", required_scopes=("crosswalk:read",))
+    public_safety_read_access = require_access(
+        "reader",
+        "operator",
+        required_scopes=("public_safety:read",),
+    )
     review_read_access = require_access("reader", "operator", required_scopes=("review_cases:read",))
     review_write_access = require_access("operator", required_scopes=("review_cases:write",))
     replay_access = require_access("operator", required_scopes=("runs:replay",))
@@ -818,6 +876,125 @@ def create_service_app(
             )
         except FileNotFoundError as error:
             _resolve_not_found(error)
+
+    @app.get(
+        "/api/v1/runs/{run_id}/public-safety/golden-activity",
+        response_model=PublicSafetyGoldenActivityListResponse,
+        tags=["public-safety"],
+    )
+    def list_public_safety_golden_activity(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        person_entity_id: Annotated[str | None, Query(min_length=1)] = None,
+        query: Annotated[str | None, Query(min_length=1)] = None,
+        sort: Annotated[
+            Literal[
+                "total_incident_desc",
+                "total_incident_asc",
+                "latest_incident_desc",
+                "latest_incident_asc",
+                "golden_id_asc",
+                "golden_id_desc",
+            ],
+            Query(),
+        ] = "total_incident_desc",
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
+        _principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
+    ) -> PublicSafetyGoldenActivityListResponse:
+        try:
+            store.load_run_record(run_id)
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        offset = _parse_page_token(page_token)
+        result = store.list_public_safety_golden_activity(
+            run_id=run_id,
+            person_entity_id=person_entity_id,
+            search_query=query,
+            sort=sort,
+            limit=page_size,
+            offset=offset,
+        )
+        return PublicSafetyGoldenActivityListResponse(
+            items=[
+                PublicSafetyGoldenActivityResponse.model_validate(item)
+                for item in result.items
+            ],
+            page=_serialize_page(
+                page_size=page_size,
+                total_count=result.total_count,
+                next_page_token=result.next_page_token,
+                sort=sort,
+            ),
+        )
+
+    @app.get(
+        "/api/v1/runs/{run_id}/public-safety/golden-activity/{golden_id}",
+        response_model=PublicSafetyGoldenActivityResponse,
+        tags=["public-safety"],
+    )
+    def get_public_safety_golden_activity(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        golden_id: Annotated[str, ApiPath(min_length=1, pattern=r"^G-.+")],
+        _principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
+    ) -> PublicSafetyGoldenActivityResponse:
+        try:
+            return PublicSafetyGoldenActivityResponse.model_validate(
+                store.load_public_safety_golden_activity(run_id=run_id, golden_id=golden_id)
+            )
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+
+    @app.get(
+        "/api/v1/runs/{run_id}/public-safety/incidents",
+        response_model=PublicSafetyIncidentIdentityListResponse,
+        tags=["public-safety"],
+    )
+    def list_public_safety_incident_identity(
+        run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
+        golden_id: Annotated[str | None, Query(min_length=1)] = None,
+        incident_id: Annotated[str | None, Query(min_length=1)] = None,
+        incident_source_system: Annotated[str | None, Query(min_length=1)] = None,
+        query: Annotated[str | None, Query(min_length=1)] = None,
+        sort: Annotated[
+            Literal[
+                "occurred_at_desc",
+                "occurred_at_asc",
+                "incident_id_asc",
+                "incident_id_desc",
+            ],
+            Query(),
+        ] = "occurred_at_desc",
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
+        _principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
+    ) -> PublicSafetyIncidentIdentityListResponse:
+        try:
+            store.load_run_record(run_id)
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        offset = _parse_page_token(page_token)
+        result = store.list_public_safety_incident_identity(
+            run_id=run_id,
+            golden_id=golden_id,
+            incident_id=incident_id,
+            incident_source_system=incident_source_system,
+            search_query=query,
+            sort=sort,
+            limit=page_size,
+            offset=offset,
+        )
+        return PublicSafetyIncidentIdentityListResponse(
+            items=[
+                PublicSafetyIncidentIdentityResponse.model_validate(item)
+                for item in result.items
+            ],
+            page=_serialize_page(
+                page_size=page_size,
+                total_count=result.total_count,
+                next_page_token=result.next_page_token,
+                sort=sort,
+            ),
+        )
 
     @app.get(
         "/api/v1/runs/{run_id}/review-cases/page",

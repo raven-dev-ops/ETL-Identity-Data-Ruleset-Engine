@@ -29,6 +29,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Existing packaged public-safety demo bundle zip. If omitted, one is built first.",
     )
+    parser.add_argument(
+        "--state-db",
+        default=None,
+        help="Persisted state DB or SQLAlchemy URL to load instead of a packaged demo bundle.",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Specific persisted run to load from --state-db. Defaults to the latest completed run.",
+    )
     parser.add_argument("--profile", default="small", choices=["small", "medium", "large"])
     parser.add_argument("--seed", default=42, type=int)
     parser.add_argument(
@@ -76,6 +86,8 @@ def prepare_public_safety_demo_shell_workspace(
     *,
     output_dir: Path,
     bundle: str | None,
+    state_db: str | None,
+    run_id: str | None,
     profile: str,
     seed: int,
     formats: Sequence[str],
@@ -83,6 +95,17 @@ def prepare_public_safety_demo_shell_workspace(
     host: str,
     port: int,
 ) -> PreparedDemoShell:
+    if bundle and state_db:
+        raise ValueError("--bundle and --state-db are mutually exclusive")
+    if state_db:
+        return prepare_public_safety_demo_shell(
+            state_db=state_db,
+            run_id=run_id,
+            output_dir=output_dir,
+            host=host,
+            port=port,
+        )
+
     bundle_path = resolve_demo_bundle(
         output_dir=output_dir,
         bundle=bundle,
@@ -108,6 +131,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     prepared = prepare_public_safety_demo_shell_workspace(
         output_dir=resolved_output_dir,
         bundle=args.bundle,
+        state_db=args.state_db,
+        run_id=args.run_id,
         profile=args.profile,
         seed=args.seed,
         formats=formats,
@@ -116,7 +141,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         port=args.port,
     )
 
-    print(f"standalone demo bundle: {prepared.bundle_path}")
+    if prepared.source_kind == "persisted_state":
+        print(f"standalone demo source run: {prepared.source_run_id}")
+        print(f"standalone demo state source: {prepared.bundle_path}")
+    else:
+        print(f"standalone demo bundle: {prepared.bundle_path}")
     print(f"standalone demo database: {prepared.db_path}")
     print(f"standalone extracted artifacts: {prepared.bundle_root}")
     print(f"standalone demo URL: {prepared.base_url}")

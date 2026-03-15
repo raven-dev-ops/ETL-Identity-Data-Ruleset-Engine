@@ -76,11 +76,15 @@ scope surface is:
   - `GET /api/v1/runs`
   - `GET /api/v1/runs/latest`
   - `GET /api/v1/runs/{run_id}`
-- `GET /api/v1/runs/{run_id}/golden-records`
 - `golden:read`
+  - `GET /api/v1/runs/{run_id}/golden-records`
   - `GET /api/v1/runs/{run_id}/golden-records/{golden_id}`
 - `crosswalk:read`
   - `GET /api/v1/runs/{run_id}/crosswalk/source-records/{source_record_id}`
+- `public_safety:read`
+  - `GET /api/v1/runs/{run_id}/public-safety/golden-activity`
+  - `GET /api/v1/runs/{run_id}/public-safety/golden-activity/{golden_id}`
+  - `GET /api/v1/runs/{run_id}/public-safety/incidents`
 - `review_cases:read`
   - `GET /api/v1/runs/{run_id}/review-cases`
   - `GET /api/v1/runs/{run_id}/review-cases/page`
@@ -150,6 +154,18 @@ committed into repo config.
   - Returns one persisted golden record.
 - `GET /api/v1/runs/{run_id}/crosswalk/source-records/{source_record_id}`
   - Returns the source-to-golden crosswalk row for one source record.
+- `GET /api/v1/runs/{run_id}/public-safety/golden-activity`
+  - Returns a paginated list of persisted CAD/RMS golden-person activity
+    rows for one run.
+  - Supports `person_entity_id`, `query`, `sort`, `page_size`, and
+    `page_token`.
+- `GET /api/v1/runs/{run_id}/public-safety/golden-activity/{golden_id}`
+  - Returns one persisted golden-person activity row.
+- `GET /api/v1/runs/{run_id}/public-safety/incidents`
+  - Returns a paginated list of persisted incident-to-identity rows for
+    one run.
+  - Supports `golden_id`, `incident_id`, `incident_source_system`,
+    `query`, `sort`, `page_size`, and `page_token`.
 - `GET /api/v1/runs/{run_id}/review-cases`
   - Returns persisted review cases for a run.
   - Supports `status` and `assigned_to` query filters.
@@ -182,7 +198,8 @@ The service uses explicit request and response validation:
 - review-case status filtering is constrained to the supported lifecycle
   values
 - response bodies are validated against explicit typed models for runs,
-  golden records, crosswalk rows, and review cases
+  golden records, crosswalk rows, public-safety activity rows, and
+  review cases
 - privileged action bodies are validated before review updates or replay
   execution begins
 
@@ -199,6 +216,13 @@ The paginated collection endpoints use a shared pagination contract:
     `started_at_desc`, `started_at_asc`
   - `GET /api/v1/runs/{run_id}/golden-records`: `golden_id_asc`,
     `golden_id_desc`, `last_name_asc`, `last_name_desc`
+  - `GET /api/v1/runs/{run_id}/public-safety/golden-activity`:
+    `total_incident_desc`, `total_incident_asc`,
+    `latest_incident_desc`, `latest_incident_asc`, `golden_id_asc`,
+    `golden_id_desc`
+  - `GET /api/v1/runs/{run_id}/public-safety/incidents`:
+    `occurred_at_desc`, `occurred_at_asc`, `incident_id_asc`,
+    `incident_id_desc`
   - `GET /api/v1/runs/{run_id}/review-cases/page`:
     `queue_order_asc`, `queue_order_desc`, `score_desc`, `score_asc`,
     `updated_at_desc`, `updated_at_asc`
@@ -235,6 +259,25 @@ endpoints above.
 Compatibility expectations for path versioning, additive changes, and
 deprecation are defined in
 [compatibility-policy.md](compatibility-policy.md).
+
+## Public-Safety Read Model
+
+The persisted public-safety read model now has two documented API
+surfaces:
+
+- `golden_activity`
+  - exposed at `GET /api/v1/runs/{run_id}/public-safety/golden-activity`
+  - field set matches the stable
+    `data/public_safety_demo/golden_person_activity.csv` columns
+- `incident_identity`
+  - exposed at `GET /api/v1/runs/{run_id}/public-safety/incidents`
+  - field set matches the stable
+    `data/public_safety_demo/incident_identity_view.csv` columns
+
+Those field sets are the stable current-line contract for customer
+walkthroughs and read-only integrations that want the public-safety
+activity model from persisted state rather than from working-directory
+files.
 
 ## Current Boundary
 

@@ -163,7 +163,7 @@ Last synced to GitHub: 2026-03-14
 
 ### 111) Add service and demo-shell read models for incident-to-identity activity views
 
-- Status: `open`
+- Status: `closed`
 - Milestone: `v1.1.0`
 - Labels: `type:feature`, `area:service`, `priority:p1`
 - Depends on: #110
@@ -299,7 +299,7 @@ Snapshot date: 2026-03-14
 - Active epic issues in GitHub for this backlog:
   `#96`, `#97`, `#98`
 - Open child issues represented in this local active catalog:
-  `#105` through `#110`
+  `#106` through `#110`
 - Open milestones in GitHub for this backlog:
   `v1.0.0`, `v1.1.0`, and `v1.2.0`
 - Closed backlog history remains in:

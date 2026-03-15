@@ -47,11 +47,19 @@ python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-d
 python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --profile small --seed 42 --formats csv,parquet --host 127.0.0.1 --port 8000
 ```
 
+Or load the same shell directly from a persisted run:
+
+```bash
+python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --state-db data/state/pipeline_state.sqlite --run-id RUN-20260314T000000Z-EXAMPLE --prepare-only
+python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --state-db data/state/pipeline_state.sqlite --run-id RUN-20260314T000000Z-EXAMPLE --host 127.0.0.1 --port 8000
+```
+
 That standalone shell uses Django's default SQLite backend and serves a
-read-only local walkthrough over the extracted demo bundle. It is the
-recommended demonstration path when you want the project to stay
-self-contained and walk an ID Network-style buyer through CAD calls,
-RMS reports, and master-person resolution in one local app.
+read-only local walkthrough over either the extracted demo bundle or a
+materialized persisted run. It is the recommended demonstration path
+when you want the project to stay self-contained and walk an ID
+Network-style buyer through CAD calls, RMS reports, and master-person
+resolution in one local app.
 
 Optional fallback: build a hostable static site shell from that same
 bundle:
@@ -82,7 +90,9 @@ The Django shell preparation script writes a standalone local workspace
 under `dist/public-safety-demo-django/` by default:
 
 - `db.sqlite3`
-- `bundle/` with the extracted demo artifacts and original zip
+- `bundle/` with the extracted or materialized demo artifacts
+- the original demo zip when bundle mode is used
+- `persisted_run_source.json` when persisted-state mode is used
 
 That shell serves:
 
@@ -127,6 +137,25 @@ This is the fastest concrete story for a demo:
 5. Use the recent incident view for that `golden_id`.
 6. Show that multiple operational incident records roll up to one
    resolved identity.
+
+## Read-Model Contract
+
+The demo shell and the authenticated service now share the same stable
+public-safety read model:
+
+- `golden_person_activity`
+  - one row per resolved master person with CAD/RMS activity counts
+  - field set matches
+    `data/public_safety_demo/golden_person_activity.csv`
+- `incident_identity_view`
+  - one row per incident/person/source join mapped back to the resolved
+    golden person
+  - field set matches
+    `data/public_safety_demo/incident_identity_view.csv`
+
+Bundle mode, persisted-state mode, and the documented service endpoints
+all consume those same field sets. That keeps buyer walkthroughs,
+offline demo bundles, and read-only integrations aligned.
 
 ## Scope Boundary
 

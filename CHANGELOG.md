@@ -23,6 +23,10 @@ All notable changes to this project will be documented in this file.
   contract-valid CAD/RMS source bundles, including incident-to-identity
   and golden-activity SQL artifacts, persisted-run restoration, and
   end-to-end coverage for the contract-to-state path.
+- Added persisted public-safety read models over that activity state,
+  including authenticated service endpoints for incident-to-identity
+  and golden-activity views plus standalone Django demo-shell loading
+  directly from a persisted run or a packaged demo bundle.
 
 ## [0.9.2] - 2026-03-14
 

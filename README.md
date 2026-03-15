@@ -346,11 +346,13 @@ record lookups, source-to-golden crosswalk lookups, paginated run,
 golden, and review-case collections, and persisted review-case
 retrieval for downstream systems and operators, and it now supports
 operator-only review decision, replay, publish, and export-trigger
-actions behind separate API-key or JWT-backed roles. It
-also now exposes authenticated `healthz`, `readyz`, and
-`/api/v1/metrics` endpoints, while privileged CLI and service actions
-emit structured JSON logs and persist audit events in the configured
-state store. The service contract is documented in
+actions behind separate API-key or JWT-backed roles. It also now
+exposes persisted public-safety read models for golden-person activity
+and incident-to-identity rows behind the dedicated
+`public_safety:read` scope. It also now exposes authenticated
+`healthz`, `readyz`, and `/api/v1/metrics` endpoints, while privileged
+CLI and service actions emit structured JSON logs and persist audit
+events in the configured state store. The service contract is documented in
 [docs/service-api.md](docs/service-api.md), and the current operations
 baseline is documented in
 [docs/operations-observability.md](docs/operations-observability.md).
@@ -412,10 +414,18 @@ python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-d
 python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --profile small --seed 42 --formats csv,parquet --host 127.0.0.1 --port 8000
 ```
 
+Or to load the same shell directly from persisted state:
+
+```bash
+python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --state-db data/state/pipeline_state.sqlite --run-id RUN-20260314T000000Z-EXAMPLE --prepare-only
+python scripts/run_public_safety_demo_shell.py --output-dir dist/public-safety-demo-django --state-db data/state/pipeline_state.sqlite --run-id RUN-20260314T000000Z-EXAMPLE --host 127.0.0.1 --port 8000
+```
+
 That standalone shell uses Django's built-in SQLite backend and serves a
-read-only local walkthrough over the packaged bundle, so it stays
-self-contained for buyer demos. The copy and scenario flow are tuned
-for an ID Network-style CAD/RMS identity-resolution conversation.
+read-only local walkthrough over either the packaged bundle or a
+materialized persisted run, so it stays self-contained for buyer demos.
+The copy and scenario flow are tuned for an ID Network-style CAD/RMS
+identity-resolution conversation.
 
 If you need a purely static handoff instead, the older static-site path
 is still available:

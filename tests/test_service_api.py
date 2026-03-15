@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import shutil
 
 import jwt
 import pytest
@@ -212,6 +213,42 @@ def _create_persisted_synthetic_run(
     return run_id, store
 
 
+def _create_public_safety_manifest_run(
+    tmp_path: Path,
+    *,
+    db_path: Path | None = None,
+    run_dir_name: str = "public-safety-run",
+) -> tuple[Path, str, SQLitePipelineStore]:
+    db_path = db_path or (tmp_path / "state" / "pipeline_state.sqlite")
+    base_dir = tmp_path / run_dir_name
+    fixture_source = Path(__file__).resolve().parents[1] / "fixtures" / "public_safety_onboarding"
+    fixture_root = tmp_path / "public-safety-onboarding"
+    shutil.copytree(fixture_source, fixture_root)
+    manifest_path = fixture_root / "example_manifest.yml"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(base_dir),
+                "--manifest",
+                str(manifest_path),
+                "--state-db",
+                str(db_path),
+                "--refresh-mode",
+                "full",
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    run_id = store.latest_completed_run_id()
+    assert run_id is not None
+    return db_path, run_id, store
+
+
 def _service_auth() -> ServiceAuthConfig:
     return ServiceAuthConfig(
         header_name="X-API-Key",
@@ -236,13 +273,22 @@ def _jwt_service_auth() -> ServiceAuthConfig:
         scope_claim="scope",
         reader_roles=("etl-reader",),
         operator_roles=("etl-operator",),
-        reader_scopes=("service:health", "service:metrics", "runs:read", "golden:read", "crosswalk:read", "review_cases:read"),
+        reader_scopes=(
+            "service:health",
+            "service:metrics",
+            "runs:read",
+            "golden:read",
+            "crosswalk:read",
+            "public_safety:read",
+            "review_cases:read",
+        ),
         operator_scopes=(
             "service:health",
             "service:metrics",
             "runs:read",
             "golden:read",
             "crosswalk:read",
+            "public_safety:read",
             "review_cases:read",
             "review_cases:write",
             "runs:replay",
@@ -563,6 +609,87 @@ def test_service_api_exposes_paginated_golden_and_review_case_lists(tmp_path: Pa
     )
     assert missing_run_response.status_code == 404
 
+
+def test_service_api_exposes_public_safety_activity_read_models(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_public_safety_manifest_run(tmp_path)
+    bundle = store.load_run_bundle(run_id)
+    assert bundle.public_safety_golden_activity_rows
+    assert bundle.public_safety_incident_identity_rows
+
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth()))
+    reader_headers = _auth_headers("reader-secret")
+
+    activity_page_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/golden-activity",
+        headers=reader_headers,
+        params={"page_size": 2, "sort": "total_incident_desc"},
+    )
+    assert activity_page_response.status_code == 200
+    activity_page = activity_page_response.json()
+    assert activity_page["page"]["total_count"] == len(bundle.public_safety_golden_activity_rows)
+    assert activity_page["page"]["sort"] == "total_incident_desc"
+    assert len(activity_page["items"]) == 2
+    assert int(activity_page["items"][0]["total_incident_count"]) >= int(
+        activity_page["items"][1]["total_incident_count"]
+    )
+
+    first_activity = bundle.public_safety_golden_activity_rows[0]
+    activity_detail_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/golden-activity/{first_activity['golden_id']}",
+        headers=reader_headers,
+    )
+    assert activity_detail_response.status_code == 200
+    assert activity_detail_response.json()["golden_id"] == first_activity["golden_id"]
+
+    activity_query_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/golden-activity",
+        headers=reader_headers,
+        params={"page_size": 10, "query": first_activity["golden_last_name"]},
+    )
+    assert activity_query_response.status_code == 200
+    assert any(
+        item["golden_id"] == first_activity["golden_id"]
+        for item in activity_query_response.json()["items"]
+    )
+
+    first_incident = bundle.public_safety_incident_identity_rows[0]
+    incident_page_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/incidents",
+        headers=reader_headers,
+        params={
+            "page_size": 10,
+            "golden_id": first_incident["golden_id"],
+            "incident_source_system": first_incident["incident_source_system"],
+            "sort": "occurred_at_desc",
+        },
+    )
+    assert incident_page_response.status_code == 200
+    incident_page = incident_page_response.json()
+    assert incident_page["page"]["total_count"] >= 1
+    assert all(
+        item["golden_id"] == first_incident["golden_id"]
+        and item["incident_source_system"] == first_incident["incident_source_system"]
+        for item in incident_page["items"]
+    )
+
+    incident_query_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/incidents",
+        headers=reader_headers,
+        params={"page_size": 10, "query": first_incident["incident_id"]},
+    )
+    assert incident_query_response.status_code == 200
+    assert any(
+        item["incident_id"] == first_incident["incident_id"]
+        for item in incident_query_response.json()["items"]
+    )
+
+    missing_run_response = client.get(
+        "/api/v1/runs/RUN-DOES-NOT-EXIST/public-safety/incidents",
+        headers=reader_headers,
+        params={"page_size": 10},
+    )
+    assert missing_run_response.status_code == 404
+
 def test_service_api_requires_authentication_and_operator_role_for_mutations(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
     manifest_path = tmp_path / "manifest-run" / "manifest.yml"
@@ -639,17 +766,23 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
     reader_headers = _jwt_headers(
         "etl-reader",
         username="reader.user",
-        scopes=("service:health", "runs:read", "review_cases:read"),
+        scopes=("service:health", "runs:read", "public_safety:read", "review_cases:read"),
     )
     operator_review_headers = _jwt_headers(
         "etl-operator",
         username="review.operator",
-        scopes=("service:health", "runs:read", "review_cases:read", "review_cases:write"),
+        scopes=(
+            "service:health",
+            "runs:read",
+            "public_safety:read",
+            "review_cases:read",
+            "review_cases:write",
+        ),
     )
     operator_replay_headers = _jwt_headers(
         "etl-operator",
         username="replay.operator",
-        scopes=("service:health", "runs:read", "runs:replay"),
+        scopes=("service:health", "runs:read", "public_safety:read", "runs:replay"),
     )
 
     health_response = client.get("/healthz", headers=reader_headers)
@@ -843,7 +976,7 @@ def test_service_api_enforces_publish_and_export_scopes_for_jwt_tokens(tmp_path:
     export_headers = _jwt_headers(
         "etl-operator",
         username="export.operator",
-        scopes=("exports:run",),
+        scopes=("public_safety:read", "exports:run"),
     )
 
     missing_publish_scope_response = client.post(
@@ -893,3 +1026,34 @@ def test_service_api_enforces_publish_and_export_scopes_for_jwt_tokens(tmp_path:
         and event.details["auth_mode"] == "jwt"
         for event in audit_events
     )
+
+
+def test_service_api_enforces_public_safety_read_scope_for_jwt_tokens(tmp_path: Path) -> None:
+    db_path, run_id, _store = _create_public_safety_manifest_run(tmp_path)
+    client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
+
+    missing_scope_headers = _jwt_headers(
+        "etl-reader",
+        username="missing.public.safety.scope",
+        scopes=("runs:read",),
+    )
+    allowed_headers = _jwt_headers(
+        "etl-reader",
+        username="public.safety.reader",
+        scopes=("runs:read", "public_safety:read"),
+    )
+
+    forbidden_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/golden-activity",
+        headers=missing_scope_headers,
+        params={"page_size": 10},
+    )
+    assert forbidden_response.status_code == 403
+    assert "public_safety:read" in forbidden_response.json()["detail"]
+
+    allowed_response = client.get(
+        f"/api/v1/runs/{run_id}/public-safety/golden-activity",
+        headers=allowed_headers,
+        params={"page_size": 10},
+    )
+    assert allowed_response.status_code == 200

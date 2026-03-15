@@ -614,6 +614,7 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
         "runs:read",
         "golden:read",
         "crosswalk:read",
+        "public_safety:read",
         "review_cases:read",
     )
     assert environment.service_auth.operator_scopes == (
@@ -622,6 +623,7 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
         "runs:read",
         "golden:read",
         "crosswalk:read",
+        "public_safety:read",
         "review_cases:read",
         "runs:replay",
         "runs:publish",

@@ -209,6 +209,9 @@
       </div>
       <div class="meta">
         <span>Bundle: {{ demo_run.bundle_name }}</span>
+        {% if demo_run.summary.source_run_id %}
+        <span>Persisted Run: {{ demo_run.summary.source_run_id }}</span>
+        {% endif %}
         <span>Profile: {{ demo_run.profile }}</span>
         <span>Seed: {{ demo_run.seed }}</span>
         <span>Generated: {{ demo_run.generated_at_utc }}</span>
@@ -260,7 +263,9 @@
           <a href="/artifacts/{{ artifacts.golden_activity }}">Golden activity CSV</a>
           <a href="/artifacts/{{ artifacts.walkthrough }}">Walkthrough markdown</a>
           <a href="/artifacts/{{ artifacts.report }}">Report markdown</a>
+          {% if artifacts.bundle_zip %}
           <a href="/artifacts/{{ artifacts.bundle_zip }}">Original demo bundle zip</a>
+          {% endif %}
         </div>
         <p class="footer-note">
           The bundle and SQLite database both live under the local standalone demo directory. Nothing here requires

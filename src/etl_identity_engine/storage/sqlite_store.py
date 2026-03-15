@@ -336,6 +336,20 @@ REVIEW_CASE_LIST_SORTS = {
     "updated_at_desc": "updated_at_utc DESC, review_id DESC",
     "updated_at_asc": "updated_at_utc ASC, review_id ASC",
 }
+PUBLIC_SAFETY_GOLDEN_ACTIVITY_SORTS = {
+    "total_incident_desc": "CAST(total_incident_count AS INTEGER) DESC, golden_id ASC",
+    "total_incident_asc": "CAST(total_incident_count AS INTEGER) ASC, golden_id ASC",
+    "latest_incident_desc": "latest_incident_at DESC, golden_id ASC",
+    "latest_incident_asc": "latest_incident_at ASC, golden_id ASC",
+    "golden_id_asc": "golden_id ASC",
+    "golden_id_desc": "golden_id DESC",
+}
+PUBLIC_SAFETY_INCIDENT_IDENTITY_SORTS = {
+    "occurred_at_desc": "occurred_at DESC, incident_id DESC, row_index ASC",
+    "occurred_at_asc": "occurred_at ASC, incident_id ASC, row_index ASC",
+    "incident_id_asc": "incident_id ASC, row_index ASC",
+    "incident_id_desc": "incident_id DESC, row_index DESC",
+}
 
 
 def build_run_id(now: datetime | None = None) -> str:
@@ -1969,6 +1983,187 @@ class SQLitePipelineStore:
             "source_to_golden_crosswalk",
             run_id=run_id,
             filters={"source_record_id": source_record_id},
+        )
+
+    def load_public_safety_golden_activity(
+        self,
+        *,
+        run_id: str,
+        golden_id: str,
+    ) -> dict[str, str]:
+        return self._load_single_artifact_row(
+            "public_safety_golden_activity",
+            run_id=run_id,
+            filters={"golden_id": golden_id},
+        )
+
+    def list_public_safety_golden_activity(
+        self,
+        *,
+        run_id: str,
+        person_entity_id: str | None = None,
+        search_query: str | None = None,
+        sort: str = "total_incident_desc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PaginatedResult:
+        _validate_pagination(limit=limit, offset=offset)
+        order_by = PUBLIC_SAFETY_GOLDEN_ACTIVITY_SORTS.get(sort)
+        if order_by is None:
+            raise ValueError(
+                "Unsupported public-safety golden-activity sort "
+                f"{sort!r}; expected one of {sorted(PUBLIC_SAFETY_GOLDEN_ACTIVITY_SORTS)}"
+            )
+
+        headers = ARTIFACT_HEADERS["public_safety_golden_activity"]
+        select_columns = ", ".join(f'"{header}"' for header in headers)
+        filters: list[str] = ["run_id = :run_id"]
+        parameters: dict[str, object] = {"run_id": run_id, "limit": limit, "offset": offset}
+        if person_entity_id is not None:
+            normalized_person_entity_id = person_entity_id.strip()
+            if not normalized_person_entity_id:
+                raise ValueError(
+                    "public-safety golden-activity person_entity_id filter must be non-empty when provided"
+                )
+            filters.append("person_entity_id = :person_entity_id")
+            parameters["person_entity_id"] = normalized_person_entity_id
+
+        normalized_query = _normalize_search_query(search_query)
+        if normalized_query is not None:
+            filters.append(
+                "("
+                "LOWER(COALESCE(golden_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(cluster_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(person_entity_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(golden_first_name, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(golden_last_name, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(roles, '')) LIKE :search_query"
+                ")"
+            )
+            parameters["search_query"] = f"%{normalized_query}%"
+
+        where_clause = " AND ".join(filters)
+        with self.engine.connect() as connection:
+            total_row = self._fetchone(
+                connection,
+                f"SELECT COUNT(*) AS total FROM public_safety_golden_activity WHERE {where_clause}",
+                parameters,
+            )
+            rows = self._fetchall(
+                connection,
+                f"""
+                SELECT {select_columns}
+                FROM public_safety_golden_activity
+                WHERE {where_clause}
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+                """,
+                parameters,
+            )
+        total_count = int(total_row["total"] or 0) if total_row is not None else 0
+        items = [_row_to_strings(row, headers) for row in rows]
+        return PaginatedResult(
+            items=items,
+            total_count=total_count,
+            next_page_token=_build_next_page_token(
+                offset=offset,
+                returned_count=len(items),
+                total_count=total_count,
+            ),
+        )
+
+    def list_public_safety_incident_identity(
+        self,
+        *,
+        run_id: str,
+        golden_id: str | None = None,
+        incident_id: str | None = None,
+        incident_source_system: str | None = None,
+        search_query: str | None = None,
+        sort: str = "occurred_at_desc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PaginatedResult:
+        _validate_pagination(limit=limit, offset=offset)
+        order_by = PUBLIC_SAFETY_INCIDENT_IDENTITY_SORTS.get(sort)
+        if order_by is None:
+            raise ValueError(
+                "Unsupported public-safety incident-identity sort "
+                f"{sort!r}; expected one of {sorted(PUBLIC_SAFETY_INCIDENT_IDENTITY_SORTS)}"
+            )
+
+        headers = ARTIFACT_HEADERS["public_safety_incident_identity"]
+        select_columns = ", ".join(f'"{header}"' for header in headers)
+        filters: list[str] = ["run_id = :run_id"]
+        parameters: dict[str, object] = {"run_id": run_id, "limit": limit, "offset": offset}
+        if golden_id is not None:
+            normalized_golden_id = golden_id.strip()
+            if not normalized_golden_id:
+                raise ValueError("public-safety incident golden_id filter must be non-empty when provided")
+            filters.append("golden_id = :golden_id")
+            parameters["golden_id"] = normalized_golden_id
+        if incident_id is not None:
+            normalized_incident_id = incident_id.strip()
+            if not normalized_incident_id:
+                raise ValueError("public-safety incident incident_id filter must be non-empty when provided")
+            filters.append("incident_id = :incident_id")
+            parameters["incident_id"] = normalized_incident_id
+        if incident_source_system is not None:
+            normalized_source_system = incident_source_system.strip().lower()
+            if not normalized_source_system:
+                raise ValueError(
+                    "public-safety incident incident_source_system filter must be non-empty when provided"
+                )
+            filters.append("LOWER(COALESCE(incident_source_system, '')) = :incident_source_system")
+            parameters["incident_source_system"] = normalized_source_system
+
+        normalized_query = _normalize_search_query(search_query)
+        if normalized_query is not None:
+            filters.append(
+                "("
+                "LOWER(COALESCE(incident_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(incident_source_system, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(incident_role, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(person_entity_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(source_record_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(golden_id, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(golden_first_name, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(golden_last_name, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(incident_location, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(incident_city, '')) LIKE :search_query "
+                "OR LOWER(COALESCE(incident_state, '')) LIKE :search_query"
+                ")"
+            )
+            parameters["search_query"] = f"%{normalized_query}%"
+
+        where_clause = " AND ".join(filters)
+        with self.engine.connect() as connection:
+            total_row = self._fetchone(
+                connection,
+                f"SELECT COUNT(*) AS total FROM public_safety_incident_identity WHERE {where_clause}",
+                parameters,
+            )
+            rows = self._fetchall(
+                connection,
+                f"""
+                SELECT {select_columns}
+                FROM public_safety_incident_identity
+                WHERE {where_clause}
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+                """,
+                parameters,
+            )
+        total_count = int(total_row["total"] or 0) if total_row is not None else 0
+        items = [_row_to_strings(row, headers) for row in rows]
+        return PaginatedResult(
+            items=items,
+            total_count=total_count,
+            next_page_token=_build_next_page_token(
+                offset=offset,
+                returned_count=len(items),
+                total_count=total_count,
+            ),
         )
 
     def list_review_cases(

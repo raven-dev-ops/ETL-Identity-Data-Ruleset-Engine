@@ -8,6 +8,9 @@ It applies to:
 - the documented authenticated HTTP endpoints in [service-api.md](service-api.md)
 - the documented persisted operator workflow commands in
   [review-workflow.md](review-workflow.md)
+- the documented public-safety read model in
+  [service-api.md](service-api.md) and
+  [public-safety-demo.md](public-safety-demo.md)
 - the documented downstream delivery contract in
   [delivery-contracts.md](delivery-contracts.md)
 - the documented named export-job surface in [export-jobs.md](export-jobs.md)
@@ -27,6 +30,9 @@ The current stable surfaces are:
   [service-api.md](service-api.md)
 - documented `/api/v1/...` endpoints plus the current `reader` and
   `operator` service-role split in [service-api.md](service-api.md)
+- the documented persisted public-safety read model field sets and
+  endpoints in [service-api.md](service-api.md) and
+  [public-safety-demo.md](public-safety-demo.md)
 - the documented operator-only publish and export trigger endpoints in
   [service-api.md](service-api.md)
 - the `golden_crosswalk_snapshot/v1` delivery contract documented in
@@ -78,6 +84,8 @@ Within `v1`, the runtime does not change without a new API version:
 - required request parameters
 - documented response field meaning
 - documented role requirements for an existing endpoint
+- documented response field meaning for the public-safety read-model
+  endpoints
 
 Breaking API changes require a new versioned path such as `/api/v2`.
 
@@ -130,6 +138,25 @@ This currently applies to:
 - `export-job-list`
 - `export-job-run`
 - `export-job-history`
+
+### Public-Safety Read Model
+
+The current public-safety read model is stable within the current line.
+
+It consists of:
+
+- the field set documented for
+  `data/public_safety_demo/golden_person_activity.csv`
+- the field set documented for
+  `data/public_safety_demo/incident_identity_view.csv`
+- the documented service endpoints that expose those same field sets
+
+Breaking changes require a new documented version when they affect:
+
+- field names
+- field meaning
+- required endpoint paths for those read models
+- pagination semantics or documented sort names for those endpoints
 
 ## Deprecation Policy
 

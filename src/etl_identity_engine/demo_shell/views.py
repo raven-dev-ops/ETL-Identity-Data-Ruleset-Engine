@@ -15,7 +15,7 @@ def _latest_demo_run() -> DemoRun | None:
 
 
 def _artifact_relative_paths(demo_run: DemoRun) -> dict[str, str]:
-    return {
+    artifacts = {
         "summary": "data/public_safety_demo/public_safety_demo_summary.json",
         "scenarios": "data/public_safety_demo/public_safety_demo_scenarios.json",
         "dashboard": "data/public_safety_demo/public_safety_demo_dashboard.html",
@@ -23,8 +23,12 @@ def _artifact_relative_paths(demo_run: DemoRun) -> dict[str, str]:
         "golden_activity": "data/public_safety_demo/golden_person_activity.csv",
         "walkthrough": "data/public_safety_demo/public_safety_demo_walkthrough.md",
         "report": "data/public_safety_demo/public_safety_demo_report.md",
-        "bundle_zip": demo_run.bundle_name,
     }
+    bundle_root = Path(demo_run.bundle_root).resolve()
+    bundle_artifact = (bundle_root / demo_run.bundle_name).resolve()
+    if bundle_artifact.exists() and bundle_artifact.is_file():
+        artifacts["bundle_zip"] = demo_run.bundle_name
+    return artifacts
 
 
 def index(request: HttpRequest) -> HttpResponse:
