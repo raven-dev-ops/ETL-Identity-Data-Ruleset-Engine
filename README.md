@@ -192,6 +192,7 @@ is included in the repository.
 - [Project Structure Outline](planning/project-structure-outline.md)
 - [Remaining Work Task List](planning/remaining-work-task-list.md)
 - [Active GitHub Issues Backlog](planning/active-github-issues-backlog.md)
+- [Post-v1.2.0 GitHub Issues Backlog (Historical)](planning/post-v1.2.0-github-issues-backlog.md)
 - [Post-v0.9.0 GitHub Issues Backlog (Historical)](planning/post-v0.9.0-github-issues-backlog.md)
 - [Post-v0.6.0 GitHub Issues Backlog (Historical)](planning/post-v0.6.0-github-issues-backlog.md)
 - [Post-v0.1.0 GitHub Issues Backlog (Historical)](planning/post-v0.1.0-github-issues-backlog.md)
@@ -593,6 +594,7 @@ python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-
 The default backlog source is
 `planning/active-github-issues-backlog.md`. The bootstrap backlog at
 `planning/github-issues-backlog.md` and the completed
+`planning/post-v1.2.0-github-issues-backlog.md`,
 `planning/post-v0.1.0-github-issues-backlog.md`,
 `planning/post-v0.6.0-github-issues-backlog.md`, and
 `planning/post-v0.9.0-github-issues-backlog.md` files are historical

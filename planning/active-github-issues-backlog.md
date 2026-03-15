@@ -2,23 +2,25 @@
 
 This backlog is the current source of truth for new GitHub issues after
 the completed bootstrap backlog, the completed `post-v0.1.0` follow-up
-backlog, the completed `v0.6.0` production-readiness cycle, and the
-completed `v0.7.0`-`v0.9.0` delivery cycle. Historical backlog files
-remain available as read-only records:
+backlog, the completed `v0.6.0` production-readiness cycle, the
+completed `v0.7.0`-`v0.9.0` delivery cycle, and the completed
+`v1.0.0`-`v1.2.0` customer-pilot cycle. Historical backlog files remain
+available as read-only records:
 
 - `planning/github-issues-backlog.md`
 - `planning/post-v0.1.0-github-issues-backlog.md`
 - `planning/post-v0.6.0-github-issues-backlog.md`
 - `planning/post-v0.9.0-github-issues-backlog.md`
+- `planning/post-v1.2.0-github-issues-backlog.md`
 
 Date prepared: 2026-03-14
 Last synced to GitHub: 2026-03-14
 
 ## Milestones
 
-- `v1.0.0`: CAD/RMS source contracts and validation
-- `v1.1.0`: Public safety onboarding and identity mapping
-- `v1.2.0`: Customer deployment packaging and pilot handoff
+- `v1.3.0`: Vendor adapter packs and onboarding acceleration
+- `v1.4.0`: Secure operations and compliance evidence
+- `v1.5.0`: Customer deployment automation and supportability
 
 ## Label Set To Create
 
@@ -46,267 +48,252 @@ Last synced to GitHub: 2026-03-14
 
 ## Issue Catalog
 
-## v1.0.0: CAD/RMS source contracts and validation
+## v1.3.0: Vendor adapter packs and onboarding acceleration
 
-### 105) Add versioned CAD call-for-service source contracts and validators
+### 117) Add packaged vendor profile overlays for common CAD exports
 
-- Status: `closed`
-- Milestone: `v1.0.0`
+- Status: `open`
+- Milestone: `v1.3.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: none
 - Description:
-  - The public-safety demo currently relies on synthetic sidecar data
-    and internal assumptions about CAD-shaped records.
-  - Customer onboarding needs an explicit, versioned CAD contract for
-    incident, involved-person, and source-person extracts.
+  - The current public-safety onboarding path supports contract-bound
+    canonical bundles plus custom mapping overlays, but operators still
+    have to author those overlays from scratch for each vendor extract.
+  - Customer onboarding will move faster if the repo ships maintained
+    profile overlays for representative CAD export shapes.
 - Acceptance criteria:
-  - The repo ships a documented CAD batch contract with required files,
-    columns, and version markers.
-  - Validation rejects missing or malformed CAD contract inputs before
-    runtime execution.
-  - Tests cover valid and invalid CAD contract examples.
+  - The repo ships at least two documented CAD vendor-profile overlays.
+  - Contract validation can apply those profiles without manual column
+    rewrites by the operator.
+  - Tests cover valid and invalid CAD payloads for each shipped profile.
 
-### 106) Add versioned RMS report/person source contracts and validators
+### 118) Add packaged vendor profile overlays for common RMS exports
 
-- Status: `closed`
-- Milestone: `v1.0.0`
+- Status: `open`
+- Milestone: `v1.3.0`
 - Labels: `type:feature`, `area:ingest`, `priority:p0`
 - Depends on: none
 - Description:
-  - The current runtime does not expose a formal RMS onboarding
-    contract, even though the demo narrative depends on RMS-style
-    report and person data.
-  - Customer pilots need a stable RMS contract that can be discussed
-    with source-system owners and integration teams.
+  - RMS onboarding has the same problem as CAD onboarding: the contract
+    is stable, but the operator still needs vendor-specific mapping
+    knowledge before validation can start.
+  - The repo should ship maintained RMS profiles for representative
+    report/person extract shapes used in public-safety pilots.
 - Acceptance criteria:
-  - The repo ships a documented RMS batch contract with required files,
-    columns, and version markers.
-  - Validation rejects missing or malformed RMS contract inputs before
-    runtime execution.
-  - Tests cover valid and invalid RMS contract examples.
+  - The repo ships at least two documented RMS vendor-profile overlays.
+  - Contract validation can apply those profiles without manual column
+    rewrites by the operator.
+  - Tests cover valid and invalid RMS payloads for each shipped profile.
 
-### 107) Extend the manifest model with named CAD/RMS source bundles and source-class validation
+### 119) Add an onboarding diff report for unmapped columns and contract drift
 
-- Status: `closed`
-- Milestone: `v1.0.0`
-- Labels: `type:feature`, `area:ingest`, `priority:p0`
-- Depends on: #105, #106
-- Description:
-  - The current manifest model is file-oriented but not explicit about
-    public-safety source bundles such as CAD and RMS extracts.
-  - Production onboarding needs manifest-era validation that the full
-    required bundle for each source class is present and internally
-    consistent.
-- Acceptance criteria:
-  - Manifests can declare CAD and RMS source bundles with named source
-    classes and contract versions.
-  - Validation enforces required-file completeness for each declared
-    public-safety source bundle.
-  - Contract-aware manifest tests cover mixed CAD/RMS ingestion.
-
-### 108) Add contract conformance tooling and onboarding fixtures for CAD/RMS batches
-
-- Status: `closed`
-- Milestone: `v1.0.0`
+- Status: `open`
+- Milestone: `v1.3.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #107
+- Depends on: #117, #118
 - Description:
-  - Contract docs alone are not enough for customer onboarding and
-    vendor conversations.
-  - The repo needs repeatable conformance tooling plus realistic sample
-    fixtures that show how CAD and RMS batches should be structured.
+  - Source owners need more than pass/fail validation during onboarding.
+  - The repo should explain which source columns were mapped, ignored,
+    or still unresolved so vendor conversations become concrete.
 - Acceptance criteria:
-  - The CLI exposes a contract-conformance check for CAD/RMS bundles.
-  - The repo ships onboarding fixtures and example manifests for
-    contract-valid CAD and RMS batches.
-  - Docs explain how source owners can self-check their payloads before
-    pipeline onboarding.
+  - The onboarding CLI emits a machine-readable diff report for mapped,
+    unmapped, and unused source columns.
+  - The report highlights required canonical fields that still have no
+    source mapping.
+  - Docs show how operators use the diff report during onboarding.
 
-## v1.1.0: Public safety onboarding and identity mapping
+### 120) Add a syntheticized vendor-batch example generator for onboarding rehearsals
 
-### 109) Add CAD/RMS field-mapping overlays for vendor-specific source columns
-
-- Status: `closed`
-- Milestone: `v1.1.0`
-- Labels: `type:feature`, `area:normalize`, `priority:p0`
-- Depends on: #107
-- Description:
-  - Real CAD and RMS feeds will not arrive in the exact canonical field
-    names used by the current synthetic runtime.
-  - The onboarding path needs configurable mapping overlays that
-    translate vendor-specific columns into the supported canonical
-    person and incident shapes.
-- Acceptance criteria:
-  - The runtime can load source-specific mapping overlays for CAD and
-    RMS inputs.
-  - Mapping overlays support both person attributes and incident/link
-    attributes.
-  - Tests cover at least two distinct source-shape examples.
-
-### 110) Add a public-safety activity ingestion path from contract inputs to persisted state
-
-- Status: `closed`
-- Milestone: `v1.1.0`
-- Labels: `type:feature`, `area:workflow`, `priority:p0`
-- Depends on: #109
-- Description:
-  - The current public-safety slice is demo-oriented and not yet a
-    first-class persisted ingestion path from formal CAD/RMS contracts.
-  - Customer demonstrations and pilots need the activity model to be
-    built directly from validated contract inputs.
-- Acceptance criteria:
-  - Manifest-driven runs can ingest contract-valid CAD/RMS bundles into
-    persisted state.
-  - The runtime persists incident-to-identity activity data alongside
-    the existing golden-person outputs.
-  - End-to-end tests cover the contract-to-persisted-state path.
-
-### 111) Add service and demo-shell read models for incident-to-identity activity views
-
-- Status: `closed`
-- Milestone: `v1.1.0`
-- Labels: `type:feature`, `area:service`, `priority:p1`
-- Depends on: #110
-- Description:
-  - The current service and demo shell expose identity outputs, but the
-    public-safety activity view is still primarily generated as offline
-    artifacts.
-  - Customer-facing walkthroughs need stable read models that can serve
-    CAD/RMS incident activity directly from persisted state.
-- Acceptance criteria:
-  - The service exposes documented read endpoints for persisted
-    incident-to-identity activity.
-  - The Django demo shell can render the same activity model from the
-    persisted state or packaged pilot bundle.
-  - Compatibility docs define the supported read-model contract.
-
-### 112) Add regression fixtures for cross-system identity scenarios and false-merge guards
-
-- Status: `closed`
-- Milestone: `v1.1.0`
+- Status: `open`
+- Milestone: `v1.3.0`
 - Labels: `type:feature`, `area:quality`, `priority:p1`
-- Depends on: #110
+- Depends on: #117, #118
 - Description:
-  - A real public-safety onboarding story needs stronger proof around
-    same-person merges, same-household separations, and cross-system
-    false-positive avoidance.
-  - The current synthetic suite does not yet package those cases as a
-    focused regression set for CAD/RMS onboarding.
+  - Customer pilots and pre-sales work benefit from realistic vendor
+    shapes, but the repo should continue to avoid real operational data.
+  - The repo should be able to emit contract-valid vendor-shaped sample
+    bundles directly from synthetic seed data for rehearsal and demo use.
 - Acceptance criteria:
-  - The repo ships explicit regression fixtures for same-person, same-
-    household, and false-merge public-safety scenarios.
-  - Matching and survivorship tests guard the expected outcomes for
-    those cases.
-  - Demo documentation references the canonical regression scenarios.
+  - The repo ships a command that writes vendor-profile-shaped synthetic
+    CAD and RMS onboarding bundles.
+  - Generated bundles pass the public-safety onboarding checks.
+  - Docs explain how to use the generator for rehearsals and demos.
 
-## v1.2.0: Customer deployment packaging and pilot handoff
+## v1.4.0: Secure operations and compliance evidence
 
-### 113) Package a standalone customer pilot bundle with seeded state and launch scripts
+### 121) Add detached-signature support for customer handoff manifests
 
-- Status: `closed`
-- Milestone: `v1.2.0`
-- Labels: `type:feature`, `area:operations`, `priority:p0`
-- Depends on: #111
+- Status: `open`
+- Milestone: `v1.4.0`
+- Labels: `type:feature`, `area:security`, `priority:p0`
+- Depends on: none
 - Description:
-  - The current demo bundle is useful for internal walkthroughs but is
-    not yet shaped like a customer pilot handoff package.
-  - Customer-facing pilots need a deterministic bundle that includes
-    the seeded state, demo shell, launch helpers, and supporting docs.
+  - The current pilot bundle includes a hashed handoff manifest, but the
+    integrity record is not yet signed.
+  - Customer deliveries should support a detached signature workflow so
+    the handoff can prove both integrity and signer identity.
 - Acceptance criteria:
-  - The repo can build a standalone customer pilot bundle from a seeded
-    public-safety dataset.
-  - The bundle includes the demo shell, persisted state, and startup
-    helpers needed for a local pilot walkthrough.
-  - Packaging tests verify bundle completeness and deterministic naming.
+  - Pilot and release bundle packaging can emit a detached signature for
+    the handoff manifest.
+  - Verification tooling can validate both hash integrity and signature
+    trust before bootstrap.
+  - Docs define the supported signing and verification workflow.
 
-### 114) Add a Windows-first single-host pilot installer/bootstrap for the Django and PostgreSQL baseline
+### 122) Add secret-file and rotation health checks for runtime auth material
 
-- Status: `closed`
-- Milestone: `v1.2.0`
+- Status: `open`
+- Milestone: `v1.4.0`
+- Labels: `type:feature`, `area:security`, `priority:p0`
+- Depends on: none
+- Description:
+  - The runtime can already resolve environment-backed auth material,
+    but secure customer environments often mount secrets as files and
+    need periodic validation that the expected material is present.
+  - The repo should validate secret-file inputs and expose rotation-read
+    health checks for service bootstrap and ongoing operations.
+- Acceptance criteria:
+  - Runtime environments can resolve supported secret-file paths in
+    addition to plain environment variables.
+  - A readiness-style check validates required auth and signing inputs
+    before service startup.
+  - Docs define the supported secret-file pattern and rotation checks.
+
+### 123) Add encrypted backup and export-bundle workflows for persisted state
+
+- Status: `open`
+- Milestone: `v1.4.0`
 - Labels: `type:feature`, `area:operations`, `priority:p1`
-- Depends on: #113
+- Depends on: #121, #122
 - Description:
-  - The current deployment assets assume maintainer-level familiarity
-    with Python, containers, and manual setup.
-  - A customer pilot needs a simpler Windows-first bootstrap path that
-    reflects how the demo will actually be evaluated.
+  - Persisted-state backups and pilot handoff artifacts currently rely
+    on filesystem controls outside the repo runtime.
+  - Secure customer operation needs encrypted backup and export bundles
+    so copied artifacts are protected in transit and at rest.
 - Acceptance criteria:
-  - The repo ships a documented Windows-first bootstrap path for the
-    supported single-host pilot topology.
-  - The bootstrap prepares the Django shell, state store, and runtime
-    configuration with minimal manual steps.
-  - Smoke coverage validates the pilot bootstrap on the supported host
-    path.
+  - The repo ships an encrypted backup/export bundle workflow for
+    persisted state and customer pilot handoff artifacts.
+  - Recovery tooling can restore from the encrypted bundle with an
+    operator-supplied key or passphrase.
+  - Tests and docs cover the supported encrypt/restore workflow.
 
-### 115) Add a customer environment readiness check and signed handoff manifest
+### 124) Generate a CJIS evidence pack from runtime config and audit artifacts
 
-- Status: `closed`
-- Milestone: `v1.2.0`
-- Labels: `type:feature`, `area:security`, `priority:p1`
-- Depends on: #114
+- Status: `open`
+- Milestone: `v1.4.0`
+- Labels: `type:feature`, `area:docs`, `priority:p1`
+- Depends on: #122, #123
 - Description:
-  - Customer pilots need a concrete way to prove what artifact set was
-    delivered and whether the target environment meets the documented
-    prerequisites.
-  - The current repo has release-hardening and CJIS preflight checks,
-    but not a customer handoff manifest for pilot installs.
+  - The repo now has a CJIS-aligned baseline and preflight checks, but
+    customer review still requires manual collection of config, audit,
+    and deployment evidence.
+  - The repo should generate an evidence pack that bundles the relevant
+    machine-readable config and audit outputs for a review conversation.
 - Acceptance criteria:
-  - The repo ships a pilot readiness check for the customer deployment
-    baseline.
-  - The customer pilot bundle includes a signed or hashed manifest of
-    the delivered artifacts and versions.
-  - Docs define the intended operator use of the readiness output and
-    handoff manifest.
+  - The repo ships a command that builds a CJIS evidence pack from the
+    supported runtime configuration and audit artifacts.
+  - The evidence pack includes a documented standards mapping index.
+  - Docs clearly state that the pack supports review and does not by
+    itself claim full operational compliance.
 
-### 116) Add operator/admin runbooks and a pilot acceptance checklist for customer handoff
+## v1.5.0: Customer deployment automation and supportability
 
-- Status: `closed`
-- Milestone: `v1.2.0`
-- Labels: `type:docs`, `area:docs`, `priority:p1`
-- Depends on: #115
+### 125) Add a one-command Windows service wrapper for the pilot API and demo shell
+
+- Status: `open`
+- Milestone: `v1.5.0`
+- Labels: `type:feature`, `area:operations`, `priority:p0`
+- Depends on: #122
 - Description:
-  - A customer pilot is not complete when the artifacts exist but the
-    delivery and acceptance steps still live only in maintainer context.
-  - The repo needs explicit runbooks and acceptance criteria for the
-    handoff itself.
+  - The customer pilot bootstrap currently prepares local launch scripts,
+    but the operator still starts the service and demo shell manually.
+  - The single-host customer path needs an option to install or manage
+    those processes as durable Windows services.
 - Acceptance criteria:
-  - The repo ships operator/admin runbooks for install, startup,
-    rollback, backup, and demo execution.
-  - The repo ships a pilot acceptance checklist that can be used during
-    customer handoff.
-  - The README and planning docs point to the pilot handoff material.
+  - The repo ships a supported Windows service wrapper for the demo
+    shell and service API processes.
+  - The bootstrap or admin tooling can install, start, stop, and remove
+    those services.
+  - Docs define the supported host assumptions and rollback path.
+
+### 126) Add a support-bundle collector for customer pilot troubleshooting
+
+- Status: `open`
+- Milestone: `v1.5.0`
+- Labels: `type:feature`, `area:operations`, `priority:p1`
+- Depends on: #123
+- Description:
+  - When a customer pilot fails, support currently has to ask for logs,
+    manifests, and runtime state piecemeal.
+  - The repo should be able to collect a redacted support bundle that
+    packages the relevant operational evidence in one artifact.
+- Acceptance criteria:
+  - The repo ships a support-bundle command for the pilot baseline.
+  - The bundle includes documented logs, runtime config, and state
+    metadata with the existing observability redaction rules applied.
+  - Runbooks explain when and how to generate the support bundle.
+
+### 127) Add a patch-upgrade and reseed workflow for existing pilot installs
+
+- Status: `open`
+- Milestone: `v1.5.0`
+- Labels: `type:feature`, `area:operations`, `priority:p1`
+- Depends on: #125
+- Description:
+  - The current customer-pilot path is deterministic, but upgrades are
+    still effectively "re-extract and start over."
+  - Customer pilots need a documented patch path that can preserve or
+    intentionally reseed the supported install root in a controlled way.
+- Acceptance criteria:
+  - The repo ships a documented patch-upgrade workflow for the supported
+    Windows single-host pilot baseline.
+  - Operators can choose between preserving the current state or
+    reseeding from the shipped manifest and state artifacts.
+  - Smoke coverage validates the supported upgrade path.
+
+### 128) Add an operator admin console for health, metrics, and recent audit events
+
+- Status: `open`
+- Milestone: `v1.5.0`
+- Labels: `type:feature`, `area:service`, `priority:p1`
+- Depends on: #122, #126
+- Description:
+  - The service already exposes health, metrics, and audit data, but the
+    operator still has to inspect those surfaces manually or through raw
+    API calls.
+  - The customer-support path needs a minimal admin console for the
+    supported pilot and single-host runtime.
+- Acceptance criteria:
+  - The repo ships a documented operator admin console surface for
+    health, metrics, and recent audit events.
+  - Access control follows the existing service auth and scope model.
+  - Tests cover the supported read model and auth behavior.
 
 ## Suggested Epic Issues
 
 Create these 3 epics first, then link child issues:
 
-1. Epic: CAD/RMS Source Contracts and Validation (`v1.0.0`)
-2. Epic: Public Safety Onboarding and Identity Mapping (`v1.1.0`)
-3. Epic: Customer Deployment Packaging and Pilot Handoff (`v1.2.0`)
+1. Epic: Vendor Adapter Packs and Onboarding Acceleration (`v1.3.0`)
+2. Epic: Secure Operations and Compliance Evidence (`v1.4.0`)
+3. Epic: Customer Deployment Automation and Supportability (`v1.5.0`)
 
 ## Suggested Issue Creation Order
 
 1. Create or confirm labels.
-2. Create milestones `v1.0.0`, `v1.1.0`, and `v1.2.0`.
+2. Create milestones `v1.3.0`, `v1.4.0`, and `v1.5.0`.
 3. Create the 3 epics.
 4. Create all child issues and assign them to epics.
-5. Execute `v1.0.0` before `v1.1.0`, and `v1.1.0` before `v1.2.0`.
+5. Execute `v1.3.0` before `v1.4.0`, and `v1.4.0` before `v1.5.0`.
 
 ## Tracker Status Snapshot
 
 Snapshot date: 2026-03-14
 
+- This backlog opens the post-`v1.0.0` cycle focused on vendor adapter
+  packs, secure operational evidence, and customer supportability.
 - Active epic issues in GitHub for this backlog:
-  none
+  `#111`, `#112`, and `#113`
 - Open child issues represented in this local active catalog:
-  none
+  `#114` through `#125`
 - Open milestones in GitHub for this backlog:
-  none
-- Closed backlog history remains in:
-  `planning/github-issues-backlog.md`,
-  `planning/post-v0.1.0-github-issues-backlog.md`,
-  `planning/post-v0.6.0-github-issues-backlog.md`, and
-  `planning/post-v0.9.0-github-issues-backlog.md`
-- This backlog opens the post-`v0.9.2` cycle focused on formal CAD/RMS
-  source contracts, public-safety onboarding, and customer-facing pilot
-  packaging needed beyond the current production and demo baseline.
+  `v1.3.0`, `v1.4.0`, and `v1.5.0`
