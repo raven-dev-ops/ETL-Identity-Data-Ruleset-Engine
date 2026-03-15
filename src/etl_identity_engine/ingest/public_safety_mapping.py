@@ -254,6 +254,95 @@ def load_public_safety_mapping_overlay(
     )
 
 
+def build_public_safety_mapping_diff_report(
+    *,
+    logical_name: str,
+    source_fieldnames: tuple[str, ...],
+    required_columns: tuple[str, ...],
+    overlay: PublicSafetyMappingOverlay | None,
+) -> dict[str, object]:
+    """Summarize how a source file maps into the canonical contract shape."""
+    file_overlay = None if overlay is None else overlay.files.get(logical_name)
+    column_map = {} if file_overlay is None else file_overlay.column_map
+    defaults = {} if file_overlay is None else file_overlay.defaults
+
+    mapped_fields: list[dict[str, object]] = []
+    mapped_source_columns: set[str] = set()
+    defaulted_canonical_fields: list[str] = []
+    missing_required_canonical_fields: list[str] = []
+    missing_source_columns: list[str] = []
+
+    for canonical_field in required_columns:
+        if canonical_field in column_map:
+            source_column = column_map[canonical_field]
+            if source_column in source_fieldnames:
+                mapped_fields.append(
+                    {
+                        "canonical_field": canonical_field,
+                        "mapping_kind": "source_column",
+                        "source_column": source_column,
+                    }
+                )
+                mapped_source_columns.add(source_column)
+            else:
+                missing_required_canonical_fields.append(canonical_field)
+                missing_source_columns.append(source_column)
+            continue
+
+        if canonical_field in source_fieldnames:
+            mapped_fields.append(
+                {
+                    "canonical_field": canonical_field,
+                    "mapping_kind": "passthrough",
+                    "source_column": canonical_field,
+                }
+            )
+            mapped_source_columns.add(canonical_field)
+            continue
+
+        if canonical_field in defaults:
+            mapped_fields.append(
+                {
+                    "canonical_field": canonical_field,
+                    "mapping_kind": "default",
+                    "default_value": defaults[canonical_field],
+                }
+            )
+            defaulted_canonical_fields.append(canonical_field)
+            continue
+
+        missing_required_canonical_fields.append(canonical_field)
+
+    unused_source_columns = sorted(
+        source_column
+        for source_column in source_fieldnames
+        if source_column not in mapped_source_columns
+    )
+    if overlay is None:
+        overlay_mode = "canonical_passthrough"
+    elif overlay.vendor_profile is not None:
+        overlay_mode = "vendor_profile"
+    else:
+        overlay_mode = "mapping_overlay"
+
+    return {
+        "logical_name": logical_name,
+        "overlay_mode": overlay_mode,
+        "mapping_source": None if overlay is None else overlay.overlay_label,
+        "vendor_profile": None if overlay is None else overlay.vendor_profile,
+        "required_canonical_fields": list(required_columns),
+        "mapped_canonical_fields": [item["canonical_field"] for item in mapped_fields],
+        "mapped_fields": mapped_fields,
+        "mapped_source_columns": sorted(mapped_source_columns),
+        "defaulted_canonical_fields": defaulted_canonical_fields,
+        "missing_required_canonical_fields": sorted(set(missing_required_canonical_fields)),
+        "missing_source_columns": sorted(set(missing_source_columns)),
+        "unmapped_source_columns": unused_source_columns,
+        "unused_source_columns": unused_source_columns,
+        "source_fieldnames": list(source_fieldnames),
+    }
+
+
 def apply_public_safety_mapping_overlay(
     *,
     logical_name: str,

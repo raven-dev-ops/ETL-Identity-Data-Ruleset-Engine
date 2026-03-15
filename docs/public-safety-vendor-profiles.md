@@ -80,3 +80,8 @@ etl-identity-engine validate-public-safety-contract --bundle-dir ./rms_bundle --
 ## Current Scope
 
 The current packaged profile set covers both CAD and RMS onboarding.
+Operators should pair profile validation with
+`check-public-safety-onboarding`, which now emits a machine-readable
+per-file diff report showing mapped canonical fields, unused source
+columns, and unresolved required mappings when a vendor extract drifts
+away from the shipped profile.

@@ -20,6 +20,7 @@ from etl_identity_engine.ingest.public_safety_contracts import (
     SUPPORTED_PUBLIC_SAFETY_CONTRACTS,
     PublicSafetyContractValidationError,
     ValidatedPublicSafetyContractBundle,
+    inspect_public_safety_contract_bundle,
     validate_public_safety_contract_bundle,
 )
 from etl_identity_engine.io.read import read_dict_fieldnames, read_dict_rows
@@ -94,6 +95,7 @@ class ResolvedBatchSourceBundleFile:
     fieldnames: tuple[str, ...]
     row_count: int
     rows: tuple[dict[str, str], ...]
+    diff_report: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -782,10 +784,134 @@ def _build_resolved_source_bundle(
                 fieldnames=file.fieldnames,
                 row_count=file.row_count,
                 rows=tuple(dict(row) for row in file.rows),
+                diff_report=file.diff_report,
             )
             for file in validated_bundle.files
         ),
     )
+
+
+def _manifest_summary_from_resolved(resolved: ResolvedBatchManifest) -> dict[str, object]:
+    return {
+        "status": "passed",
+        "manifest_path": str(resolved.manifest_path),
+        "batch_id": resolved.manifest.batch_id,
+        "entity_type": resolved.manifest.entity_type,
+        "landing_zone": {
+            "kind": resolved.manifest.landing_zone.kind,
+            "base_location": resolved.manifest.landing_zone.base_location,
+        },
+        "source_count": len(resolved.sources),
+        "source_bundle_count": len(resolved.source_bundles),
+        "sources": [
+            {
+                "source_id": source.spec.source_id,
+                "source_reference": source.source_reference,
+                "format": source.spec.format,
+                "schema_version": source.spec.schema_version,
+                "row_count": len(source.rows),
+            }
+            for source in resolved.sources
+        ],
+        "source_bundles": [
+            {
+                "status": "passed",
+                "bundle_id": bundle.spec.bundle_id,
+                "source_class": bundle.spec.source_class,
+                "bundle_reference": bundle.bundle_reference,
+                "mapping_overlay_reference": bundle.mapping_overlay_reference,
+                "vendor_profile": bundle.vendor_profile,
+                "contract_name": bundle.contract_name,
+                "contract_version": bundle.contract_version,
+                "files": [
+                    {
+                        "logical_name": file.logical_name,
+                        "relative_path": file.relative_path,
+                        "format": file.format,
+                        "row_count": file.row_count,
+                        "diff_report": file.diff_report,
+                    }
+                    for file in bundle.files
+                ],
+            }
+            for bundle in resolved.source_bundles
+        ],
+    }
+
+
+def inspect_batch_manifest(manifest_path: Path) -> dict[str, object]:
+    """Inspect a batch manifest and return JSON-safe results on pass or failure."""
+    resolved_manifest_path = manifest_path.resolve()
+    try:
+        resolved = resolve_batch_manifest(resolved_manifest_path)
+    except (BatchManifestValidationError, FileNotFoundError, NotADirectoryError, RuntimeError) as exc:
+        summary: dict[str, object] = {
+            "status": "failed",
+            "manifest_path": str(resolved_manifest_path),
+            "validation_error": str(exc),
+        }
+        try:
+            manifest = _load_batch_manifest(resolved_manifest_path)
+        except (BatchManifestValidationError, FileNotFoundError):
+            return summary
+
+        summary.update(
+            {
+                "batch_id": manifest.batch_id,
+                "entity_type": manifest.entity_type,
+                "landing_zone": {
+                    "kind": manifest.landing_zone.kind,
+                    "base_location": manifest.landing_zone.base_location,
+                },
+                "source_count": len(manifest.sources),
+                "source_bundle_count": len(manifest.source_bundles),
+                "sources": [
+                    {
+                        "source_id": source.source_id,
+                        "path": source.path,
+                        "format": source.format,
+                        "schema_version": source.schema_version,
+                    }
+                    for source in manifest.sources
+                ],
+            }
+        )
+        if manifest.landing_zone.kind != "local_filesystem":
+            return summary
+
+        source_bundles: list[dict[str, object]] = []
+        for bundle in manifest.source_bundles:
+            bundle_path = _resolve_local_bundle_path(
+                resolved_manifest_path,
+                manifest.landing_zone,
+                bundle,
+            )
+            mapping_overlay_path = _resolve_local_bundle_overlay_path(bundle_path, bundle)
+            bundle_summary = inspect_public_safety_contract_bundle(
+                bundle_path,
+                mapping_overlay_path=mapping_overlay_path,
+                vendor_profile=bundle.vendor_profile,
+            )
+            source_bundles.append(
+                {
+                    "status": bundle_summary["status"],
+                    "bundle_id": bundle.bundle_id,
+                    "source_class": bundle.source_class,
+                    "bundle_reference": str(bundle_path),
+                    "mapping_overlay_reference": (
+                        None if mapping_overlay_path is None else str(mapping_overlay_path)
+                    ),
+                    "vendor_profile": bundle.vendor_profile,
+                    "contract_name": bundle.contract_name,
+                    "contract_version": bundle.contract_version,
+                    "validation_error": bundle_summary.get("validation_error"),
+                    "files": list(bundle_summary.get("files", {}).values()),
+                }
+            )
+        summary["source_bundles"] = source_bundles
+        return summary
+    else:
+        return _manifest_summary_from_resolved(resolved)
 
 
 def _validate_resolved_source_bundle(

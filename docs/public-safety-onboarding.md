@@ -72,6 +72,8 @@ The conformance command prints JSON with:
 - manifest summary
 - resolved source counts
 - resolved source-bundle counts
+- per-file `diff_report` blocks for mapped, unmapped, and unused source
+  columns
 
 If validation fails, fix the contract surface before attempting
 pipeline onboarding. The current scope of this check is structural:
@@ -83,6 +85,19 @@ pipeline onboarding. The current scope of this check is structural:
 - manifest-declared source bundles match the resolved contract markers
 - vendor-column overlays resolve the shipped file shapes into the
   canonical CAD/RMS contract fields
+
+The `diff_report` is the operator-facing drift surface during onboarding.
+Use it to answer three concrete questions with the source owner:
+
+- which canonical fields were mapped successfully
+- which source columns are currently unused or unmapped
+- which required canonical fields still have no resolvable source
+  mapping
+
+For broken vendor bundles, the command still prints JSON before exiting
+nonzero. That lets operators save the report and work directly from
+`missing_required_canonical_fields`, `missing_source_columns`, and
+`unmapped_source_columns` instead of relying on a single error string.
 
 The current onboarding model now supports two source-bundle shapes:
 

@@ -522,6 +522,7 @@ def test_validate_cad_contract_bundle_accepts_valid_csv_bundle(tmp_path: Path) -
         "incident_records",
         "incident_person_links",
     }
+    assert validated.files[0].diff_report["overlay_mode"] == "canonical_passthrough"
 
 
 def test_validate_rms_contract_bundle_accepts_valid_parquet_bundle(tmp_path: Path) -> None:
@@ -565,6 +566,8 @@ def test_validate_public_safety_contract_accepts_vendor_overlay_bundle(tmp_path:
         "variant_codes",
     )
     assert validated.files[0].fieldnames == PERSON_HEADERS
+    assert validated.files[0].diff_report["overlay_mode"] == "mapping_overlay"
+    assert validated.files[0].diff_report["missing_required_canonical_fields"] == []
 
 
 @pytest.mark.parametrize(
@@ -595,6 +598,7 @@ def test_validate_public_safety_contract_accepts_packaged_vendor_profiles(
     assert validated.files[2].fieldnames == INCIDENT_LINK_HEADERS
     assert validated.files[0].rows[0]["source_record_id"] == expected_source_record_id
     assert validated.files[1].rows[0]["incident_id"] == expected_incident_id
+    assert validated.files[0].diff_report["overlay_mode"] == "vendor_profile"
 
 
 @pytest.mark.parametrize(
@@ -781,6 +785,7 @@ def test_validate_public_safety_contract_cli_writes_summary_json(
         "incident_records",
         "incident_person_links",
     }
+    assert summary["files"]["person_records"]["diff_report"]["overlay_mode"] == "canonical_passthrough"
 
 
 def test_validate_public_safety_contract_cli_accepts_packaged_vendor_profile(

@@ -1372,6 +1372,8 @@ def _cmd_check_public_safety_onboarding(args: argparse.Namespace) -> None:
         manifest_path=manifest_path,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
+    if summary["status"] != "passed":
+        raise SystemExit(1)
 
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:

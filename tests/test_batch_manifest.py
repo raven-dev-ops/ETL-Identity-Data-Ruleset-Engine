@@ -828,6 +828,7 @@ def test_resolve_batch_manifest_validates_named_public_safety_source_bundles(
     assert [file.row_count for file in resolved.source_bundles[0].files] == [1, 1, 1]
     assert resolved.source_bundles[0].files[1].rows[0]["source_system"] == "cad"
     assert resolved.source_bundles[1].files[1].rows[0]["source_system"] == "rms"
+    assert resolved.source_bundles[0].files[0].diff_report["overlay_mode"] == "canonical_passthrough"
 
 
 def test_resolve_batch_manifest_supports_vendor_mapped_public_safety_bundle_overlays(
@@ -876,6 +877,8 @@ def test_resolve_batch_manifest_supports_vendor_mapped_public_safety_bundle_over
     ]
     assert rms_bundle.files[0].rows[0]["source_record_id"] == "RMS-1"
     assert rms_bundle.files[1].rows[0]["incident_id"] == "RMS-INC-1"
+    assert rms_bundle.files[0].diff_report["overlay_mode"] == "mapping_overlay"
+    assert rms_bundle.files[0].diff_report["missing_required_canonical_fields"] == []
 
 
 def test_resolve_batch_manifest_supports_packaged_cad_vendor_profiles(
@@ -919,6 +922,7 @@ def test_resolve_batch_manifest_supports_packaged_cad_vendor_profiles(
     assert cad_bundle.mapping_overlay_reference is None
     assert cad_bundle.files[0].rows[0]["source_record_id"] == "CAD-1"
     assert cad_bundle.files[1].rows[0]["incident_id"] == "CAD-INC-1"
+    assert cad_bundle.files[0].diff_report["overlay_mode"] == "vendor_profile"
 
 
 def test_resolve_batch_manifest_rejects_source_bundle_with_overlay_and_vendor_profile(

@@ -32,6 +32,10 @@ For CAD and RMS onboarding, the repo now also ships maintained packaged
 vendor profiles for common export shapes, so operators can select a
 supported `vendor_profile` instead of authoring a custom overlay for
 every pilot.
+The onboarding path now also emits machine-readable per-file diff
+reports for mapped canonical fields, unused source columns, and
+required fields that still have no resolvable source mapping, so vendor
+drift is visible without digging through raw CSV headers by hand.
 Manifest-driven runs with `--state-db` now also persist the derived
 incident-to-identity activity view from those validated CAD/RMS
 bundles, so the demo slice can be restored directly from persisted

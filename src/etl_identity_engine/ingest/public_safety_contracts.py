@@ -17,6 +17,7 @@ from etl_identity_engine.ingest.public_safety_mapping import (
     PublicSafetyMappingOverlay,
     PublicSafetyMappingOverlayError,
     apply_public_safety_mapping_overlay,
+    build_public_safety_mapping_diff_report,
     load_public_safety_mapping_overlay,
 )
 from etl_identity_engine.ingest.public_safety_vendor_profiles import (
@@ -65,6 +66,7 @@ class ValidatedPublicSafetyContractFile:
     fieldnames: tuple[str, ...]
     row_count: int
     rows: tuple[dict[str, str], ...]
+    diff_report: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,7 @@ class ValidatedPublicSafetyContractBundle:
                     "row_count": file.row_count,
                     "source_fieldnames": list(file.source_fieldnames),
                     "fieldnames": list(file.fieldnames),
+                    "diff_report": file.diff_report,
                 }
                 for file in self.files
             },
@@ -355,7 +358,7 @@ def _load_and_canonicalize_rows(
     required_columns: tuple[str, ...],
     *,
     overlay: PublicSafetyMappingOverlay | None,
-) -> tuple[tuple[str, ...], tuple[str, ...], list[dict[str, str]]]:
+) -> tuple[tuple[str, ...], tuple[str, ...], list[dict[str, str]], dict[str, object]]:
     try:
         source_fieldnames = read_dict_fieldnames(path)
         source_rows = read_dict_rows(path)
@@ -364,6 +367,13 @@ def _load_and_canonicalize_rows(
             bundle_dir,
             f"contract file '{logical_name}' not found: {path.relative_to(bundle_dir)}",
         ) from exc
+
+    diff_report = build_public_safety_mapping_diff_report(
+        logical_name=logical_name,
+        source_fieldnames=source_fieldnames,
+        required_columns=required_columns,
+        overlay=overlay,
+    )
 
     if overlay is None:
         missing_columns = [column for column in required_columns if column not in source_fieldnames]
@@ -384,7 +394,189 @@ def _load_and_canonicalize_rows(
         )
     except PublicSafetyMappingOverlayError as exc:
         raise _bundle_error(bundle_dir, f"contract file '{logical_name}' failed field mapping: {exc}") from exc
-    return source_fieldnames, required_columns, rows
+    return source_fieldnames, required_columns, rows, diff_report
+
+
+def _inspect_contract_file(
+    bundle_dir: Path,
+    *,
+    file_spec: PublicSafetyContractFileSpec,
+    relative_path: str | None,
+    overlay: PublicSafetyMappingOverlay | None,
+) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "logical_name": file_spec.logical_name,
+    }
+    if relative_path is None:
+        summary["status"] = "failed"
+        summary["validation_error"] = (
+            "contract files mapping is missing this required entry"
+        )
+        return summary
+
+    summary["relative_path"] = relative_path
+    try:
+        resolved_path = _resolve_bundle_file_path(bundle_dir, relative_path)
+    except PublicSafetyContractValidationError as exc:
+        summary["status"] = "failed"
+        summary["validation_error"] = str(exc)
+        return summary
+
+    summary["path"] = str(resolved_path)
+    summary["format"] = resolved_path.suffix.lower().lstrip(".")
+    if resolved_path.suffix.lower() not in PUBLIC_SAFETY_CONTRACT_FORMATS:
+        summary["status"] = "failed"
+        summary["validation_error"] = (
+            f"contract file '{file_spec.logical_name}' must be CSV or Parquet: {relative_path}"
+        )
+        return summary
+
+    if not resolved_path.exists():
+        summary["status"] = "failed"
+        summary["validation_error"] = (
+            f"contract file '{file_spec.logical_name}' not found: {relative_path}"
+        )
+        return summary
+
+    try:
+        source_fieldnames = read_dict_fieldnames(resolved_path)
+        source_rows = read_dict_rows(resolved_path)
+    except FileNotFoundError as exc:
+        summary["status"] = "failed"
+        summary["validation_error"] = str(exc)
+        return summary
+
+    diff_report = build_public_safety_mapping_diff_report(
+        logical_name=file_spec.logical_name,
+        source_fieldnames=source_fieldnames,
+        required_columns=file_spec.required_columns,
+        overlay=overlay,
+    )
+    summary.update(
+        {
+            "status": (
+                "passed"
+                if not diff_report["missing_required_canonical_fields"]
+                else "failed"
+            ),
+            "row_count": len(source_rows),
+            "source_fieldnames": list(source_fieldnames),
+            "fieldnames": list(file_spec.required_columns),
+            "diff_report": diff_report,
+        }
+    )
+    if diff_report["missing_required_canonical_fields"]:
+        summary["validation_error"] = (
+            "missing canonical mappings for required fields: "
+            + ", ".join(diff_report["missing_required_canonical_fields"])
+        )
+    return summary
+
+
+def inspect_public_safety_contract_bundle(
+    bundle_dir: Path,
+    *,
+    mapping_overlay_path: Path | None = None,
+    vendor_profile: str | None = None,
+) -> dict[str, object]:
+    """Inspect a public-safety contract bundle and return JSON-safe results."""
+    resolved_bundle_dir = bundle_dir.resolve()
+    summary: dict[str, object] = {
+        "bundle_dir": str(resolved_bundle_dir),
+        "marker_path": str((resolved_bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER).resolve()),
+    }
+    try:
+        validated = validate_public_safety_contract_bundle(
+            resolved_bundle_dir,
+            mapping_overlay_path=mapping_overlay_path,
+            vendor_profile=vendor_profile,
+        )
+    except (FileNotFoundError, NotADirectoryError, PublicSafetyContractValidationError) as exc:
+        summary["status"] = "failed"
+        summary["validation_error"] = str(exc)
+    else:
+        return {
+            "status": "passed",
+            **validated.to_summary(),
+        }
+
+    if not resolved_bundle_dir.exists():
+        return summary
+    if not resolved_bundle_dir.is_dir():
+        summary["validation_error"] = f"Public-safety bundle must be a directory: {resolved_bundle_dir}"
+        return summary
+
+    marker_path = resolved_bundle_dir / PUBLIC_SAFETY_CONTRACT_MARKER
+    try:
+        marker = _load_marker_mapping(marker_path)
+    except PublicSafetyContractValidationError:
+        return summary
+
+    contract_name = marker.get("contract_name")
+    if isinstance(contract_name, str) and contract_name.strip():
+        summary["contract_name"] = contract_name.strip()
+    contract_version = marker.get("contract_version")
+    if isinstance(contract_version, str) and contract_version.strip():
+        summary["contract_version"] = contract_version.strip()
+
+    files_value = marker.get("files")
+    file_mapping: dict[str, str] = {}
+    if isinstance(files_value, Mapping):
+        for key, value in files_value.items():
+            if isinstance(key, str) and key.strip() and isinstance(value, str) and value.strip():
+                file_mapping[key.strip()] = value.strip()
+
+    spec = None
+    if isinstance(contract_name, str):
+        spec = SUPPORTED_PUBLIC_SAFETY_CONTRACTS.get(contract_name.strip())
+    if spec is None:
+        return summary
+
+    summary["source_system"] = spec.source_system
+    overlay_error: str | None = None
+    try:
+        resolved_mapping_overlay_path = None if mapping_overlay_path is None else mapping_overlay_path.resolve()
+        overlay = _load_mapping_overlay(
+            resolved_bundle_dir,
+            marker=marker,
+            spec=spec,
+            explicit_mapping_overlay_path=resolved_mapping_overlay_path,
+            explicit_vendor_profile=vendor_profile,
+        )
+    except PublicSafetyContractValidationError as exc:
+        overlay = None
+        overlay_error = str(exc)
+
+    mapping_overlay_path_value = None
+    mapping_overlay_relative_path = None
+    vendor_profile_value = vendor_profile
+    if overlay is not None:
+        vendor_profile_value = overlay.vendor_profile
+        if overlay.vendor_profile is None:
+            mapping_overlay_path_value = str(overlay.overlay_path)
+            try:
+                mapping_overlay_relative_path = str(
+                    overlay.overlay_path.relative_to(resolved_bundle_dir)
+                ).replace("\\", "/")
+            except ValueError:
+                mapping_overlay_relative_path = None
+    summary["mapping_overlay_path"] = mapping_overlay_path_value
+    summary["mapping_overlay_relative_path"] = mapping_overlay_relative_path
+    summary["vendor_profile"] = vendor_profile_value
+    if overlay_error is not None:
+        summary["mapping_overlay_error"] = overlay_error
+
+    file_summaries = {
+        file_spec.logical_name: _inspect_contract_file(
+            resolved_bundle_dir,
+            file_spec=file_spec,
+            relative_path=file_mapping.get(file_spec.logical_name),
+            overlay=overlay,
+        )
+        for file_spec in spec.file_specs
+    }
+    summary["files"] = file_summaries
+    return summary
 
 
 def _require_non_empty_values(
@@ -574,7 +766,7 @@ def validate_public_safety_contract_bundle(
                 bundle_dir,
                 f"contract file '{file_spec.logical_name}' must be CSV or Parquet: {relative_path}",
             )
-        source_fieldnames, fieldnames, rows = _load_and_canonicalize_rows(
+        source_fieldnames, fieldnames, rows, diff_report = _load_and_canonicalize_rows(
             bundle_dir,
             file_spec.logical_name,
             resolved_path,
@@ -590,6 +782,7 @@ def validate_public_safety_contract_bundle(
                 fieldnames=fieldnames,
                 row_count=len(rows),
                 rows=tuple(dict(row) for row in rows),
+                diff_report=diff_report,
             )
         )
         rows_by_logical_name[file_spec.logical_name] = rows

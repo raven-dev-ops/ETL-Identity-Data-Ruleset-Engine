@@ -33,7 +33,7 @@ of truth for tracked work; this file is the short maintainer view.
 
 - [x] Packaged CAD vendor profile overlays
 - [x] Packaged RMS vendor profile overlays
-- [ ] Onboarding diff reports for unmapped columns and contract drift
+- [x] Onboarding diff reports for unmapped columns and contract drift
 - [ ] Syntheticized vendor-batch example generation
 - [ ] Detached-signature support for customer handoff manifests
 - [ ] Secret-file and rotation health checks for auth material
@@ -46,4 +46,4 @@ of truth for tracked work; this file is the short maintainer view.
 
 ## Next Step
 
-- Next: implement local catalog `#119` / GitHub issue `#116`.
+- Next: implement local catalog `#120` / GitHub issue `#117`.

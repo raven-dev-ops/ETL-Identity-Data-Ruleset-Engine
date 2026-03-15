@@ -4,61 +4,54 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from etl_identity_engine.ingest.manifest import resolve_batch_manifest
+from etl_identity_engine.ingest.manifest import (
+    _load_batch_manifest,
+    _resolve_local_bundle_overlay_path,
+    _resolve_local_bundle_path,
+    inspect_batch_manifest,
+)
 from etl_identity_engine.ingest.public_safety_contracts import (
-    validate_public_safety_contract_bundle,
+    inspect_public_safety_contract_bundle,
 )
 
 
-def _bundle_summary(bundle_dir: Path) -> dict[str, object]:
-    validated = validate_public_safety_contract_bundle(bundle_dir)
-    return validated.to_summary()
+def _bundle_summary(
+    bundle_dir: Path,
+    *,
+    mapping_overlay_path: Path | None = None,
+    vendor_profile: str | None = None,
+) -> dict[str, object]:
+    return inspect_public_safety_contract_bundle(
+        bundle_dir,
+        mapping_overlay_path=mapping_overlay_path,
+        vendor_profile=vendor_profile,
+    )
 
 
 def _manifest_summary(manifest_path: Path) -> dict[str, object]:
-    resolved = resolve_batch_manifest(manifest_path)
-    return {
-        "manifest_path": str(resolved.manifest_path),
-        "batch_id": resolved.manifest.batch_id,
-        "entity_type": resolved.manifest.entity_type,
-        "landing_zone": {
-            "kind": resolved.manifest.landing_zone.kind,
-            "base_location": resolved.manifest.landing_zone.base_location,
-        },
-        "source_count": len(resolved.sources),
-        "source_bundle_count": len(resolved.source_bundles),
-        "sources": [
-            {
-                "source_id": source.spec.source_id,
-                "source_reference": source.source_reference,
-                "format": source.spec.format,
-                "schema_version": source.spec.schema_version,
-                "row_count": len(source.rows),
-            }
-            for source in resolved.sources
-        ],
-        "source_bundles": [
-            {
-                "bundle_id": bundle.spec.bundle_id,
-                "source_class": bundle.spec.source_class,
-                "bundle_reference": bundle.bundle_reference,
-                "mapping_overlay_reference": bundle.mapping_overlay_reference,
-                "vendor_profile": bundle.vendor_profile,
-                "contract_name": bundle.contract_name,
-                "contract_version": bundle.contract_version,
-                "files": [
-                    {
-                        "logical_name": file.logical_name,
-                        "relative_path": file.relative_path,
-                        "format": file.format,
-                        "row_count": file.row_count,
-                    }
-                    for file in bundle.files
-                ],
-            }
-            for bundle in resolved.source_bundles
-        ],
-    }
+    return inspect_batch_manifest(manifest_path)
+
+
+def _bundle_inspection_hints_from_manifest(manifest_path: Path) -> dict[Path, dict[str, object]]:
+    try:
+        manifest = _load_batch_manifest(manifest_path)
+    except (FileNotFoundError, ValueError):
+        return {}
+    if manifest.landing_zone.kind != "local_filesystem":
+        return {}
+
+    hints: dict[Path, dict[str, object]] = {}
+    for bundle in manifest.source_bundles:
+        bundle_path = _resolve_local_bundle_path(
+            manifest_path,
+            manifest.landing_zone,
+            bundle,
+        ).resolve()
+        hints[bundle_path] = {
+            "mapping_overlay_path": _resolve_local_bundle_overlay_path(bundle_path, bundle),
+            "vendor_profile": bundle.vendor_profile,
+        }
+    return hints
 
 
 def check_public_safety_onboarding(
@@ -74,8 +67,24 @@ def check_public_safety_onboarding(
         "status": "passed",
         "bundle_count": len(bundle_dirs),
     }
-    if bundle_dirs:
-        summary["bundles"] = [_bundle_summary(bundle_dir.resolve()) for bundle_dir in bundle_dirs]
+    bundle_hints = {}
     if manifest_path is not None:
-        summary["manifest"] = _manifest_summary(manifest_path.resolve())
+        bundle_hints = _bundle_inspection_hints_from_manifest(manifest_path.resolve())
+    if bundle_dirs:
+        bundles = [
+            _bundle_summary(
+                bundle_dir.resolve(),
+                mapping_overlay_path=bundle_hints.get(bundle_dir.resolve(), {}).get("mapping_overlay_path"),
+                vendor_profile=bundle_hints.get(bundle_dir.resolve(), {}).get("vendor_profile"),
+            )
+            for bundle_dir in bundle_dirs
+        ]
+        summary["bundles"] = bundles
+        if any(bundle["status"] != "passed" for bundle in bundles):
+            summary["status"] = "failed"
+    if manifest_path is not None:
+        manifest_summary = _manifest_summary(manifest_path.resolve())
+        summary["manifest"] = manifest_summary
+        if manifest_summary["status"] != "passed":
+            summary["status"] = "failed"
     return summary

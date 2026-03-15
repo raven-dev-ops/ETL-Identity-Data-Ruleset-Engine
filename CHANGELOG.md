@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
   onboarding shapes, including bundle-local or manifest-declared
   `vendor_profile` support, direct CLI validation, and tests for valid
   and invalid profile-shaped inputs.
+- Added machine-readable onboarding diff reports for CAD/RMS bundles
+  and manifests, including mapped, unused, and unresolved column
+  reporting plus JSON-first failure output from
+  `check-public-safety-onboarding`.
 
 ## [1.0.0] - 2026-03-14
 
