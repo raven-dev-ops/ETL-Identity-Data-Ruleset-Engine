@@ -231,6 +231,7 @@ is included in the repository.
 - [Customer Pilot Runbooks](docs/customer-pilot-runbooks.md)
 - [Customer Pilot Acceptance Checklist](docs/customer-pilot-acceptance-checklist.md)
 - [Customer Pilot Readiness](docs/customer-pilot-readiness.md)
+- [Protected Pilot Promotion](docs/protected-pilot-promotion.md)
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
 - [Delivery Contracts](docs/delivery-contracts.md)

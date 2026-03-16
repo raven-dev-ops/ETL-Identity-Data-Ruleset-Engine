@@ -118,6 +118,11 @@ The evidence pack supports review conversations and deployment
 verification. It does not, by itself, claim full operational CJIS
 compliance.
 
+For protected-pilot cutover, seal the evidence pack together with the
+runtime snapshot, custody manifest, acceptance summary, HA rehearsal
+summary, and rollback bundle by following
+[protected-pilot-promotion.md](protected-pilot-promotion.md).
+
 ## Recommended Rollout Order
 
 1. Validate the runtime with synthetic data and the standalone demo.
@@ -126,7 +131,9 @@ compliance.
 4. Run the CJIS preflight with deployment variables populated.
 5. Run the persisted-state recovery smoke path against the protected
    deployment topology.
-6. Only then move into agency-specific acceptance and governance work.
+6. Seal the protected-pilot promotion inputs with
+   [protected-pilot-promotion.md](protected-pilot-promotion.md).
+7. Only then move into agency-specific acceptance and governance work.
 
 ## External References
 

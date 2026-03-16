@@ -49,6 +49,8 @@ Before first production cutover:
   [release-process.md](release-process.md)
 - validate backup, restore, and replay with
   [recovery-runbooks.md](recovery-runbooks.md)
+- seal the protected-pilot promotion inputs with
+  [protected-pilot-promotion.md](protected-pilot-promotion.md)
 - confirm runtime-environment secrets are supplied externally rather
   than committed into repo config
 - confirm downstream consumers are using only documented stable
@@ -59,6 +61,8 @@ Before first production cutover:
 For the first production rollout:
 
 - deploy the release artifact and config snapshot as one versioned unit
+- carry the sealed protected-pilot promotion manifest and rollback
+  bundle as the reviewable cutover packet
 - initialize or upgrade the state DB through the documented migration
   commands or the Kubernetes migration Job
 - confirm health, readiness, metrics, and audit-event collection before
@@ -117,6 +121,8 @@ Consumer teams own:
 If a release must be rolled back:
 
 - redeploy the previous known-good image or Python package version
+- restore the rollback bundle recorded in the protected-pilot promotion
+  manifest when persisted-state recovery is required
 - keep the persisted state store and published snapshots intact unless a data
   recovery action is also required
 - rerun health and readiness checks before reopening the service surface
