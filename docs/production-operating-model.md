@@ -51,6 +51,8 @@ Before first production cutover:
   [recovery-runbooks.md](recovery-runbooks.md)
 - seal the protected-pilot promotion inputs with
   [protected-pilot-promotion.md](protected-pilot-promotion.md)
+- run the consolidated readiness report in
+  [production-acceptance-suite.md](production-acceptance-suite.md)
 - confirm runtime-environment secrets are supplied externally rather
   than committed into repo config
 - confirm downstream consumers are using only documented stable

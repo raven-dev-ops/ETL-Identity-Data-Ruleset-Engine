@@ -80,6 +80,9 @@ The cadence index stores:
 - reviewer identity and reviewed-at timestamp when recorded
 - repo-side scope boundary text
 
+The latest cadence index is also one of the required inputs to
+[production-acceptance-suite.md](production-acceptance-suite.md).
+
 The cadence index is an operational tracking aid. It should not contain
 raw agency data or policy-only evidence that belongs outside the repo
 workflow.

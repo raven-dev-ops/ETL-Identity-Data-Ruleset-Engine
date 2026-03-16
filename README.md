@@ -223,6 +223,7 @@ is included in the repository.
 - [Data Model](docs/data-model.md)
 - [Normalization](docs/normalization.md)
 - [Production Batch Manifest](docs/production-batch-manifest.md)
+- [Production Acceptance Suite](docs/production-acceptance-suite.md)
 - [Compatibility Policy](docs/compatibility-policy.md)
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)

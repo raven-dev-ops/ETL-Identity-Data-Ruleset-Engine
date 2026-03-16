@@ -111,6 +111,10 @@ input set:
 Run those again after cutover, after rollback, and after any config or
 artifact change that would invalidate the sealed input set.
 
+For the final go or no-go cutover artifact, feed the sealed promotion
+manifest and the CJIS evidence cadence index into
+[production-acceptance-suite.md](production-acceptance-suite.md).
+
 ## Scope Boundary
 
 This workflow helps with:
