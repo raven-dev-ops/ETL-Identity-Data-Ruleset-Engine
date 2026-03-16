@@ -123,6 +123,11 @@ runtime snapshot, custody manifest, acceptance summary, HA rehearsal
 summary, and rollback bundle by following
 [protected-pilot-promotion.md](protected-pilot-promotion.md).
 
+For steady-state operation after cutover, run the recurring repo-side
+evidence loop in [cjis-evidence-cadence.md](cjis-evidence-cadence.md)
+so the latest evidence capture has an explicit due date and overdue
+status.
+
 ## Recommended Rollout Order
 
 1. Validate the runtime with synthetic data and the standalone demo.

@@ -37,6 +37,7 @@ RUN_RECORD_NAME = "selected_run_record.json"
 STANDARDS_MAPPING_INDEX_NAME = "standards_mapping_index.json"
 STANDARDS_MAPPING_DOC_NAME = "reference/standards-mapping.md"
 CJIS_BASELINE_DOC_NAME = "reference/cjis-deployment-baseline.md"
+CJIS_CADENCE_DOC_NAME = "reference/cjis-evidence-cadence.md"
 ENV_TEMPLATE_NAME = "reference/cjis.env.example"
 RUNTIME_CONFIG_SNAPSHOT_NAME = "reference/runtime_environments.yml"
 
@@ -511,6 +512,10 @@ def package_cjis_evidence_pack(
         _copy_reference_file(
             source=REPO_ROOT / "docs" / "cjis-deployment-baseline.md",
             destination=staging_root / CJIS_BASELINE_DOC_NAME,
+        )
+        _copy_reference_file(
+            source=REPO_ROOT / "docs" / "cjis-evidence-cadence.md",
+            destination=staging_root / CJIS_CADENCE_DOC_NAME,
         )
         _copy_reference_file(
             source=REPO_ROOT / "deploy" / "cjis.env.example",

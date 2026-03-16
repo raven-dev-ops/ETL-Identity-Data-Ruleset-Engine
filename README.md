@@ -227,6 +227,7 @@ is included in the repository.
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
 - [CJIS Deployment Baseline](docs/cjis-deployment-baseline.md)
+- [CJIS Evidence Cadence](docs/cjis-evidence-cadence.md)
 - [Customer Pilot Bundle](docs/customer-pilot-bundle.md)
 - [Customer Pilot Runbooks](docs/customer-pilot-runbooks.md)
 - [Customer Pilot Acceptance Checklist](docs/customer-pilot-acceptance-checklist.md)

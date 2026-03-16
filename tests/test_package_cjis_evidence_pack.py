@@ -293,6 +293,7 @@ def test_package_cjis_evidence_pack_builds_expected_zip(tmp_path: Path) -> None:
             MODULE.STANDARDS_MAPPING_INDEX_NAME,
             MODULE.STANDARDS_MAPPING_DOC_NAME,
             MODULE.CJIS_BASELINE_DOC_NAME,
+            MODULE.CJIS_CADENCE_DOC_NAME,
             MODULE.ENV_TEMPLATE_NAME,
             MODULE.RUNTIME_CONFIG_SNAPSHOT_NAME,
         }

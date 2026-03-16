@@ -77,6 +77,8 @@ In steady state:
 - operators ingest manifest-driven landed batches
 - review decisions are applied through the persisted workflow surfaces
 - completed runs are published or exported only from persisted state
+- CJIS-sensitive deployments refresh and review the repo-side evidence
+  cadence documented in [cjis-evidence-cadence.md](cjis-evidence-cadence.md)
 - backups, recovery checks, and release-hardening artifacts are retained
   according to the operator policy for the deployment
 
