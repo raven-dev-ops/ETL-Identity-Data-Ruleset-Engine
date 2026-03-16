@@ -7,14 +7,22 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import posixpath
 from pathlib import Path, PurePosixPath
 import shutil
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import yaml
 
-from etl_identity_engine.ingest.manifest import ResolvedBatchManifest, ResolvedBatchSource
+from etl_identity_engine.ingest.manifest import (
+    BatchManifestValidationError,
+    ResolvedBatchManifest,
+    ResolvedBatchSource,
+    ResolvedBatchSourceBundle,
+    resolve_batch_manifest,
+)
+from etl_identity_engine.ingest.public_safety_contracts import PUBLIC_SAFETY_CONTRACT_MARKER
 
 
 REPLAY_BUNDLE_VERSION = "1"
@@ -143,6 +151,7 @@ def archive_replay_bundle(
     created = created_at_utc or utc_now()
     artifacts: list[ReplayBundleArtifact] = []
     replay_sources: list[dict[str, object]] = []
+    replay_source_bundles: list[dict[str, object]] = []
 
     original_manifest_relative = Path("manifest") / "original" / resolved_manifest.manifest_path.name
     replay_manifest_relative = Path("manifest") / "replay_manifest.yaml"
@@ -185,17 +194,102 @@ def archive_replay_bundle(
             }
         )
 
-    replay_manifest_payload = yaml.safe_dump(
-        {
-            "manifest_version": resolved_manifest.manifest.manifest_version,
-            "entity_type": resolved_manifest.manifest.entity_type,
-            "batch_id": resolved_manifest.manifest.batch_id,
-            "landing_zone": {
-                "kind": "local_filesystem",
-                "base_path": "../landing_snapshot",
-            },
-            "sources": replay_sources,
+    for source_bundle in resolved_manifest.source_bundles:
+        bundle_relative_root, replay_bundle_path = _bundle_source_bundle_relative_paths(source_bundle)
+        marker_relative_path = bundle_relative_root / PUBLIC_SAFETY_CONTRACT_MARKER
+        marker_reference = _resolve_bundle_artifact_reference(
+            source_bundle.bundle_reference,
+            PUBLIC_SAFETY_CONTRACT_MARKER,
+        )
+        marker_payload = _read_reference_payload(
+            marker_reference,
+            storage_options=resolved_manifest.manifest.landing_zone.storage_options,
+        )
+        marker_path = temp_root / marker_relative_path
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.write_bytes(marker_payload)
+        artifacts.append(
+            _build_artifact(
+                kind="source_bundle_manifest",
+                relative_path=marker_relative_path,
+                original_reference=marker_reference,
+                source_id=None,
+                payload=marker_payload,
+            )
+        )
+
+        replay_source_bundle: dict[str, object] = {
+            "bundle_id": source_bundle.spec.bundle_id,
+            "source_class": source_bundle.spec.source_class,
+            "path": replay_bundle_path,
+            "contract_name": source_bundle.contract_name,
+            "contract_version": source_bundle.contract_version,
+        }
+
+        if source_bundle.vendor_profile is not None:
+            replay_source_bundle["vendor_profile"] = source_bundle.vendor_profile
+        elif source_bundle.mapping_overlay_reference is not None:
+            overlay_relative_path, replay_overlay_path = _bundle_source_bundle_overlay_relative_paths(
+                source_bundle,
+                bundle_relative_root=bundle_relative_root,
+            )
+            overlay_payload = _read_reference_payload(
+                source_bundle.mapping_overlay_reference,
+                storage_options=resolved_manifest.manifest.landing_zone.storage_options,
+            )
+            overlay_path = temp_root / overlay_relative_path
+            overlay_path.parent.mkdir(parents=True, exist_ok=True)
+            overlay_path.write_bytes(overlay_payload)
+            artifacts.append(
+                _build_artifact(
+                    kind="source_bundle_overlay",
+                    relative_path=overlay_relative_path,
+                    original_reference=source_bundle.mapping_overlay_reference,
+                    source_id=None,
+                    payload=overlay_payload,
+                )
+            )
+            replay_source_bundle["mapping_overlay"] = replay_overlay_path
+
+        for source_bundle_file in source_bundle.files:
+            source_reference = _resolve_bundle_artifact_reference(
+                source_bundle.bundle_reference,
+                source_bundle_file.relative_path,
+            )
+            payload = _read_reference_payload(
+                source_reference,
+                storage_options=resolved_manifest.manifest.landing_zone.storage_options,
+            )
+            target_relative_path = bundle_relative_root / Path(source_bundle_file.relative_path)
+            target_path = temp_root / target_relative_path
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(payload)
+            artifacts.append(
+                _build_artifact(
+                    kind="source_bundle_file",
+                    relative_path=target_relative_path,
+                    original_reference=source_reference,
+                    source_id=None,
+                    payload=payload,
+                )
+            )
+
+        replay_source_bundles.append(replay_source_bundle)
+
+    replay_manifest_payload_dict: dict[str, object] = {
+        "manifest_version": resolved_manifest.manifest.manifest_version,
+        "entity_type": resolved_manifest.manifest.entity_type,
+        "batch_id": resolved_manifest.manifest.batch_id,
+        "landing_zone": {
+            "kind": "local_filesystem",
+            "base_path": "../landing_snapshot",
         },
+        "sources": replay_sources,
+    }
+    if replay_source_bundles:
+        replay_manifest_payload_dict["source_bundles"] = replay_source_bundles
+    replay_manifest_payload = yaml.safe_dump(
+        replay_manifest_payload_dict,
         sort_keys=False,
     ).encode("utf-8")
     replay_manifest_path = temp_root / replay_manifest_relative
@@ -285,20 +379,25 @@ def verify_replay_bundle(bundle_manifest_path: Path) -> ReplayBundleVerification
             )
 
     source_count = sum(1 for artifact in artifacts if artifact.kind == "source")
-    if source_count == 0:
-        errors.append("bundle is missing archived source payloads")
+    source_bundle_artifact_count = sum(
+        1 for artifact in artifacts if artifact.kind.startswith("source_bundle_")
+    )
+    if source_count == 0 and source_bundle_artifact_count == 0:
+        errors.append("bundle is missing archived manifest input payloads")
     if not original_manifest_path.exists():
         errors.append(f"missing original manifest copy: {_to_posix(original_manifest_path.relative_to(bundle_root))}")
     if not replay_manifest_path.exists():
         errors.append(f"missing replay manifest copy: {_to_posix(replay_manifest_path.relative_to(bundle_root))}")
     else:
-        replay_manifest = yaml.safe_load(replay_manifest_path.read_text(encoding="utf-8"))
-        if not isinstance(replay_manifest, Mapping):
-            errors.append("replay manifest is not a mapping")
-        else:
-            landing_zone = replay_manifest.get("landing_zone")
-            if not isinstance(landing_zone, Mapping) or landing_zone.get("kind") != "local_filesystem":
-                errors.append("replay manifest landing_zone must be local_filesystem")
+        try:
+            resolve_batch_manifest(replay_manifest_path)
+        except (
+            BatchManifestValidationError,
+            FileNotFoundError,
+            NotADirectoryError,
+            RuntimeError,
+        ) as exc:
+            errors.append(f"replay manifest failed to resolve: {exc}")
 
     verified_at_utc = utc_now()
     recoverable = not errors
@@ -409,6 +508,51 @@ def _bundle_source_filename(source: ResolvedBatchSource) -> str:
     return candidate_name
 
 
+def _bundle_source_bundle_relative_paths(bundle: ResolvedBatchSourceBundle) -> tuple[Path, str]:
+    declared_path = bundle.spec.path.replace("\\", "/").strip()
+    if declared_path and not _looks_absolute_or_remote_path(declared_path):
+        pure_path = PurePosixPath(declared_path)
+        if pure_path.parts and ".." not in pure_path.parts:
+            bundle_relative = Path("landing_snapshot").joinpath(*pure_path.parts)
+            replay_relative = _to_posix(Path(*pure_path.parts))
+            return bundle_relative, replay_relative
+
+    bundle_relative = Path("landing_snapshot") / "source_bundles" / bundle.spec.bundle_id
+    replay_relative = _to_posix(Path("source_bundles") / bundle.spec.bundle_id)
+    return bundle_relative, replay_relative
+
+
+def _bundle_source_bundle_overlay_relative_paths(
+    bundle: ResolvedBatchSourceBundle,
+    *,
+    bundle_relative_root: Path,
+) -> tuple[Path, str]:
+    candidate_relative_path = _bundle_overlay_relative_path(bundle)
+    return bundle_relative_root / candidate_relative_path, _to_posix(candidate_relative_path)
+
+
+def _bundle_overlay_relative_path(bundle: ResolvedBatchSourceBundle) -> Path:
+    if bundle.spec.mapping_overlay:
+        declared_path = bundle.spec.mapping_overlay.replace("\\", "/").strip()
+        if declared_path and not _looks_absolute_or_remote_path(declared_path):
+            pure_path = PurePosixPath(declared_path)
+            if pure_path.parts and ".." not in pure_path.parts:
+                return Path(*pure_path.parts)
+
+    if bundle.mapping_overlay_reference is not None:
+        relative_path = _relative_reference_to_bundle_root(
+            bundle.bundle_reference,
+            bundle.mapping_overlay_reference,
+        )
+        if relative_path is not None:
+            return relative_path
+
+        overlay_filename = _reference_name(bundle.mapping_overlay_reference)
+        return Path("_replay_bundle") / "mapping_overlay" / overlay_filename
+
+    return Path("_replay_bundle") / "mapping_overlay" / "mapping_overlay.yml"
+
+
 def _looks_absolute_or_remote_path(value: str) -> bool:
     if "://" in value:
         return True
@@ -416,6 +560,50 @@ def _looks_absolute_or_remote_path(value: str) -> bool:
     if pure_path.is_absolute():
         return True
     return len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/")
+
+
+def _resolve_bundle_artifact_reference(bundle_reference: str, relative_path: str) -> str:
+    if "://" in bundle_reference:
+        parts = urlsplit(bundle_reference)
+        joined_path = posixpath.join(parts.path.rstrip("/") or "/", relative_path.lstrip("/"))
+        return urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                joined_path,
+                parts.query,
+                parts.fragment,
+            )
+        )
+    return str(Path(bundle_reference) / relative_path)
+
+
+def _relative_reference_to_bundle_root(bundle_reference: str, reference: str) -> Path | None:
+    if "://" in bundle_reference and "://" in reference:
+        bundle_parts = urlsplit(bundle_reference)
+        reference_parts = urlsplit(reference)
+        if (
+            bundle_parts.scheme == reference_parts.scheme
+            and bundle_parts.netloc == reference_parts.netloc
+        ):
+            bundle_path = PurePosixPath(bundle_parts.path or "/")
+            reference_path = PurePosixPath(reference_parts.path or "/")
+            try:
+                relative_path = reference_path.relative_to(bundle_path)
+            except ValueError:
+                return None
+            if relative_path.parts and ".." not in relative_path.parts:
+                return Path(*relative_path.parts)
+        return None
+
+    if "://" in bundle_reference or "://" in reference:
+        return None
+
+    try:
+        relative_path = Path(reference).resolve().relative_to(Path(bundle_reference).resolve())
+    except ValueError:
+        return None
+    return relative_path
 
 
 def _read_source_payload(resolved_manifest: ResolvedBatchManifest, source: ResolvedBatchSource) -> bytes:
@@ -437,9 +625,34 @@ def _read_source_payload(resolved_manifest: ResolvedBatchManifest, source: Resol
         return handle.read()
 
 
+def _read_reference_payload(
+    reference: str,
+    *,
+    storage_options: Mapping[str, str | int | float | bool] | None = None,
+) -> bytes:
+    if "://" not in reference:
+        return Path(reference).read_bytes()
+
+    try:
+        import fsspec
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Replay-bundle archiving for object-storage manifests requires `fsspec`."
+        ) from exc
+
+    with fsspec.open(reference, "rb", **dict(storage_options or {})) as handle:
+        return handle.read()
+
+
 def _hash_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
 def _to_posix(path: Path) -> str:
     return path.as_posix()
+
+
+def _reference_name(reference: str) -> str:
+    parsed = urlsplit(reference)
+    candidate_name = Path(parsed.path).name if parsed.scheme else Path(reference).name
+    return candidate_name or "artifact.bin"
