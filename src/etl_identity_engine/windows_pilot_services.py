@@ -261,7 +261,6 @@ def query_windows_pilot_service_status(
     bundle_root: Path,
 ) -> WindowsPilotServiceStatus:
     _require_windows_host()
-    _, _, _, win32serviceutil = _win32_modules()
     definition = load_windows_pilot_service_definitions(bundle_root)[service_kind]
     if not _service_exists(definition.service_name):
         return WindowsPilotServiceStatus(

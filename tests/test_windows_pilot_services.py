@@ -14,6 +14,18 @@ from etl_identity_engine.windows_pilot_services import (
 )
 
 
+def _expected_service_command(bundle_root: Path, expected_args: list[str]) -> list[str]:
+    resolved_args: list[str] = []
+    for arg in expected_args:
+        if arg.endswith(".py"):
+            resolved_args.append(str(bundle_root.joinpath(*arg.split("\\"))))
+        elif arg.startswith("runtime\\"):
+            resolved_args.append(str(bundle_root.joinpath(*arg.split("\\"))))
+        else:
+            resolved_args.append(arg)
+    return resolved_args
+
+
 def _write_bootstrap_bundle(root: Path) -> None:
     (root / "runtime").mkdir(parents=True, exist_ok=True)
     (root / "pilot_manifest.json").write_text(
@@ -252,7 +264,7 @@ def test_service_subprocess_command_builds_expected_commands(
     command, cwd, env = windows_pilot_services._service_subprocess_command("svc-name", service_kind)
 
     assert command[0] == str(python_executable)
-    assert command[1:] == [str(bundle_root / arg) if "\\" in arg and arg.endswith(".py") or arg.startswith("runtime\\") else arg for arg in expected_args]
+    assert command[1:] == _expected_service_command(bundle_root, expected_args)
     assert cwd == bundle_root
     assert env["EXTRA"] == "1"
     assert env["PYTHONUNBUFFERED"] == "1"
