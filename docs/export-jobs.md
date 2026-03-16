@@ -167,4 +167,4 @@ audit tracking. It does not yet add:
   contract
 - authenticated remote export orchestration
 
-Those remain follow-on work in the active backlog.
+Those remain follow-on work for a later roadmap cycle.

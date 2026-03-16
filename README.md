@@ -685,6 +685,7 @@ python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-
 The default backlog source is
 `planning/active-github-issues-backlog.md`. The bootstrap backlog at
 `planning/github-issues-backlog.md` and the completed
+`planning/post-v1.4.0-github-issues-backlog.md`,
 `planning/post-v1.5.0-github-issues-backlog.md`,
 `planning/post-v1.2.0-github-issues-backlog.md`,
 `planning/post-v0.9.0-github-issues-backlog.md`,
@@ -698,8 +699,9 @@ python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-
 ```
 
 By default, the backlog automation ignores catalog entries marked
-`Status: closed` so the active backlog file can remain a historical
-record after a cycle is complete without recreating closed GitHub work.
+`Status: closed`. The active backlog file may also be empty between
+roadmap cycles; archive completed catalogs into the historical planning
+files instead of leaving closed work in the active source.
 
 When filing new work manually, use the GitHub issue forms for `bug`,
 `feature`, `docs`, `chore`, and `epic` so issues stay aligned with the

@@ -122,4 +122,5 @@ It does not yet provide:
 
 - image-signing or supply-chain hardening
 
-Those remain tracked in the active backlog.
+Those remain future roadmap work rather than part of the current
+container baseline.

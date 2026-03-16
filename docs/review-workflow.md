@@ -121,4 +121,5 @@ It does not yet:
 - expose field-level or tenant-level review authorization beyond the
   current `operator` role plus `review_cases:write` scope
 
-Those remain tracked in the active backlog.
+Those remain future workflow extensions rather than part of the current
+review baseline.

@@ -1,7 +1,7 @@
 # Project Structure Outline
 
 Date prepared: 2026-03-12
-Last updated: 2026-03-15
+Last updated: 2026-03-16
 
 ## Objective
 
@@ -12,11 +12,10 @@ Define and track the repository structure for implementing the ETL Identity Data
 `M1` through `M6` are implemented in-repo, the public line has now
 advanced through the published `v1.1.0` release, the tracked
 `v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, the
-`v1.3.0`-`v1.5.0` supportability cycle is now archived as historical
-planning state, and the current backlog cycle is opening the next
-tracked gaps: multi-tenant security and HA deployment, live CAD/RMS
-integration targets, and production acceptance with CJIS operating
-controls.
+`v1.3.0`-`v1.5.0` supportability cycle is archived as historical
+planning state, the `v1.2.0`-`v1.4.0` roadmap cycle is also complete and
+archived, and there is no active roadmap backlog currently open in
+GitHub.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -68,13 +67,16 @@ ETL-Identity-Data-Ruleset-Engine/
     cad-source-contract.md
     compatibility-policy.md
     container-deployment.md
+    cjis-evidence-cadence.md
     cjis-deployment-baseline.md
+    customer-handoff-package.md
     customer-pilot-acceptance-checklist.md
     customer-pilot-bundle.md
     customer-pilot-readiness.md
     customer-pilot-runbooks.md
     event-stream-ingestion.md
     kubernetes-deployment.md
+    kubernetes-ha-deployment.md
     data-model.md
     delivery-contracts.md
     encrypted-backup-bundles.md
@@ -85,6 +87,7 @@ ETL-Identity-Data-Ruleset-Engine/
     operations-observability.md
     output-contracts.md
     persistent-state.md
+    production-acceptance-suite.md
     production-batch-manifest.md
     production-operating-model.md
     public-safety-onboarding.md
@@ -106,6 +109,7 @@ ETL-Identity-Data-Ruleset-Engine/
     post-v0.6.0-github-issues-backlog.md
     post-v0.9.0-github-issues-backlog.md
     post-v1.2.0-github-issues-backlog.md
+    post-v1.4.0-github-issues-backlog.md
     post-v1.5.0-github-issues-backlog.md
     project-structure-outline.md
     remaining-work-task-list.md
@@ -227,14 +231,11 @@ The current public line is now explicitly scoped around:
 
 - scaffold, governance, CI, templates, CLI baseline
 
-## Post-Release Focus
+## Next Planning Step
 
-- execute the new post-`v1.1.0` backlog cycle tracked in
-  `planning/active-github-issues-backlog.md`
-- add tenant-aware state, service, and field-authorization boundaries
-  for protected multi-tenant deployments
-- add supported live CAD and RMS integration targets beyond the current
-  synthetic and vendor-shaped rehearsal flows
-- add production acceptance, promotion, and CJIS operating-control
-  readiness artifacts for protected pilot environments
+- define the next roadmap cycle before creating additional GitHub
+  issues
+- keep completed cycles archived under `planning/post-*.md`
+- keep `planning/active-github-issues-backlog.md` as the current sync
+  source, even when that file is intentionally empty between cycles
 
