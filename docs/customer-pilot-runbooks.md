@@ -12,6 +12,9 @@ These runbooks cover the supported single-host customer pilot baseline:
 They are intentionally limited to the supported pilot topology. They are
 not production operations procedures.
 
+For the protected-pilot and production-like operator handoff baseline,
+use [customer-handoff-package.md](customer-handoff-package.md).
+
 ## Install
 
 From the extracted bundle root:

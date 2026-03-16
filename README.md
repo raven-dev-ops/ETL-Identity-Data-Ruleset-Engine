@@ -172,9 +172,9 @@ is included in the repository.
   archived replay bundles for manifest-era inputs,
   manifest-driven incremental refresh, a container image, a single-host
   compose deployment baseline, a Kubernetes PostgreSQL-backed
-  deployment baseline, named benchmark fixtures with single-host and
-  clustered capacity targets, and an authenticated operator service API
-  are now available.
+  deployment baseline, an external-HA PostgreSQL app baseline, named
+  benchmark fixtures with single-host and clustered capacity targets,
+  and an authenticated operator service API are now available.
   The current production runtime supports JWT bearer auth backed by
   deployment-supplied issuer, audience, and signing metadata, while the
   local container baseline retains API-key compatibility mode. The
@@ -228,11 +228,13 @@ is included in the repository.
 - [Benchmarking and Capacity](docs/benchmarking-and-capacity.md)
 - [Container Deployment](docs/container-deployment.md)
 - [CJIS Deployment Baseline](docs/cjis-deployment-baseline.md)
+- [Kubernetes HA Deployment](docs/kubernetes-ha-deployment.md)
 - [CJIS Evidence Cadence](docs/cjis-evidence-cadence.md)
 - [Customer Pilot Bundle](docs/customer-pilot-bundle.md)
 - [Customer Pilot Runbooks](docs/customer-pilot-runbooks.md)
 - [Customer Pilot Acceptance Checklist](docs/customer-pilot-acceptance-checklist.md)
 - [Customer Pilot Readiness](docs/customer-pilot-readiness.md)
+- [Customer Handoff Package](docs/customer-handoff-package.md)
 - [Protected Pilot Promotion](docs/protected-pilot-promotion.md)
 - [Event Stream Ingestion](docs/event-stream-ingestion.md)
 - [Kubernetes Deployment](docs/kubernetes-deployment.md)
@@ -538,6 +540,8 @@ The operator/admin runbooks and the acceptance checklist are documented
 in [docs/customer-pilot-runbooks.md](docs/customer-pilot-runbooks.md)
 and
 [docs/customer-pilot-acceptance-checklist.md](docs/customer-pilot-acceptance-checklist.md).
+The protected-pilot operator handoff baseline is documented in
+[docs/customer-handoff-package.md](docs/customer-handoff-package.md).
 
 For the supported Windows-first single-host pilot path over local
 PostgreSQL, use the documented bootstrap in

@@ -15,8 +15,9 @@ deployment with these boundaries:
   `operator` roles, typically via JWT bearer auth, plus endpoint-level
   scopes
 - operators deploy either the documented single-host container topology,
-  the documented Kubernetes PostgreSQL-backed topology, or an
-  equivalent runtime with the same config and state model
+  the documented Kubernetes PostgreSQL-backed topology, the documented
+  Kubernetes external-HA PostgreSQL app baseline, or an equivalent
+  runtime with the same config and state model
 - downstream consumers integrate through the documented service API,
   delivery contract, or export-job surfaces
 
@@ -27,6 +28,8 @@ The current supported deployment environments are:
 - the documented single-host container topology under `deploy/`
 - the documented Kubernetes PostgreSQL-backed topology under
   `deploy/kubernetes/`
+- the documented Kubernetes external-HA PostgreSQL app baseline under
+  `deploy/kubernetes-ha/`
 - an equivalent single-host Python runtime that uses the same
   persisted-state, service-auth, and runtime-config surfaces
 - Linux, Windows, and macOS for maintainer validation, with Linux and
@@ -35,7 +38,6 @@ The current supported deployment environments are:
 
 The current production target does not yet claim support for:
 
-- multi-node or high-availability database topologies
 - real-time or streaming identity resolution
 
 ## Rollout Phases
@@ -53,6 +55,8 @@ Before first production cutover:
   [protected-pilot-promotion.md](protected-pilot-promotion.md)
 - run the consolidated readiness report in
   [production-acceptance-suite.md](production-acceptance-suite.md)
+- hand off the operator response, review, and training packet from
+  [customer-handoff-package.md](customer-handoff-package.md)
 - confirm runtime-environment secrets are supplied externally rather
   than committed into repo config
 - confirm downstream consumers are using only documented stable
@@ -226,6 +230,9 @@ Use these escalation boundaries:
 - review-case or data-quality dispute: data operator
 - contract misunderstanding or release-process drift in the repo:
   maintainer backlog and release process
+
+The packaged customer handoff baseline for those boundaries is
+documented in [customer-handoff-package.md](customer-handoff-package.md).
 
 ## Coherent Release Target
 

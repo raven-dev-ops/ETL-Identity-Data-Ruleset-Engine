@@ -82,3 +82,7 @@ It does not, by itself, answer:
 - whether the agency has completed policy signoff
 - whether operator staffing and training are complete
 - whether non-product operational controls are satisfied
+
+Use [customer-handoff-package.md](customer-handoff-package.md) for the
+repo-side incident-response, audit-review, support-bundle, and training
+baseline that sits next to this readiness report.

@@ -127,6 +127,10 @@ For steady-state operation after cutover, run the recurring repo-side
 evidence loop in [cjis-evidence-cadence.md](cjis-evidence-cadence.md)
 so the latest evidence capture has an explicit due date and overdue
 status.
+Complete the operator handoff package in
+[customer-handoff-package.md](customer-handoff-package.md) so the
+cutover packet also includes the incident-response, audit-review, and
+training baseline.
 
 ## Recommended Rollout Order
 
@@ -138,7 +142,9 @@ status.
    deployment topology.
 6. Seal the protected-pilot promotion inputs with
    [protected-pilot-promotion.md](protected-pilot-promotion.md).
-7. Only then move into agency-specific acceptance and governance work.
+7. Deliver the operator handoff packet from
+   [customer-handoff-package.md](customer-handoff-package.md).
+8. Only then move into agency-specific acceptance and governance work.
 
 ## External References
 
