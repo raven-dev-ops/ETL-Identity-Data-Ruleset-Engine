@@ -3,9 +3,10 @@
 Date prepared: 2026-03-15
 Last updated: 2026-03-15
 
-This checklist mirrors the active post-`v1.1.0` backlog in
-`planning/active-github-issues-backlog.md`. GitHub remains the source
-of truth for tracked work; this file is the short maintainer view.
+This checklist records the completed post-`v1.1.0` backlog cycle that
+is now archived in `planning/post-v1.4.0-github-issues-backlog.md`.
+GitHub remains the source of truth for tracked work; this file is the
+short maintainer view for the finished cycle.
 
 ## Current Status
 
@@ -22,13 +23,13 @@ of truth for tracked work; this file is the short maintainer view.
   `v1.2.0-multi-tenant-foundation`,
   `v1.3.0-live-integrations`, and `v1.4.0-cjis-acceptance`.
 
-## Open Task Groups
+## Completed Task Groups
 
 - [x] `v1.2.0-multi-tenant-foundation` Multi-tenant security and high-availability foundation
 - [x] `v1.3.0-live-integrations` Live CAD/RMS integration targets
 - [x] `v1.4.0-cjis-acceptance` Production acceptance and CJIS operating controls
 
-## Gaps Now Explicitly Tracked
+## Cycle Gaps Closed
 
 - [x] Tenant-aware persisted-state boundaries
 - [x] Tenant-scoped service authorization

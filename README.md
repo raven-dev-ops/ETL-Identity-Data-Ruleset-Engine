@@ -209,6 +209,7 @@ is included in the repository.
 - [Project Structure Outline](planning/project-structure-outline.md)
 - [Remaining Work Task List](planning/remaining-work-task-list.md)
 - [Active GitHub Issues Backlog](planning/active-github-issues-backlog.md)
+- [Post-v1.4.0 GitHub Issues Backlog (Historical)](planning/post-v1.4.0-github-issues-backlog.md)
 - [Post-v1.5.0 GitHub Issues Backlog (Historical)](planning/post-v1.5.0-github-issues-backlog.md)
 - [Post-v1.2.0 GitHub Issues Backlog (Historical)](planning/post-v1.2.0-github-issues-backlog.md)
 - [Post-v0.9.0 GitHub Issues Backlog (Historical)](planning/post-v0.9.0-github-issues-backlog.md)

@@ -34,25 +34,17 @@ def test_parse_backlog_current_catalog() -> None:
     assert parsed.issues[-1].title == "Clean up README encoding and formatting artifacts"
 
 
-def test_parse_backlog_active_catalog() -> None:
+def test_parse_backlog_active_catalog_can_be_empty_between_cycles() -> None:
     parsed = MODULE.parse_backlog(
         ACTIVE_BACKLOG_PATH.read_text(encoding="utf-8"),
         source_label="planning/active-github-issues-backlog.md",
     )
 
-    assert parsed.milestones == (
-        "v1.2.0-multi-tenant-foundation",
-        "v1.3.0-live-integrations",
-        "v1.4.0-cjis-acceptance",
-    )
-    assert len(parsed.labels) == 21
-    assert len(parsed.epics) == 3
-    assert len(parsed.issues) == 12
-    assert parsed.issues[0].catalog_number == 129
-    assert parsed.issues[-1].catalog_number == 140
-    assert {issue.status for issue in parsed.issues} == {"open"}
-    assert parsed.epics[0].description_items == (
-        "Epic created from planning/active-github-issues-backlog.md",
+    assert parsed == MODULE.ParsedBacklog(
+        milestones=(),
+        labels=(),
+        epics=(),
+        issues=(),
     )
 
 
@@ -64,25 +56,11 @@ def test_select_sync_backlog_skips_closed_catalog_entries_by_default() -> None:
 
     sync_backlog = MODULE.select_sync_backlog(parsed, include_closed=False)
 
-    assert len(sync_backlog.issues) == 12
-    assert tuple(issue.catalog_number for issue in sync_backlog.issues) == (
-        129,
-        130,
-        131,
-        132,
-        133,
-        134,
-        135,
-        136,
-        137,
-        138,
-        139,
-        140,
-    )
-    assert sync_backlog.milestones == (
-        "v1.2.0-multi-tenant-foundation",
-        "v1.3.0-live-integrations",
-        "v1.4.0-cjis-acceptance",
+    assert sync_backlog == MODULE.ParsedBacklog(
+        milestones=(),
+        labels=(),
+        epics=(),
+        issues=(),
     )
 
 
