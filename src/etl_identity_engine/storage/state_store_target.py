@@ -9,6 +9,7 @@ import re
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL, make_url
+from sqlalchemy.pool import NullPool
 
 
 SUPPORTED_STATE_STORE_BACKENDS = frozenset({"sqlite", "postgresql"})
@@ -118,7 +119,13 @@ def create_state_store_engine(state_db: str | Path | StateStoreTarget) -> Engine
     if target.file_path is not None:
         target.file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    engine = create_engine(target.sqlalchemy_url, future=True)
+    engine_kwargs: dict[str, object] = {"future": True}
+    if target.backend == "sqlite" and target.file_path is not None:
+        # File-backed SQLite state stores are short-lived and test-heavy; disable pooling so
+        # SQLAlchemy does not keep DB-API connections open past each context-managed operation.
+        engine_kwargs["poolclass"] = NullPool
+
+    engine = create_engine(target.sqlalchemy_url, **engine_kwargs)
     if target.backend == "sqlite":
         event.listen(engine, "connect", _set_sqlite_foreign_keys)
     return engine

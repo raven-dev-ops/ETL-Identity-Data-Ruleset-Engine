@@ -64,6 +64,10 @@ source = ["etl_identity_engine"]
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
+omit = [
+  "src/etl_identity_engine/storage/migrations/env.py",
+  "src/etl_identity_engine/storage/migrations/versions/*.py",
+]
 
 [tool.ruff]
 line-length = 100

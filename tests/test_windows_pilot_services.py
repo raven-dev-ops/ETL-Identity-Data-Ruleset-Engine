@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+import etl_identity_engine.windows_pilot_services as windows_pilot_services
 from etl_identity_engine.windows_pilot_services import (
     WindowsPilotServiceDefinition,
     WindowsPilotServiceStatus,
@@ -106,3 +109,167 @@ def test_manage_windows_pilot_services_sequences_actions(tmp_path: Path, monkeyp
     assert status_calls == ["demo_shell", "service_api"]
     assert summary["action"] == "install-and-start"
     assert len(summary["results"]) == 4
+
+
+def test_read_env_file_ignores_comments_and_invalid_lines(tmp_path: Path) -> None:
+    env_path = tmp_path / "runtime.env"
+    env_path.write_text(
+        """
+# comment
+ETL_IDENTITY_STATE_DB=state.sqlite
+INVALID_LINE
+ETL_IDENTITY_SERVICE_OPERATOR_API_KEY = secret
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert windows_pilot_services._read_env_file(env_path) == {
+        "ETL_IDENTITY_STATE_DB": "state.sqlite",
+        "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY": "secret",
+    }
+
+
+def test_service_startup_to_value_maps_manual_and_auto(monkeypatch) -> None:
+    fake_win32service = type(
+        "FakeWin32Service",
+        (),
+        {"SERVICE_DEMAND_START": 3, "SERVICE_AUTO_START": 2},
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_win32_modules",
+        lambda: (None, None, fake_win32service, None),
+    )
+
+    assert windows_pilot_services._service_startup_to_value("manual") == 3
+    assert windows_pilot_services._service_startup_to_value("auto") == 2
+
+    with pytest.raises(ValueError, match="Service startup must be 'manual' or 'auto'"):
+        windows_pilot_services._service_startup_to_value("delayed")
+
+
+def test_query_windows_pilot_service_status_returns_not_installed(tmp_path: Path, monkeypatch) -> None:
+    definition = WindowsPilotServiceDefinition(
+        kind="demo_shell",
+        service_name="svc-demo_shell",
+        display_name="display-demo_shell",
+        description="description-demo_shell",
+        python_class="class-demo_shell",
+        host="127.0.0.1",
+        port=8000,
+        startup="manual",
+    )
+
+    monkeypatch.setattr(windows_pilot_services, "_require_windows_host", lambda: None)
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "load_windows_pilot_service_definitions",
+        lambda bundle_root: {"demo_shell": definition},
+    )
+    monkeypatch.setattr(windows_pilot_services, "_service_exists", lambda service_name: False)
+
+    status = windows_pilot_services.query_windows_pilot_service_status("demo_shell", bundle_root=tmp_path)
+
+    assert status == WindowsPilotServiceStatus(
+        kind="demo_shell",
+        service_name="svc-demo_shell",
+        display_name="display-demo_shell",
+        installed=False,
+        status_code=None,
+        status="not_installed",
+    )
+
+
+@pytest.mark.parametrize(
+    ("service_kind", "expected_args"),
+    [
+        (
+            "demo_shell",
+            [
+                "tools\\rebuild_demo_shell.py",
+                "--state-db",
+                "state.sqlite",
+                "--run-id",
+                "RUN-1",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ],
+        ),
+        (
+            "service_api",
+            [
+                "-m",
+                "etl_identity_engine.cli",
+                "serve-api",
+                "--environment",
+                "container",
+                "--runtime-config",
+                "runtime\\config\\runtime_environments.yml",
+                "--state-db",
+                "state.sqlite",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8010",
+            ],
+        ),
+    ],
+)
+def test_service_subprocess_command_builds_expected_commands(
+    tmp_path: Path,
+    monkeypatch,
+    service_kind: str,
+    expected_args: list[str],
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    python_executable = bundle_root / ".venv" / "Scripts" / "python.exe"
+    python_executable.parent.mkdir(parents=True, exist_ok=True)
+    python_executable.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(windows_pilot_services, "_service_bundle_root", lambda service_name: bundle_root)
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_bootstrap_config",
+        lambda service_name: {
+            "state_db": "state.sqlite",
+            "run_id": "RUN-1",
+            "demo_host": "127.0.0.1",
+            "demo_port": 8000,
+            "service_host": "127.0.0.1",
+            "service_port": 8010,
+        },
+    )
+    monkeypatch.setattr(windows_pilot_services, "_service_runtime_env", lambda service_name: {"EXTRA": "1"})
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_runtime_option",
+        lambda service_name, option_name, default=None: default,
+    )
+
+    command, cwd, env = windows_pilot_services._service_subprocess_command("svc-name", service_kind)
+
+    assert command[0] == str(python_executable)
+    assert command[1:] == [str(bundle_root / arg) if "\\" in arg and arg.endswith(".py") or arg.startswith("runtime\\") else arg for arg in expected_args]
+    assert cwd == bundle_root
+    assert env["EXTRA"] == "1"
+    assert env["PYTHONUNBUFFERED"] == "1"
+
+
+def test_service_log_paths_fall_back_to_bundle_runtime_logs(tmp_path: Path, monkeypatch) -> None:
+    bundle_root = tmp_path / "bundle"
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_runtime_option",
+        lambda service_name, option_name, default=None: (
+            None if option_name == "log_dir" else str(bundle_root) if option_name == "bundle_root" else default
+        ),
+    )
+
+    stdout_path, stderr_path = windows_pilot_services._service_log_paths("svc-demo", "demo_shell")
+
+    assert stdout_path == bundle_root / "runtime" / "logs" / "demo_shell.stdout.log"
+    assert stderr_path == bundle_root / "runtime" / "logs" / "demo_shell.stderr.log"
+    assert stdout_path.parent.exists()

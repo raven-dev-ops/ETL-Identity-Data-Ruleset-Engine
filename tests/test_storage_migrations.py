@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 
@@ -17,7 +18,7 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
     bootstrap_sqlite_store(db_path)
 
     assert current_sqlite_store_revision(db_path) == head_revision()
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection:
         table_names = {
             row[0]
             for row in connection.execute(

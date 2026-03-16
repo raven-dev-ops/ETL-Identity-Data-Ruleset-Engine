@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from contextlib import closing
+import importlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
 import shutil
 import sys
+
+import pytest
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -47,7 +52,7 @@ def test_prepare_public_safety_demo_shell_loads_bundle_into_sqlite(tmp_path_fact
     assert (prepared.bundle_root / "data" / "public_safety_demo" / "public_safety_demo_summary.json").exists()
     assert (prepared.bundle_root / prepared.bundle_path.name).exists()
 
-    with sqlite3.connect(prepared.db_path) as connection:
+    with closing(sqlite3.connect(prepared.db_path)) as connection:
         table_names = {
             row[0]
             for row in connection.execute("select name from sqlite_master where type = 'table'")
@@ -157,7 +162,7 @@ def test_prepare_public_safety_demo_shell_from_persisted_state(tmp_path_factory)
     assert (prepared.bundle_root / "data" / "public_safety_demo" / "public_safety_demo_summary.json").exists()
     assert (prepared.bundle_root / "persisted_run_source.json").exists()
 
-    with sqlite3.connect(prepared.db_path) as connection:
+    with closing(sqlite3.connect(prepared.db_path)) as connection:
         demo_run_row = connection.execute(
             "select bundle_name, incident_count, cross_system_golden_person_count from demo_shell_demorun"
         ).fetchone()
@@ -179,3 +184,85 @@ def test_prepare_public_safety_demo_shell_from_persisted_state(tmp_path_factory)
     summary = json.loads(b"".join(artifact_response.streaming_content).decode("utf-8"))
     assert summary["source_run_id"] == run_id
     assert summary["source_mode"] == "persisted_state"
+
+
+def test_load_public_safety_demo_bundle_command_loads_bundle_and_requires_replace(
+    tmp_path_factory,
+) -> None:
+    prepared = _prepared_shell(tmp_path_factory)
+    workspace = tmp_path_factory.mktemp("public-safety-demo-command")
+
+    import django
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from etl_identity_engine.demo_shell.bootstrap import configure_demo_shell_environment
+    from etl_identity_engine.demo_shell.models import DemoRun
+
+    extract_dir = workspace / "bundle"
+    configure_demo_shell_environment(output_dir=workspace, bundle_root=extract_dir)
+    django.setup()
+    call_command("migrate", interactive=False, verbosity=0)
+
+    call_command(
+        "load_public_safety_demo_bundle",
+        bundle=str(prepared.bundle_path),
+        extract_dir=str(extract_dir),
+        verbosity=0,
+    )
+
+    first_run = DemoRun.objects.get()
+    assert first_run.bundle_name == prepared.bundle_path.name
+    assert Path(first_run.bundle_root) == extract_dir.resolve()
+
+    with pytest.raises(CommandError, match="already loaded"):
+        call_command(
+            "load_public_safety_demo_bundle",
+            bundle=str(prepared.bundle_path),
+            extract_dir=str(extract_dir),
+            verbosity=0,
+        )
+
+    call_command(
+        "load_public_safety_demo_bundle",
+        bundle=str(prepared.bundle_path),
+        extract_dir=str(extract_dir),
+        replace=True,
+        verbosity=0,
+    )
+
+    assert DemoRun.objects.count() == 1
+
+
+def test_load_public_safety_demo_bundle_command_rejects_missing_bundle(tmp_path: Path) -> None:
+    import django
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from etl_identity_engine.demo_shell.bootstrap import configure_demo_shell_environment
+
+    extract_dir = tmp_path / "bundle"
+    configure_demo_shell_environment(output_dir=tmp_path, bundle_root=extract_dir)
+    django.setup()
+    call_command("migrate", interactive=False, verbosity=0)
+
+    with pytest.raises(CommandError, match="Demo bundle not found"):
+        call_command(
+            "load_public_safety_demo_bundle",
+            bundle=str(tmp_path / "missing-demo-bundle.zip"),
+            extract_dir=str(extract_dir),
+            verbosity=0,
+        )
+
+
+def test_demo_shell_wsgi_sets_default_settings_module(tmp_path: Path, monkeypatch) -> None:
+    from etl_identity_engine.demo_shell.bootstrap import configure_demo_shell_environment
+
+    configure_demo_shell_environment(output_dir=tmp_path)
+    monkeypatch.delenv("DJANGO_SETTINGS_MODULE", raising=False)
+    sys.modules.pop("etl_identity_engine.demo_shell.wsgi", None)
+
+    module = importlib.import_module("etl_identity_engine.demo_shell.wsgi")
+
+    assert os.environ["DJANGO_SETTINGS_MODULE"] == "etl_identity_engine.demo_shell.settings"
+    assert callable(module.application)

@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sqlalchemy.pool import NullPool
 
 from etl_identity_engine.runtime_config import load_runtime_environment
 from etl_identity_engine.storage import migration_runner
 from etl_identity_engine.storage.state_store_target import (
+    create_state_store_engine,
     resolve_state_store_target,
     state_store_display_name,
     state_store_reference_name,
@@ -30,6 +32,14 @@ def test_state_store_reference_name_uses_filename_for_file_backed_sqlite(tmp_pat
 
     assert state_store_display_name(db_path) == str(db_path.resolve())
     assert state_store_reference_name(db_path) == "pipeline_state.sqlite"
+
+
+def test_create_state_store_engine_disables_pooling_for_file_backed_sqlite(tmp_path: Path) -> None:
+    engine = create_state_store_engine(tmp_path / "state" / "pipeline_state.sqlite")
+    try:
+        assert isinstance(engine.pool, NullPool)
+    finally:
+        engine.dispose()
 
 
 def test_load_runtime_environment_allows_postgresql_state_store_url(

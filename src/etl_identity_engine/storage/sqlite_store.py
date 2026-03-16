@@ -574,6 +574,24 @@ class SQLitePipelineStore:
         bootstrap_state_store(self.state_db)
         self.engine: Engine = create_state_store_engine(self.target)
 
+    def close(self) -> None:
+        self.engine.dispose()
+
+    def __enter__(self) -> SQLitePipelineStore:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        engine = getattr(self, "engine", None)
+        if engine is None:
+            return
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+
     def _fetchone(
         self,
         connection: Connection,
@@ -1159,7 +1177,7 @@ class SQLitePipelineStore:
         summary: dict[str, object],
     ) -> None:
         with self.engine.begin() as connection:
-            cursor = connection.execute(
+            updated_rows = connection.execute(
                 text(
                     """
                     UPDATE pipeline_runs
@@ -1181,8 +1199,8 @@ class SQLitePipelineStore:
                     "review_queue_count": int(summary.get("review_queue_count", 0)),
                     "summary_json": json.dumps(summary, sort_keys=True),
                 },
-            )
-        if cursor.rowcount == 0:
+            ).rowcount
+        if updated_rows == 0:
             raise FileNotFoundError(f"Persisted run not found: {run_id}")
 
     def mark_run_failed(
@@ -2300,7 +2318,7 @@ class SQLitePipelineStore:
             next_resolved_at = ""
 
         with self.engine.begin() as connection:
-            cursor = connection.execute(
+            updated_rows = connection.execute(
                 text(
                     """
                     UPDATE review_cases
@@ -2321,8 +2339,8 @@ class SQLitePipelineStore:
                     "run_id": run_id,
                     "review_id": review_id,
                 },
-            )
-        if cursor.rowcount == 0:
+            ).rowcount
+        if updated_rows == 0:
             raise FileNotFoundError(f"Persisted review case not found: run_id={run_id} review_id={review_id}")
         return self.load_review_case(run_id=run_id, review_id=review_id)
 

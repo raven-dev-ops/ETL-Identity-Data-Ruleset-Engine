@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import csv
 import json
 import shutil
@@ -32,7 +33,7 @@ def _write_csv_rows(path: Path, rows: list[dict[str, str]]) -> None:
 
 
 def _read_pipeline_runs(db_path: Path) -> list[sqlite3.Row]:
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection:
         connection.row_factory = sqlite3.Row
         return connection.execute(
             """
@@ -129,7 +130,7 @@ def test_bootstrap_sqlite_store_creates_expected_tables(tmp_path: Path) -> None:
 
     bootstrap_sqlite_store(db_path)
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection:
         names = {
             row[0]
             for row in connection.execute(
