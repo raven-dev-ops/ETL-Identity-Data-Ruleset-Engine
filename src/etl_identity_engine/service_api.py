@@ -34,6 +34,7 @@ from etl_identity_engine.storage.sqlite_store import (
     PipelineStateStore,
     PipelineRunRecord,
     StoreOperationalMetrics,
+    normalize_tenant_id,
 )
 from etl_identity_engine.storage.state_store_target import resolve_state_store_target
 
@@ -62,6 +63,7 @@ AuditEventStatus = Literal["succeeded", "failed", "noop", "reused"]
 class AuthenticatedPrincipal:
     role: ServiceRole
     auth_mode: Literal["api_key", "jwt"]
+    tenant_id: str
     subject: str | None = None
     scopes: tuple[str, ...] = ()
 
@@ -605,6 +607,57 @@ def _normalize_claim_values(value: Any) -> set[str]:
     return set()
 
 
+def _resolve_api_key_tenant_id(
+    configured_tenant_id: str | None,
+    *,
+    principal_label: str,
+) -> str:
+    if configured_tenant_id is None:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "API key service authentication is misconfigured: missing tenant binding for "
+                f"{principal_label} principal"
+            ),
+        )
+    try:
+        return normalize_tenant_id(configured_tenant_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"API key service authentication is misconfigured: {error}",
+        ) from error
+
+
+def _resolve_jwt_tenant_id(
+    claims: Mapping[str, Any],
+    service_auth: ServiceAuthConfig,
+) -> str:
+    tenant_claim_path = service_auth.tenant_claim_path
+    if tenant_claim_path is None:
+        raise HTTPException(
+            status_code=500,
+            detail="JWT service authentication is misconfigured: missing tenant_claim_path",
+        )
+
+    tenant_value = _extract_claim_value(claims, tenant_claim_path)
+    if not isinstance(tenant_value, str) or not tenant_value.strip():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Bearer token claims do not resolve to exactly one tenant via "
+                f"{tenant_claim_path}"
+            ),
+        )
+    try:
+        return normalize_tenant_id(tenant_value)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Bearer token tenant claim is invalid: {error}",
+        ) from error
+
+
 def _authenticate_api_key(
     service_auth: ServiceAuthConfig,
     *,
@@ -621,12 +674,20 @@ def _authenticate_api_key(
         return AuthenticatedPrincipal(
             role="reader",
             auth_mode="api_key",
+            tenant_id=_resolve_api_key_tenant_id(
+                service_auth.reader_tenant_id,
+                principal_label="reader",
+            ),
             scopes=service_auth.reader_scopes,
         )
     if normalized_key == service_auth.operator_api_key:
         return AuthenticatedPrincipal(
             role="operator",
             auth_mode="api_key",
+            tenant_id=_resolve_api_key_tenant_id(
+                service_auth.operator_tenant_id,
+                principal_label="operator",
+            ),
             scopes=service_auth.operator_scopes,
         )
     raise HTTPException(status_code=401, detail="Invalid API key")
@@ -667,6 +728,7 @@ def _authenticate_jwt_bearer(
 
     mapped_roles = _normalize_claim_values(_extract_claim_value(claims, service_auth.role_claim))
     claimed_scopes = _normalize_claim_values(_extract_claim_value(claims, service_auth.scope_claim))
+    tenant_id = _resolve_jwt_tenant_id(claims, service_auth)
     subject_value = _extract_claim_value(claims, service_auth.subject_claim)
     subject = subject_value.strip() if isinstance(subject_value, str) and subject_value.strip() else None
     if mapped_roles & set(service_auth.operator_roles):
@@ -674,6 +736,7 @@ def _authenticate_jwt_bearer(
         return AuthenticatedPrincipal(
             role="operator",
             auth_mode="jwt",
+            tenant_id=tenant_id,
             subject=subject,
             scopes=granted_scopes,
         )
@@ -682,6 +745,7 @@ def _authenticate_jwt_bearer(
         return AuthenticatedPrincipal(
             role="reader",
             auth_mode="jwt",
+            tenant_id=tenant_id,
             subject=subject,
             scopes=granted_scopes,
         )
@@ -732,6 +796,7 @@ def create_service_app(
                 principal_subject=getattr(request.state, "principal_subject", ""),
                 principal_scopes=getattr(request.state, "principal_scopes", []),
                 auth_mode=getattr(request.state, "principal_auth_mode", "none"),
+                principal_tenant_id=getattr(request.state, "principal_tenant_id", ""),
             )
             raise
 
@@ -746,6 +811,7 @@ def create_service_app(
             principal_subject=getattr(request.state, "principal_subject", ""),
             principal_scopes=getattr(request.state, "principal_scopes", []),
             auth_mode=getattr(request.state, "principal_auth_mode", "none"),
+            principal_tenant_id=getattr(request.state, "principal_tenant_id", ""),
         )
         return response
 
@@ -784,9 +850,51 @@ def create_service_app(
             request.state.principal_subject = principal.subject or ""
             request.state.principal_scopes = list(principal.scopes)
             request.state.principal_auth_mode = principal.auth_mode
+            request.state.principal_tenant_id = principal.tenant_id
             return principal
 
         return dependency
+
+    def _load_tenant_scoped_run(
+        run_id: str,
+        principal: AuthenticatedPrincipal,
+        *,
+        mismatch_status_code: Literal[403, 404],
+    ) -> PipelineRunRecord:
+        try:
+            record = store.load_run_record(run_id)
+        except FileNotFoundError as error:
+            _resolve_not_found(error)
+        if record.tenant_id != principal.tenant_id:
+            if mismatch_status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Persisted run not found: {run_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Authenticated principal is not permitted to operate on resources outside its tenant boundary",
+            )
+        return record
+
+    def _record_service_api_audit_event(
+        principal: AuthenticatedPrincipal,
+        *,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        status: AuditEventStatus,
+        run_id: str | None = None,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        store.record_audit_event(
+            tenant_id=principal.tenant_id,
+            actor_type="service_api",
+            actor_id=principal.subject or principal.role,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            run_id=run_id,
+            status=status,
+            details=details or {},
+        )
 
     health_access = require_access("reader", "operator", required_scopes=("service:health",))
     metrics_access = require_access("reader", "operator", required_scopes=("service:metrics",))
@@ -822,9 +930,9 @@ def create_service_app(
 
     @app.get("/readyz", response_model=ReadinessResponse, tags=["health"])
     def readyz(
-        _principal: AuthenticatedPrincipal = Depends(health_access),
+        principal: AuthenticatedPrincipal = Depends(health_access),
     ) -> ReadinessResponse:
-        metrics = store.load_operational_metrics()
+        metrics = store.load_operational_metrics(tenant_id=principal.tenant_id)
         return ReadinessResponse(
             status="ready",
             state_db=state_db_display,
@@ -837,10 +945,10 @@ def create_service_app(
 
     @app.get("/api/v1/metrics", response_model=ServiceMetricsResponse, tags=["health"])
     def metrics(
-        _principal: AuthenticatedPrincipal = Depends(metrics_access),
+        principal: AuthenticatedPrincipal = Depends(metrics_access),
     ) -> ServiceMetricsResponse:
         return _serialize_metrics(
-            store.load_operational_metrics(),
+            store.load_operational_metrics(tenant_id=principal.tenant_id),
             state_db=state_db_display,
             service_started_at_utc=service_started_at_utc,
             service_started_monotonic=service_started_monotonic,
@@ -852,11 +960,12 @@ def create_service_app(
         action: Annotated[str | None, Query(min_length=1)] = None,
         status: Annotated[AuditEventStatus | None, Query()] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
-        _principal: AuthenticatedPrincipal = Depends(audit_event_read_access),
+        principal: AuthenticatedPrincipal = Depends(audit_event_read_access),
     ) -> list[AuditEventResponse]:
         return [
             _serialize_audit_event(record)
             for record in store.list_audit_events(
+                tenant_id=principal.tenant_id,
                 run_id=run_id,
                 action=action,
                 status=status,
@@ -866,17 +975,17 @@ def create_service_app(
 
     @app.get("/admin/console", response_class=HTMLResponse, include_in_schema=False)
     def admin_console(
-        _principal: AuthenticatedPrincipal = Depends(admin_console_access),
+        principal: AuthenticatedPrincipal = Depends(admin_console_access),
     ) -> HTMLResponse:
         metrics = _serialize_metrics(
-            store.load_operational_metrics(),
+            store.load_operational_metrics(tenant_id=principal.tenant_id),
             state_db=state_db_display,
             service_started_at_utc=service_started_at_utc,
             service_started_monotonic=service_started_monotonic,
         )
         recent_audit_events = [
             _serialize_audit_event(record)
-            for record in store.list_audit_events(limit=25)
+            for record in store.list_audit_events(tenant_id=principal.tenant_id, limit=25)
         ]
         return HTMLResponse(
             _render_operator_admin_console_html(
@@ -901,6 +1010,7 @@ def create_service_app(
     ) -> RunListResponse:
         offset = _parse_page_token(page_token)
         result = store.list_run_records(
+            tenant_id=_principal.tenant_id,
             status=status,
             input_mode=input_mode,
             batch_id=batch_id,
@@ -921,9 +1031,9 @@ def create_service_app(
 
     @app.get("/api/v1/runs/latest", response_model=RunStatusResponse, tags=["runs"])
     def get_latest_completed_run(
-        _principal: AuthenticatedPrincipal = Depends(run_read_access),
+        principal: AuthenticatedPrincipal = Depends(run_read_access),
     ) -> RunStatusResponse:
-        run_id = store.latest_completed_run_id()
+        run_id = store.latest_completed_run_id(tenant_id=principal.tenant_id)
         if run_id is None:
             raise HTTPException(status_code=404, detail=f"No completed persisted runs found in {state_db_display}")
         return _serialize_run(store.load_run_record(run_id))
@@ -931,12 +1041,9 @@ def create_service_app(
     @app.get("/api/v1/runs/{run_id}", response_model=RunStatusResponse, tags=["runs"])
     def get_run(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
-        _principal: AuthenticatedPrincipal = Depends(run_read_access),
+        principal: AuthenticatedPrincipal = Depends(run_read_access),
     ) -> RunStatusResponse:
-        try:
-            return _serialize_run(store.load_run_record(run_id))
-        except FileNotFoundError as error:
-            _resolve_not_found(error)
+        return _serialize_run(_load_tenant_scoped_run(run_id, principal, mismatch_status_code=404))
 
     @app.get(
         "/api/v1/runs/{run_id}/golden-records",
@@ -954,12 +1061,9 @@ def create_service_app(
         ] = "golden_id_asc",
         page_size: Annotated[int, Query(ge=1, le=100)] = 50,
         page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
-        _principal: AuthenticatedPrincipal = Depends(golden_read_access),
+        principal: AuthenticatedPrincipal = Depends(golden_read_access),
     ) -> GoldenRecordListResponse:
-        try:
-            store.load_run_record(run_id)
-        except FileNotFoundError as error:
-            _resolve_not_found(error)
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         offset = _parse_page_token(page_token)
         result = store.list_golden_records(
             run_id=run_id,
@@ -988,8 +1092,9 @@ def create_service_app(
     def get_golden_record(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         golden_id: Annotated[str, ApiPath(min_length=1, pattern=r"^G-.+")],
-        _principal: AuthenticatedPrincipal = Depends(golden_read_access),
+        principal: AuthenticatedPrincipal = Depends(golden_read_access),
     ) -> GoldenRecordResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         try:
             return GoldenRecordResponse.model_validate(
                 store.load_golden_record(run_id=run_id, golden_id=golden_id)
@@ -1005,8 +1110,9 @@ def create_service_app(
     def get_crosswalk_record_for_source(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         source_record_id: Annotated[str, ApiPath(min_length=1)],
-        _principal: AuthenticatedPrincipal = Depends(crosswalk_read_access),
+        principal: AuthenticatedPrincipal = Depends(crosswalk_read_access),
     ) -> CrosswalkLookupResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         try:
             return CrosswalkLookupResponse.model_validate(
                 store.load_crosswalk_record_for_source(
@@ -1039,12 +1145,9 @@ def create_service_app(
         ] = "total_incident_desc",
         page_size: Annotated[int, Query(ge=1, le=100)] = 50,
         page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
-        _principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
+        principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
     ) -> PublicSafetyGoldenActivityListResponse:
-        try:
-            store.load_run_record(run_id)
-        except FileNotFoundError as error:
-            _resolve_not_found(error)
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         offset = _parse_page_token(page_token)
         result = store.list_public_safety_golden_activity(
             run_id=run_id,
@@ -1075,8 +1178,9 @@ def create_service_app(
     def get_public_safety_golden_activity(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         golden_id: Annotated[str, ApiPath(min_length=1, pattern=r"^G-.+")],
-        _principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
+        principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
     ) -> PublicSafetyGoldenActivityResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         try:
             return PublicSafetyGoldenActivityResponse.model_validate(
                 store.load_public_safety_golden_activity(run_id=run_id, golden_id=golden_id)
@@ -1106,12 +1210,9 @@ def create_service_app(
         ] = "occurred_at_desc",
         page_size: Annotated[int, Query(ge=1, le=100)] = 50,
         page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
-        _principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
+        principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
     ) -> PublicSafetyIncidentIdentityListResponse:
-        try:
-            store.load_run_record(run_id)
-        except FileNotFoundError as error:
-            _resolve_not_found(error)
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         offset = _parse_page_token(page_token)
         result = store.list_public_safety_incident_identity(
             run_id=run_id,
@@ -1159,15 +1260,13 @@ def create_service_app(
         ] = "queue_order_asc",
         page_size: Annotated[int, Query(ge=1, le=100)] = 50,
         page_token: Annotated[str | None, Query(pattern=r"^\d+$")] = None,
-        _principal: AuthenticatedPrincipal = Depends(review_read_access),
+        principal: AuthenticatedPrincipal = Depends(review_read_access),
     ) -> ReviewCaseListPageResponse:
-        try:
-            store.load_run_record(run_id)
-        except FileNotFoundError as error:
-            _resolve_not_found(error)
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         offset = _parse_page_token(page_token)
         result = store.list_review_cases(
             run_id=run_id,
+            tenant_id=principal.tenant_id,
             queue_status=status,
             assigned_to=assigned_to,
             search_query=query,
@@ -1194,12 +1293,14 @@ def create_service_app(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         status: Annotated[ReviewCaseStatus | None, Query()] = None,
         assigned_to: Annotated[str | None, Query(min_length=1)] = None,
-        _principal: AuthenticatedPrincipal = Depends(review_read_access),
+        principal: AuthenticatedPrincipal = Depends(review_read_access),
     ) -> list[ReviewCaseResponse]:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         return [
             _serialize_review_case(case)
             for case in store.list_review_cases(
                 run_id=run_id,
+                tenant_id=principal.tenant_id,
                 queue_status=status,
                 assigned_to=assigned_to,
             )
@@ -1213,10 +1314,17 @@ def create_service_app(
     def get_review_case(
         run_id: Annotated[str, ApiPath(min_length=1, pattern=r"^RUN-.+")],
         review_id: Annotated[str, ApiPath(min_length=1, pattern=r"^REV-.+")],
-        _principal: AuthenticatedPrincipal = Depends(review_read_access),
+        principal: AuthenticatedPrincipal = Depends(review_read_access),
     ) -> ReviewCaseResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
         try:
-            return _serialize_review_case(store.load_review_case(run_id=run_id, review_id=review_id))
+            return _serialize_review_case(
+                store.load_review_case(
+                    run_id=run_id,
+                    review_id=review_id,
+                    tenant_id=principal.tenant_id,
+                )
+            )
         except FileNotFoundError as error:
             _resolve_not_found(error)
 
@@ -1231,9 +1339,11 @@ def create_service_app(
         request: ReviewDecisionRequest,
         principal: AuthenticatedPrincipal = Depends(review_write_access),
     ) -> ReviewDecisionResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=403)
         try:
             result = apply_review_decision_operation(
                 store=store,
+                tenant_id=principal.tenant_id,
                 run_id=run_id,
                 review_id=review_id,
                 decision=request.decision,
@@ -1241,9 +1351,8 @@ def create_service_app(
                 notes=request.notes,
             )
         except FileNotFoundError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="apply_review_decision",
                 resource_type="review_case",
                 resource_id=review_id,
@@ -1263,9 +1372,8 @@ def create_service_app(
             )
             _resolve_not_found(error)
         except ValueError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="apply_review_decision",
                 resource_type="review_case",
                 resource_id=review_id,
@@ -1284,9 +1392,8 @@ def create_service_app(
                 },
             )
             _resolve_operation_conflict(error)
-        store.record_audit_event(
-            actor_type="service_api",
-            actor_id=principal.subject or principal.role,
+        _record_service_api_audit_event(
+            principal,
             action="apply_review_decision",
             resource_type="review_case",
             resource_id=result.case.review_id,
@@ -1310,6 +1417,7 @@ def create_service_app(
             actor_role=principal.role,
             actor_subject=principal.subject or "",
             actor_scopes=list(principal.scopes),
+            tenant_id=principal.tenant_id,
             run_id=result.case.run_id,
             review_id=result.case.review_id,
             action=result.action,
@@ -1327,11 +1435,13 @@ def create_service_app(
         request: ReplayRunRequest,
         principal: AuthenticatedPrincipal = Depends(replay_access),
     ) -> ReplayRunResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=403)
         try:
             from etl_identity_engine.cli import main as cli_main
 
             result = replay_run_operation(
                 store=store,
+                tenant_id=principal.tenant_id,
                 state_db=state_target.raw_value,
                 source_run_id=run_id,
                 base_dir=Path(request.base_dir) if request.base_dir else None,
@@ -1339,9 +1449,8 @@ def create_service_app(
                 runner=cli_main,
             )
         except FileNotFoundError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="replay_run",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -1360,9 +1469,8 @@ def create_service_app(
             )
             _resolve_not_found(error)
         except ValueError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="replay_run",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -1380,9 +1488,8 @@ def create_service_app(
                 },
             )
             _resolve_operation_conflict(error)
-        store.record_audit_event(
-            actor_type="service_api",
-            actor_id=principal.subject or principal.role,
+        _record_service_api_audit_event(
+            principal,
             action="replay_run",
             resource_type="pipeline_run",
             resource_id=result.result_run.run_id,
@@ -1408,6 +1515,7 @@ def create_service_app(
             actor_role=principal.role,
             actor_subject=principal.subject or "",
             actor_scopes=list(principal.scopes),
+            tenant_id=principal.tenant_id,
             requested_run_id=result.requested_run.run_id,
             result_run_id=result.result_run.run_id,
             refresh_mode=result.refresh_mode,
@@ -1435,18 +1543,19 @@ def create_service_app(
         request: PublishRunRequest,
         principal: AuthenticatedPrincipal = Depends(publish_access),
     ) -> PublishRunResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=403)
         try:
             result = publish_run_operation(
                 store=store,
+                tenant_id=principal.tenant_id,
                 state_db=state_target.raw_value,
                 run_id=run_id,
                 output_dir=Path(request.output_dir),
                 contract_version=request.contract_version,
             )
         except FileNotFoundError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="publish_run",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -1465,9 +1574,8 @@ def create_service_app(
             )
             _resolve_not_found(error)
         except ValueError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="publish_run",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -1485,9 +1593,8 @@ def create_service_app(
                 },
             )
             _resolve_operation_conflict(error)
-        store.record_audit_event(
-            actor_type="service_api",
-            actor_id=principal.subject or principal.role,
+        _record_service_api_audit_event(
+            principal,
             action="publish_run",
             resource_type="pipeline_run",
             resource_id=result.run.run_id,
@@ -1512,6 +1619,7 @@ def create_service_app(
             actor_role=principal.role,
             actor_subject=principal.subject or "",
             actor_scopes=list(principal.scopes),
+            tenant_id=principal.tenant_id,
             run_id=result.run.run_id,
             action=result.action,
             contract_version=result.contract_version,
@@ -1536,14 +1644,14 @@ def create_service_app(
         job_name: Annotated[str, ApiPath(min_length=1)],
         principal: AuthenticatedPrincipal = Depends(export_access),
     ) -> ExportJobTriggerResponse:
+        _load_tenant_scoped_run(run_id, principal, mismatch_status_code=403)
         job = export_jobs.get(job_name)
         if job is None:
             error = FileNotFoundError(
                 f"Configured export job not found: {job_name}. Available jobs: {sorted(export_jobs)}"
             )
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="export_job_run",
                 resource_type="export_job",
                 resource_id=job_name,
@@ -1564,14 +1672,14 @@ def create_service_app(
         try:
             result = export_job_run_operation(
                 store=store,
+                tenant_id=principal.tenant_id,
                 state_db=state_target.raw_value,
                 source_run_id=run_id,
                 job=job,
             )
         except FileNotFoundError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="export_job_run",
                 resource_type="export_job",
                 resource_id=job_name,
@@ -1590,9 +1698,8 @@ def create_service_app(
             )
             _resolve_not_found(error)
         except ValueError as error:
-            store.record_audit_event(
-                actor_type="service_api",
-                actor_id=principal.subject or principal.role,
+            _record_service_api_audit_event(
+                principal,
                 action="export_job_run",
                 resource_type="export_job",
                 resource_id=job_name,
@@ -1610,9 +1717,8 @@ def create_service_app(
                 },
             )
             _resolve_operation_conflict(error)
-        store.record_audit_event(
-            actor_type="service_api",
-            actor_id=principal.subject or principal.role,
+        _record_service_api_audit_event(
+            principal,
             action="export_job_run",
             resource_type="export_job",
             resource_id=result.job.name,
@@ -1638,6 +1744,7 @@ def create_service_app(
             actor_role=principal.role,
             actor_subject=principal.subject or "",
             actor_scopes=list(principal.scopes),
+            tenant_id=principal.tenant_id,
             job_name=result.job.name,
             source_run_id=result.source_run.run_id,
             export_run_id=result.export_run.export_run_id,

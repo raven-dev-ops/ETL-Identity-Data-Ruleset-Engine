@@ -298,6 +298,12 @@ def build_runtime_environment_summary(
             "scope_claim": service_auth.scope_claim,
             "subject_claim": service_auth.subject_claim,
         }
+        if service_auth.tenant_claim_path is not None:
+            service_auth_summary["tenant_claim_path"] = service_auth.tenant_claim_path
+        if service_auth.reader_tenant_id is not None:
+            service_auth_summary["reader_tenant_id"] = service_auth.reader_tenant_id
+        if service_auth.operator_tenant_id is not None:
+            service_auth_summary["operator_tenant_id"] = service_auth.operator_tenant_id
 
     return {
         "environment": environment.name,

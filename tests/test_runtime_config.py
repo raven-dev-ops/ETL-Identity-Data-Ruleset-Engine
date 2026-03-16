@@ -120,6 +120,8 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${TEST_SERVICE_READER_API_KEY:-}
       operator_api_key: ${TEST_SERVICE_OPERATOR_API_KEY:-}
+      reader_tenant_id: ${TEST_SERVICE_READER_TENANT_ID:-default}
+      operator_tenant_id: ${TEST_SERVICE_OPERATOR_TENANT_ID:-default}
 """,
     )
 
@@ -619,6 +621,8 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     assert environment.service_auth.header_name == "X-API-Key"
     assert environment.service_auth.reader_api_key == "reader-key"
     assert environment.service_auth.operator_api_key == "operator-key"
+    assert environment.service_auth.reader_tenant_id == "default"
+    assert environment.service_auth.operator_tenant_id == "default"
     assert environment.service_auth.reader_scopes == (
         "service:health",
         "service:metrics",
@@ -717,6 +721,8 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+      reader_tenant_id: ${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}
+      operator_tenant_id: ${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}
 """,
     )
     monkeypatch.delenv("ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY", raising=False)
@@ -756,6 +762,8 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+      reader_tenant_id: ${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}
+      operator_tenant_id: ${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}
   prod:
     config_dir: .
     state_db: ${TEST_STATE_DB}
@@ -767,6 +775,7 @@ environments:
       algorithms:
         - HS256
       jwt_secret: ${TEST_SERVICE_JWT_SECRET}
+      tenant_claim_path: tenant_id
       reader_roles:
         - etl-reader
       operator_roles:
@@ -807,6 +816,38 @@ def test_load_runtime_environment_rejects_partial_service_auth_config(
         load_runtime_environment("prod", runtime_config)
 
 
+def test_load_runtime_environment_rejects_api_key_service_auth_without_tenant_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    service_auth:
+      mode: api_key
+      header_name: X-API-Key
+      reader_api_key: ${TEST_SERVICE_READER_API_KEY}
+      operator_api_key: ${TEST_SERVICE_OPERATOR_API_KEY}
+      operator_tenant_id: tenant-a
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_SERVICE_READER_API_KEY", "reader-key")
+    monkeypatch.setenv("TEST_SERVICE_OPERATOR_API_KEY", "operator-key")
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.service_auth\.reader_tenant_id must be a non-empty string",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
 def test_load_runtime_environment_supports_jwt_service_auth(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -830,6 +871,7 @@ environments:
       jwt_secret: ${TEST_SERVICE_JWT_SECRET}
       role_claim: realm_access.roles
       scope_claim: scope
+      tenant_claim_path: tenant_id
       subject_claim: preferred_username
       reader_roles:
         - etl-reader
@@ -862,6 +904,7 @@ environments:
     assert environment.service_auth.jwt_public_key_pem is None
     assert environment.service_auth.role_claim == "realm_access.roles"
     assert environment.service_auth.scope_claim == "scope"
+    assert environment.service_auth.tenant_claim_path == "tenant_id"
     assert environment.service_auth.subject_claim == "preferred_username"
     assert environment.service_auth.reader_roles == ("etl-reader",)
     assert environment.service_auth.operator_roles == ("etl-operator",)
@@ -872,6 +915,45 @@ environments:
         "review_cases:write",
         "runs:replay",
     )
+
+
+def test_load_runtime_environment_rejects_jwt_service_auth_without_tenant_claim_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    service_auth:
+      mode: jwt
+      header_name: Authorization
+      issuer: ${TEST_SERVICE_JWT_ISSUER}
+      audience: ${TEST_SERVICE_JWT_AUDIENCE}
+      algorithms:
+        - HS256
+      jwt_secret: ${TEST_SERVICE_JWT_SECRET}
+      reader_roles:
+        - etl-reader
+      operator_roles:
+        - etl-operator
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+    monkeypatch.setenv("TEST_SERVICE_JWT_ISSUER", "https://idp.example.test")
+    monkeypatch.setenv("TEST_SERVICE_JWT_AUDIENCE", "etl-identity-api")
+    monkeypatch.setenv("TEST_SERVICE_JWT_SECRET", "shared-signing-secret-material-32b")
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.service_auth\.tenant_claim_path must be a non-empty string",
+    ):
+        load_runtime_environment("prod", runtime_config)
 
 
 def test_load_runtime_environment_supports_cjis_runtime_profile(
@@ -898,6 +980,7 @@ environments:
       algorithms:
         - RS256
       jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
+      tenant_claim_path: tenant_id
       reader_roles:
         - etl-identity-reader
       operator_roles:
@@ -930,6 +1013,7 @@ environments:
     assert environment.service_auth.mode == "jwt"
     assert environment.service_auth.algorithms == ("RS256",)
     assert environment.service_auth.jwt_public_key_pem == public_key_pem.strip()
+    assert environment.service_auth.tenant_claim_path == "tenant_id"
 
 
 def test_load_runtime_environment_resolves_service_auth_from_secret_file(
@@ -954,6 +1038,8 @@ def test_load_runtime_environment_resolves_service_auth_from_secret_file(
     assert environment.service_auth is not None
     assert environment.service_auth.reader_api_key == "reader-key-from-file"
     assert environment.service_auth.operator_api_key == "operator-key-from-file"
+    assert environment.service_auth.reader_tenant_id == "default"
+    assert environment.service_auth.operator_tenant_id == "default"
 
 
 def test_load_runtime_environment_rejects_missing_secret_file(
@@ -1060,6 +1146,7 @@ environments:
       algorithms:
         - HS256
       jwt_secret: ${TEST_SERVICE_JWT_SECRET}
+      tenant_claim_path: tenant_id
       reader_roles:
         - shared-role
       operator_roles:
@@ -1094,6 +1181,8 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${TEST_SERVICE_READER_API_KEY}
       operator_api_key: ${TEST_SERVICE_OPERATOR_API_KEY}
+      reader_tenant_id: tenant-a
+      operator_tenant_id: tenant-a
       reader_scopes:
         - service:health
       operator_scopes:

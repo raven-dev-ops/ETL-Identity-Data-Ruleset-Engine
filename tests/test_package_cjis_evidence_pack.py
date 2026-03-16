@@ -48,6 +48,7 @@ environments:
       algorithms:
         - RS256
       jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
+      tenant_claim_path: tenant_id
       reader_roles:
         - etl-identity-reader
       operator_roles:
@@ -230,6 +231,7 @@ def test_build_runtime_environment_summary_redacts_auth_material(tmp_path: Path)
         ],
         "role_claim": "roles",
         "scope_claim": "scope",
+        "tenant_claim_path": "tenant_id",
         "subject_claim": "sub",
     }
     assert "BEGIN PUBLIC KEY" not in json.dumps(summary, sort_keys=True)

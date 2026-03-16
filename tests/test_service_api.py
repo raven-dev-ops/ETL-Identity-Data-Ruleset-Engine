@@ -130,6 +130,7 @@ def _create_persisted_manifest_run(
     tmp_path: Path,
     *,
     db_path: Path | None = None,
+    tenant_id: str = "default",
     batch_id: str = "service-api-001",
     run_dir_name: str = "run",
     manifest_dir_name: str = "manifest-run",
@@ -182,6 +183,8 @@ def _create_persisted_manifest_run(
         main(
             [
                 "run-all",
+                "--tenant-id",
+                tenant_id,
                 "--base-dir",
                 str(base_dir),
                 "--manifest",
@@ -196,7 +199,7 @@ def _create_persisted_manifest_run(
     )
 
     store = SQLitePipelineStore(db_path)
-    run_id = store.latest_completed_run_id()
+    run_id = store.latest_completed_run_id(tenant_id=tenant_id)
     assert run_id is not None
     return db_path, run_id, store
 
@@ -205,6 +208,7 @@ def _create_persisted_synthetic_run(
     tmp_path: Path,
     *,
     db_path: Path,
+    tenant_id: str = "default",
     seed: int = 42,
     profile: str = "small",
     base_dir_name: str = "synthetic-run",
@@ -214,6 +218,8 @@ def _create_persisted_synthetic_run(
         main(
             [
                 "run-all",
+                "--tenant-id",
+                tenant_id,
                 "--base-dir",
                 str(base_dir),
                 "--profile",
@@ -229,7 +235,7 @@ def _create_persisted_synthetic_run(
         == 0
     )
     store = SQLitePipelineStore(db_path)
-    run_id = store.latest_completed_run_id()
+    run_id = store.latest_completed_run_id(tenant_id=tenant_id)
     assert run_id is not None
     return run_id, store
 
@@ -238,6 +244,7 @@ def _create_public_safety_manifest_run(
     tmp_path: Path,
     *,
     db_path: Path | None = None,
+    tenant_id: str = "default",
     run_dir_name: str = "public-safety-run",
 ) -> tuple[Path, str, SQLitePipelineStore]:
     db_path = db_path or (tmp_path / "state" / "pipeline_state.sqlite")
@@ -251,6 +258,8 @@ def _create_public_safety_manifest_run(
         main(
             [
                 "run-all",
+                "--tenant-id",
+                tenant_id,
                 "--base-dir",
                 str(base_dir),
                 "--manifest",
@@ -265,16 +274,18 @@ def _create_public_safety_manifest_run(
     )
 
     store = SQLitePipelineStore(db_path)
-    run_id = store.latest_completed_run_id()
+    run_id = store.latest_completed_run_id(tenant_id=tenant_id)
     assert run_id is not None
     return db_path, run_id, store
 
 
-def _service_auth() -> ServiceAuthConfig:
+def _service_auth(*, tenant_id: str = "default") -> ServiceAuthConfig:
     return ServiceAuthConfig(
         header_name="X-API-Key",
         reader_api_key="reader-secret",
         operator_api_key="operator-secret",
+        reader_tenant_id=tenant_id,
+        operator_tenant_id=tenant_id,
     )
 
 
@@ -292,6 +303,7 @@ def _jwt_service_auth() -> ServiceAuthConfig:
         jwt_secret=JWT_TEST_SECRET,
         role_claim="realm_access.roles",
         scope_claim="scope",
+        tenant_claim_path="tenant_id",
         reader_roles=("etl-reader",),
         operator_roles=("etl-operator",),
         reader_scopes=(
@@ -321,13 +333,19 @@ def _jwt_service_auth() -> ServiceAuthConfig:
     )
 
 
-def _jwt_headers(*roles: str, username: str = "analyst.one", scopes: tuple[str, ...] | None = None) -> dict[str, str]:
+def _jwt_headers(
+    *roles: str,
+    username: str = "analyst.one",
+    tenant_id: str = "default",
+    scopes: tuple[str, ...] | None = None,
+) -> dict[str, str]:
     token = jwt.encode(
         {
             "iss": "https://idp.example.test",
             "aud": "etl-identity-api",
             "sub": f"subject-{username}",
             "preferred_username": username,
+            "tenant_id": tenant_id,
             "realm_access": {"roles": list(roles)},
             "scope": " ".join(scopes or ()),
         },
@@ -818,6 +836,83 @@ def test_service_api_exposes_operator_audit_events_and_admin_console(tmp_path: P
     assert "apply_review_decision" in operator_console_response.text
 
 
+def test_service_api_scopes_api_key_principals_to_their_bound_tenant(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    db_path, county_a_run_id, store = _create_persisted_manifest_run(
+        tmp_path,
+        db_path=db_path,
+        tenant_id="county-a",
+        batch_id="service-api-tenant-a",
+        run_dir_name="county-a-run",
+        manifest_dir_name="county-a-manifest",
+    )
+    _db_path, county_b_run_id, _store = _create_persisted_manifest_run(
+        tmp_path,
+        db_path=db_path,
+        tenant_id="county-b",
+        batch_id="service-api-tenant-b",
+        run_dir_name="county-b-run",
+        manifest_dir_name="county-b-manifest",
+    )
+    store.record_audit_event(
+        tenant_id="county-a",
+        actor_type="cli",
+        actor_id="tenant-a-operator",
+        action="tenant_visibility_check",
+        resource_type="pipeline_run",
+        resource_id=county_a_run_id,
+        run_id=county_a_run_id,
+        status="succeeded",
+    )
+    store.record_audit_event(
+        tenant_id="county-b",
+        actor_type="cli",
+        actor_id="tenant-b-operator",
+        action="tenant_visibility_check",
+        resource_type="pipeline_run",
+        resource_id=county_b_run_id,
+        run_id=county_b_run_id,
+        status="succeeded",
+    )
+
+    client = TestClient(create_service_app(db_path, service_auth=_service_auth(tenant_id="county-a")))
+    reader_headers = _auth_headers("reader-secret")
+    operator_headers = _auth_headers("operator-secret")
+
+    runs_response = client.get("/api/v1/runs", headers=reader_headers)
+    assert runs_response.status_code == 200
+    runs_payload = runs_response.json()
+    assert runs_payload["page"]["total_count"] == 1
+    assert [item["run_id"] for item in runs_payload["items"]] == [county_a_run_id]
+    assert all(item["tenant_id"] == "county-a" for item in runs_payload["items"])
+
+    latest_run_response = client.get("/api/v1/runs/latest", headers=reader_headers)
+    assert latest_run_response.status_code == 200
+    assert latest_run_response.json()["run_id"] == county_a_run_id
+
+    metrics_response = client.get("/api/v1/metrics", headers=reader_headers)
+    assert metrics_response.status_code == 200
+    assert metrics_response.json()["runs"]["completed"] == 1
+    assert metrics_response.json()["audit_event_count"] >= 1
+
+    foreign_run_response = client.get(f"/api/v1/runs/{county_b_run_id}", headers=reader_headers)
+    assert foreign_run_response.status_code == 404
+
+    foreign_publish_response = client.post(
+        f"/api/v1/runs/{county_b_run_id}/publish",
+        headers=operator_headers,
+        json={"output_dir": str(tmp_path / "foreign-publish")},
+    )
+    assert foreign_publish_response.status_code == 403
+
+    audit_response = client.get("/api/v1/audit-events", headers=operator_headers)
+    assert audit_response.status_code == 200
+    audit_payload = audit_response.json()
+    assert audit_payload
+    assert all(event["tenant_id"] == "county-a" for event in audit_payload)
+    assert any(event["resource_id"] == county_a_run_id for event in audit_payload)
+
+
 def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_path: Path) -> None:
     db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
     review_row = store.list_review_cases(run_id=run_id)[0]
@@ -919,6 +1014,81 @@ def test_service_api_supports_jwt_bearer_auth_with_external_identity_claims(tmp_
         and "runs:replay" in event.details["granted_scopes"]
         for event in audit_events
     )
+
+
+def test_service_api_uses_jwt_tenant_claim_to_filter_and_protect_resources(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    db_path, county_a_run_id, _store = _create_persisted_manifest_run(
+        tmp_path,
+        db_path=db_path,
+        tenant_id="county-a",
+        batch_id="jwt-tenant-a",
+        run_dir_name="jwt-county-a-run",
+        manifest_dir_name="jwt-county-a-manifest",
+    )
+    _db_path, county_b_run_id, _store = _create_persisted_manifest_run(
+        tmp_path,
+        db_path=db_path,
+        tenant_id="county-b",
+        batch_id="jwt-tenant-b",
+        run_dir_name="jwt-county-b-run",
+        manifest_dir_name="jwt-county-b-manifest",
+    )
+
+    client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
+    reader_headers = _jwt_headers(
+        "etl-reader",
+        username="tenant.reader",
+        tenant_id="county-a",
+        scopes=("service:metrics", "runs:read"),
+    )
+    operator_headers = _jwt_headers(
+        "etl-operator",
+        username="tenant.operator",
+        tenant_id="county-a",
+        scopes=("runs:publish",),
+    )
+
+    runs_response = client.get("/api/v1/runs", headers=reader_headers)
+    assert runs_response.status_code == 200
+    runs_payload = runs_response.json()
+    assert runs_payload["page"]["total_count"] == 1
+    assert [item["run_id"] for item in runs_payload["items"]] == [county_a_run_id]
+
+    metrics_response = client.get("/api/v1/metrics", headers=reader_headers)
+    assert metrics_response.status_code == 200
+    assert metrics_response.json()["runs"]["completed"] == 1
+
+    foreign_run_response = client.get(f"/api/v1/runs/{county_b_run_id}", headers=reader_headers)
+    assert foreign_run_response.status_code == 404
+
+    foreign_publish_response = client.post(
+        f"/api/v1/runs/{county_b_run_id}/publish",
+        headers=operator_headers,
+        json={"output_dir": str(tmp_path / "jwt-foreign-publish")},
+    )
+    assert foreign_publish_response.status_code == 403
+
+
+def test_service_api_rejects_jwt_tokens_without_a_tenant_claim(tmp_path: Path) -> None:
+    db_path, _run_id, _store = _create_persisted_manifest_run(tmp_path)
+    client = TestClient(create_service_app(db_path, service_auth=_jwt_service_auth()))
+    token = jwt.encode(
+        {
+            "iss": "https://idp.example.test",
+            "aud": "etl-identity-api",
+            "sub": "subject-missing-tenant",
+            "preferred_username": "missing.tenant",
+            "realm_access": {"roles": ["etl-reader"]},
+            "scope": "service:health",
+        },
+        JWT_TEST_SECRET,
+        algorithm="HS256",
+    )
+
+    response = client.get("/healthz", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+    assert "tenant_id" in response.json()["detail"]
 
 
 def test_service_api_enforces_audit_event_scope_for_jwt_tokens(tmp_path: Path) -> None:

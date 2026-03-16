@@ -36,6 +36,7 @@ def _write_runtime_config(path: Path, state_db: str, *, jwt_mode: bool = True) -
       algorithms:
         - RS256
       jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
+      tenant_claim_path: tenant_id
       reader_roles:
         - etl-identity-reader
       operator_roles:
@@ -46,6 +47,8 @@ def _write_runtime_config(path: Path, state_db: str, *, jwt_mode: bool = True) -
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}
+      reader_tenant_id: ${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}
+      operator_tenant_id: ${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}
 """
     path.write_text(
         f"""

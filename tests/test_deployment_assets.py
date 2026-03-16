@@ -34,6 +34,8 @@ def test_container_env_example_documents_required_values() -> None:
     assert "ETL_IDENTITY_RUNTIME_ROOT=" in env_text
     assert "ETL_IDENTITY_SERVICE_READER_API_KEY=" in env_text
     assert "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY=" in env_text
+    assert "ETL_IDENTITY_SERVICE_READER_TENANT_ID=" in env_text
+    assert "ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID=" in env_text
 
 
 def test_cjis_env_example_documents_required_values() -> None:
@@ -132,6 +134,8 @@ def test_kubernetes_example_secrets_document_required_keys() -> None:
         "ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY",
         "ETL_IDENTITY_SERVICE_READER_API_KEY",
         "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY",
+        "ETL_IDENTITY_SERVICE_READER_TENANT_ID",
+        "ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID",
     }
     assert ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]["name"] == (
         "identity-service"
@@ -148,6 +152,8 @@ def test_kubernetes_cluster_runtime_environment_exists() -> None:
     assert cluster["service_auth"]["mode"] == "api_key"
     assert cluster["service_auth"]["reader_api_key"] == "${ETL_IDENTITY_SERVICE_READER_API_KEY}"
     assert cluster["service_auth"]["operator_api_key"] == "${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}"
+    assert cluster["service_auth"]["reader_tenant_id"] == "${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}"
+    assert cluster["service_auth"]["operator_tenant_id"] == "${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}"
 
 
 def test_cjis_runtime_environment_exists() -> None:
@@ -160,6 +166,7 @@ def test_cjis_runtime_environment_exists() -> None:
     assert cjis["service_auth"]["mode"] == "jwt"
     assert cjis["service_auth"]["algorithms"] == ["RS256"]
     assert cjis["service_auth"]["jwt_public_key_pem"] == "${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}"
+    assert cjis["service_auth"]["tenant_claim_path"] == "tenant_id"
 
 
 def test_kubernetes_smoke_script_targets_postgresql_backed_cluster_topology() -> None:

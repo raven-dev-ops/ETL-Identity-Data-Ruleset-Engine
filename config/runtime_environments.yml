@@ -21,6 +21,8 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY:-}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY:-}
+      reader_tenant_id: ${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}
+      operator_tenant_id: ${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}
       reader_scopes:
         - service:health
         - service:metrics
@@ -54,6 +56,8 @@ environments:
       header_name: X-API-Key
       reader_api_key: ${ETL_IDENTITY_SERVICE_READER_API_KEY}
       operator_api_key: ${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}
+      reader_tenant_id: ${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}
+      operator_tenant_id: ${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}
       reader_scopes:
         - service:health
         - service:metrics
@@ -92,6 +96,7 @@ environments:
       jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
       role_claim: roles
       scope_claim: scope
+      tenant_claim_path: tenant_id
       reader_roles:
         - etl-identity-reader
       operator_roles:
@@ -134,6 +139,7 @@ environments:
       jwt_public_key_pem: ${ETL_IDENTITY_SERVICE_JWT_PUBLIC_KEY_PEM}
       role_claim: roles
       scope_claim: scope
+      tenant_claim_path: tenant_id
       subject_claim: sub
       reader_roles:
         - etl-identity-reader

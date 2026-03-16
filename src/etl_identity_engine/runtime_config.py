@@ -151,6 +151,8 @@ class ServiceAuthConfig:
     header_name: str
     reader_api_key: str | None = None
     operator_api_key: str | None = None
+    reader_tenant_id: str | None = None
+    operator_tenant_id: str | None = None
     mode: Literal["api_key", "jwt"] = "api_key"
     issuer: str | None = None
     audience: str | None = None
@@ -159,6 +161,7 @@ class ServiceAuthConfig:
     jwt_public_key_pem: str | None = None
     role_claim: str = "roles"
     scope_claim: str = "scope"
+    tenant_claim_path: str | None = None
     reader_roles: tuple[str, ...] = ()
     operator_roles: tuple[str, ...] = ()
     reader_scopes: tuple[str, ...] = DEFAULT_READER_SERVICE_SCOPES
@@ -879,6 +882,8 @@ def _load_service_auth_config(
                 "header_name",
                 "reader_api_key",
                 "operator_api_key",
+                "reader_tenant_id",
+                "operator_tenant_id",
                 "reader_scopes",
                 "operator_scopes",
             },
@@ -915,6 +920,18 @@ def _load_service_auth_config(
                 config_path,
                 f"{context} must define both reader_api_key and operator_api_key",
             )
+        reader_tenant_id = _require_non_empty_string(
+            raw_service_auth,
+            "reader_tenant_id",
+            path=config_path,
+            context=context,
+        )
+        operator_tenant_id = _require_non_empty_string(
+            raw_service_auth,
+            "operator_tenant_id",
+            path=config_path,
+            context=context,
+        )
         if reader_api_key == operator_api_key:
             raise _config_error(
                 config_path,
@@ -945,6 +962,8 @@ def _load_service_auth_config(
             header_name=header_name,
             reader_api_key=reader_api_key,
             operator_api_key=operator_api_key,
+            reader_tenant_id=reader_tenant_id,
+            operator_tenant_id=operator_tenant_id,
             mode="api_key",
             reader_scopes=reader_scopes,
             operator_scopes=operator_scopes,
@@ -962,6 +981,7 @@ def _load_service_auth_config(
             "jwt_public_key_pem",
             "role_claim",
             "scope_claim",
+            "tenant_claim_path",
             "reader_roles",
             "operator_roles",
             "reader_scopes",
@@ -1016,6 +1036,12 @@ def _load_service_auth_config(
         path=config_path,
         context=context,
         default="scope",
+    )
+    tenant_claim_path = _require_non_empty_string(
+        raw_service_auth,
+        "tenant_claim_path",
+        path=config_path,
+        context=context,
     )
     subject_claim = _optional_non_empty_string(
         raw_service_auth,
@@ -1089,6 +1115,7 @@ def _load_service_auth_config(
         jwt_public_key_pem=jwt_public_key_pem or None,
         role_claim=role_claim,
         scope_claim=scope_claim,
+        tenant_claim_path=tenant_claim_path,
         reader_roles=reader_roles,
         operator_roles=operator_roles,
         reader_scopes=reader_scopes,
