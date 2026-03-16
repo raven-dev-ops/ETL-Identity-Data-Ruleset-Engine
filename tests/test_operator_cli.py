@@ -89,13 +89,20 @@ sources:
     return path
 
 
-def _create_manifest_review_run(tmp_path: Path) -> tuple[Path, Path, SQLitePipelineStore, str]:
-    db_path = tmp_path / "state" / "pipeline_state.sqlite"
-    base_dir = tmp_path / "run"
-    landing_dir = tmp_path / "landing"
+def _create_manifest_review_run(
+    tmp_path: Path,
+    *,
+    name: str = "run",
+    tenant_id: str = "default",
+    db_path: Path | None = None,
+) -> tuple[Path, Path, SQLitePipelineStore, str]:
+    run_root = tmp_path if name == "run" else tmp_path / name
+    db_path = db_path or tmp_path / "state" / "pipeline_state.sqlite"
+    base_dir = run_root / "run"
+    landing_dir = run_root / "landing"
     manifest_path = _write_manifest(
-        tmp_path / "manifest.yml",
-        batch_id="operator-cli-001",
+        run_root / "manifest.yml",
+        batch_id=f"operator-cli-{name}",
         source_a_path="agency_a.csv",
         source_b_path="agency_b.parquet",
     )
@@ -136,6 +143,8 @@ def _create_manifest_review_run(tmp_path: Path) -> tuple[Path, Path, SQLitePipel
                 str(manifest_path),
                 "--state-db",
                 str(db_path),
+                "--tenant-id",
+                tenant_id,
                 "--refresh-mode",
                 "full",
             ]
@@ -144,7 +153,7 @@ def _create_manifest_review_run(tmp_path: Path) -> tuple[Path, Path, SQLitePipel
     )
 
     store = SQLitePipelineStore(db_path)
-    run_id = store.latest_completed_run_id()
+    run_id = store.latest_completed_run_id(tenant_id=tenant_id)
     assert run_id is not None
     return db_path, manifest_path, store, run_id
 
@@ -270,6 +279,41 @@ def test_apply_review_decision_and_replay_run_support_operator_workflow(
     replay_noop_payload = _json_output(capsys)
     assert replay_noop_payload["action"] == "reused_completed_run"
     assert replay_noop_payload["result_run_id"] == result_run_id
+
+
+def test_review_case_list_defaults_to_requested_tenant(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db_path, _manifest_path, _store, tenant_a_run_id = _create_manifest_review_run(
+        tmp_path,
+        name="tenant-a",
+        tenant_id="tenant-a",
+    )
+    _db_path, _second_manifest_path, _second_store, tenant_b_run_id = _create_manifest_review_run(
+        tmp_path,
+        name="tenant-b",
+        tenant_id="tenant-b",
+        db_path=db_path,
+    )
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "review-case-list",
+                "--state-db",
+                str(db_path),
+                "--tenant-id",
+                "tenant-b",
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_output(capsys)
+
+    assert payload
+    assert {item["run_id"] for item in payload} == {tenant_b_run_id}
+    assert {item["tenant_id"] for item in payload} == {"tenant-b"}
+    assert tenant_a_run_id != tenant_b_run_id
 
 
 def test_verify_replay_bundle_updates_recoverability_for_manifest_runs(

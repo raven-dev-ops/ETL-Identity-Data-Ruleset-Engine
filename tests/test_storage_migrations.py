@@ -33,6 +33,10 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
             row[1]
             for row in connection.execute("PRAGMA table_info(audit_events)").fetchall()
         }
+        export_run_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(export_job_runs)").fetchall()
+        }
         pipeline_run_columns = {
             row[1]
             for row in connection.execute("PRAGMA table_info(pipeline_runs)").fetchall()
@@ -41,8 +45,17 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
             row[1]
             for row in connection.execute("PRAGMA table_info(run_checkpoints)").fetchall()
         }
+        public_safety_incident_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(public_safety_incident_identity)").fetchall()
+        }
+        public_safety_activity_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(public_safety_golden_activity)").fetchall()
+        }
     assert set(PIPELINE_STATE_TABLES) <= table_names
     assert {
+        "tenant_id",
         "assigned_to",
         "operator_notes",
         "created_at_utc",
@@ -51,14 +64,17 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
     } <= review_case_columns
     assert "export_job_runs" in table_names
     assert {
+        "tenant_id",
         "actor_type",
         "actor_id",
         "action",
         "status",
         "details_json",
     } <= audit_event_columns
-    assert "resumed_from_run_id" in pipeline_run_columns
+    assert {"tenant_id", "resumed_from_run_id"} <= pipeline_run_columns
+    assert "tenant_id" in export_run_columns
     assert {
+        "tenant_id",
         "run_key",
         "attempt_number",
         "stage_name",
@@ -66,6 +82,8 @@ def test_bootstrap_sqlite_store_applies_alembic_head_revision(tmp_path: Path) ->
         "checkpointed_at_utc",
         "payload_json",
     } <= run_checkpoint_columns
+    assert "tenant_id" in public_safety_incident_columns
+    assert "tenant_id" in public_safety_activity_columns
 
 
 def test_state_db_upgrade_command_can_use_runtime_environment_defaults(

@@ -330,6 +330,97 @@ def test_store_operational_metrics_and_audit_events_reflect_persisted_batch_stat
     assert listed_events[0].audit_event_id == audit_event.audit_event_id
 
 
+def test_store_scopes_runs_and_audit_events_by_tenant(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "pipeline_state.sqlite"
+    first_base_dir = tmp_path / "tenant_a_run"
+    second_base_dir = tmp_path / "tenant_b_run"
+
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(first_base_dir),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--state-db",
+                str(db_path),
+                "--tenant-id",
+                "tenant-a",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "run-all",
+                "--base-dir",
+                str(second_base_dir),
+                "--profile",
+                "small",
+                "--seed",
+                "42",
+                "--state-db",
+                str(db_path),
+                "--tenant-id",
+                "tenant-b",
+            ]
+        )
+        == 0
+    )
+
+    store = SQLitePipelineStore(db_path)
+    tenant_a_run_id = store.latest_completed_run_id(tenant_id="tenant-a")
+    tenant_b_run_id = store.latest_completed_run_id(tenant_id="tenant-b")
+
+    assert tenant_a_run_id is not None
+    assert tenant_b_run_id is not None
+    assert tenant_a_run_id != tenant_b_run_id
+    assert store.latest_completed_run_id() is None
+    assert store.load_run_record(tenant_a_run_id).tenant_id == "tenant-a"
+    assert store.load_run_record(tenant_b_run_id).tenant_id == "tenant-b"
+    assert store.list_run_records(tenant_id="tenant-a", limit=10).total_count == 1
+    assert store.list_run_records(tenant_id="tenant-b", limit=10).total_count == 1
+
+    tenant_a_audit = store.record_audit_event(
+        actor_type="cli",
+        actor_id="operator",
+        action="publish_run",
+        resource_type="pipeline_run",
+        resource_id=tenant_a_run_id,
+        run_id=tenant_a_run_id,
+        status="succeeded",
+        details={"snapshot_dir": str(tmp_path / "published" / "tenant-a")},
+    )
+    tenant_b_audit = store.record_audit_event(
+        tenant_id="tenant-b",
+        actor_type="cli",
+        actor_id="operator",
+        action="publish_run",
+        resource_type="pipeline_run",
+        resource_id=tenant_b_run_id,
+        status="succeeded",
+        details={"snapshot_dir": str(tmp_path / "published" / "tenant-b")},
+    )
+
+    tenant_a_metrics = store.load_operational_metrics(tenant_id="tenant-a")
+    tenant_b_metrics = store.load_operational_metrics(tenant_id="tenant-b")
+    tenant_a_events = store.list_audit_events(tenant_id="tenant-a", limit=10)
+    tenant_b_events = store.list_audit_events(tenant_id="tenant-b", limit=10)
+
+    assert tenant_a_audit.tenant_id == "tenant-a"
+    assert tenant_b_audit.tenant_id == "tenant-b"
+    assert tenant_a_metrics.latest_completed_run_id == tenant_a_run_id
+    assert tenant_b_metrics.latest_completed_run_id == tenant_b_run_id
+    assert tenant_a_metrics.audit_event_count == 1
+    assert tenant_b_metrics.audit_event_count == 1
+    assert [event.tenant_id for event in tenant_a_events] == ["tenant-a"]
+    assert [event.tenant_id for event in tenant_b_events] == ["tenant-b"]
+
+
 def test_record_audit_event_redacts_free_text_and_auth_material(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "pipeline_state.sqlite"
     store = SQLitePipelineStore(db_path)

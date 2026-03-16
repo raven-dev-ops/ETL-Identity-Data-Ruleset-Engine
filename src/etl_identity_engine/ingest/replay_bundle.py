@@ -131,6 +131,7 @@ def archive_replay_bundle(
     run_id: str,
     base_dir: Path,
     resolved_manifest: ResolvedBatchManifest,
+    tenant_id: str | None = None,
     created_at_utc: str | None = None,
 ) -> ReplayBundleVerificationResult:
     bundle_root = replay_bundle_root_for_run(base_dir=base_dir, run_id=run_id)
@@ -215,6 +216,7 @@ def archive_replay_bundle(
         "bundle_version": REPLAY_BUNDLE_VERSION,
         "bundle_id": _bundle_id(run_id),
         "run_id": run_id,
+        "tenant_id": "" if tenant_id is None else tenant_id,
         "created_at_utc": created,
         "restore_mode": REPLAY_BUNDLE_RESTORE_MODE,
         "original_manifest_path": _to_posix(original_manifest_relative),

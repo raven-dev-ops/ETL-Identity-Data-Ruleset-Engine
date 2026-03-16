@@ -644,6 +644,30 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     )
 
 
+def test_load_runtime_environment_supports_optional_tenant_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_runtime_environment_file(
+        runtime_config,
+        """
+default_environment: dev
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    tenant_id: county-a
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+
+    environment = load_runtime_environment("prod", runtime_config)
+
+    assert environment.tenant_id == "county-a"
+    assert environment.state_db == (tmp_path / "state" / "prod.sqlite").resolve()
+
+
 def test_load_runtime_environment_requires_declared_secret_env_vars(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

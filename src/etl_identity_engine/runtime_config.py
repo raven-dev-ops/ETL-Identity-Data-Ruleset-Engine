@@ -141,6 +141,7 @@ class RuntimeEnvironmentConfig:
     name: str
     config_dir: Path
     state_db: Path | str | None
+    tenant_id: str | None
     secrets: dict[str, str]
     service_auth: ServiceAuthConfig | None
 
@@ -1154,7 +1155,7 @@ def load_runtime_environment(
         )
     _validate_allowed_keys(
         resolved_selected,
-        allowed_keys={"description", "config_dir", "state_db", "secrets", "service_auth"},
+        allowed_keys={"description", "config_dir", "state_db", "tenant_id", "secrets", "service_auth"},
         path=config_path,
         context=f"environments.{default_environment}",
     )
@@ -1215,11 +1216,22 @@ def load_runtime_environment(
         config_path=config_path,
         environment_name=default_environment,
     )
+    raw_tenant_id = resolved_selected.get("tenant_id")
+    if raw_tenant_id in (None, ""):
+        tenant_id = None
+    elif isinstance(raw_tenant_id, str) and raw_tenant_id.strip():
+        tenant_id = raw_tenant_id.strip()
+    else:
+        raise _config_error(
+            config_path,
+            f"environments.{default_environment}.tenant_id must be a non-empty string when provided",
+        )
 
     return RuntimeEnvironmentConfig(
         name=default_environment,
         config_dir=config_dir,
         state_db=state_db,
+        tenant_id=tenant_id,
         secrets=secrets,
         service_auth=service_auth,
     )

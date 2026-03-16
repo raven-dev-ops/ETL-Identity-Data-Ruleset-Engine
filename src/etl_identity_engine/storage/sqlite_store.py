@@ -37,6 +37,7 @@ from etl_identity_engine.storage.state_store_target import resolve_state_store_t
 RUN_STATUSES = frozenset({"running", "completed", "failed"})
 EXPORT_RUN_STATUSES = frozenset({"running", "completed", "failed"})
 AUDIT_EVENT_STATUSES = frozenset({"succeeded", "failed", "noop", "reused"})
+DEFAULT_TENANT_ID = "default"
 RUN_CHECKPOINT_STAGES = (
     "normalize",
     "match",
@@ -66,6 +67,7 @@ ARTIFACT_TABLE_NAMES = (
 @dataclass(frozen=True)
 class PipelineRunRecord:
     run_id: str
+    tenant_id: str
     run_key: str
     attempt_number: int
     batch_id: str | None
@@ -120,6 +122,7 @@ class PersistRunMetadata:
     finished_at_utc: str
     status: str
     failure_detail: str | None = None
+    tenant_id: str = DEFAULT_TENANT_ID
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,7 @@ class RunStartDecision:
 @dataclass(frozen=True)
 class RunCheckpointRecord:
     checkpoint_id: str
+    tenant_id: str
     run_id: str
     run_key: str
     attempt_number: int
@@ -160,6 +164,7 @@ class RunCheckpointRecord:
 @dataclass(frozen=True)
 class ExportJobRunRecord:
     export_run_id: str
+    tenant_id: str
     export_key: str
     attempt_number: int
     job_name: str
@@ -189,6 +194,7 @@ class ExportStartDecision:
 @dataclass(frozen=True)
 class AuditEventRecord:
     audit_event_id: str
+    tenant_id: str
     occurred_at_utc: str
     actor_type: str
     actor_id: str
@@ -214,6 +220,7 @@ class StoreOperationalMetrics:
 
 @dataclass(frozen=True)
 class PersistedReviewCase:
+    tenant_id: str
     run_id: str
     review_id: str
     left_id: str
@@ -374,6 +381,7 @@ def build_checkpoint_id(now: datetime | None = None) -> str:
 
 def build_run_key(
     *,
+    tenant_id: str | None = None,
     input_mode: str,
     manifest_path: str | None,
     batch_id: str | None,
@@ -392,6 +400,7 @@ def build_run_key(
 ) -> str:
     payload = json.dumps(
         {
+            "tenant_id": normalize_tenant_id(tenant_id),
             "input_mode": input_mode,
             "manifest_path": manifest_path,
             "batch_id": batch_id,
@@ -417,6 +426,7 @@ def build_run_key(
 
 def build_export_key(
     *,
+    tenant_id: str | None = None,
     job_name: str,
     source_run_id: str,
     contract_name: str,
@@ -425,6 +435,7 @@ def build_export_key(
 ) -> str:
     payload = json.dumps(
         {
+            "tenant_id": normalize_tenant_id(tenant_id),
             "job_name": job_name,
             "source_run_id": source_run_id,
             "contract_name": contract_name,
@@ -446,6 +457,15 @@ def bootstrap_sqlite_store(db_path: Path) -> None:
     upgrade_state_store(Path(db_path))
 
 
+def normalize_tenant_id(tenant_id: str | None) -> str:
+    if tenant_id is None:
+        return DEFAULT_TENANT_ID
+    normalized = str(tenant_id).strip()
+    if not normalized:
+        raise ValueError("tenant_id must be non-empty when provided")
+    return normalized
+
+
 def _row_to_strings(row: Mapping[str, object], headers: tuple[str, ...]) -> dict[str, str]:
     resolved: dict[str, str] = {}
     for header in headers:
@@ -457,6 +477,7 @@ def _row_to_strings(row: Mapping[str, object], headers: tuple[str, ...]) -> dict
 def _row_to_review_case(row: Mapping[str, object]) -> PersistedReviewCase:
     score = row["score"]
     return PersistedReviewCase(
+        tenant_id=normalize_tenant_id(row.get("tenant_id")),
         run_id=str(row["run_id"]),
         review_id=str(row["review_id"]),
         left_id=str(row["left_id"]),
@@ -478,6 +499,7 @@ def _row_to_review_case(row: Mapping[str, object]) -> PersistedReviewCase:
 def _row_to_audit_event(row: Mapping[str, object]) -> AuditEventRecord:
     return AuditEventRecord(
         audit_event_id=str(row["audit_event_id"]),
+        tenant_id=normalize_tenant_id(row.get("tenant_id")),
         occurred_at_utc=str(row["occurred_at_utc"]),
         actor_type=str(row["actor_type"]),
         actor_id=str(row["actor_id"]),
@@ -494,6 +516,7 @@ def _row_to_run_checkpoint(row: Mapping[str, object]) -> RunCheckpointRecord:
     payload = json.loads(str(row["payload_json"] or "{}"))
     return RunCheckpointRecord(
         checkpoint_id=str(row["checkpoint_id"]),
+        tenant_id=normalize_tenant_id(row.get("tenant_id")),
         run_id=str(row["run_id"]),
         run_key=str(row["run_key"]),
         attempt_number=int(row["attempt_number"] or 0),
@@ -518,6 +541,7 @@ def _row_to_run_checkpoint(row: Mapping[str, object]) -> RunCheckpointRecord:
 def _row_to_run_record(row: Mapping[str, object]) -> PipelineRunRecord:
     return PipelineRunRecord(
         run_id=str(row["run_id"]),
+        tenant_id=normalize_tenant_id(row.get("tenant_id")),
         run_key="" if row["run_key"] is None else str(row["run_key"]),
         attempt_number=int(row["attempt_number"] or 0),
         batch_id=None if row["batch_id"] is None else str(row["batch_id"]),
@@ -625,6 +649,7 @@ class SQLitePipelineStore:
     def begin_run(
         self,
         *,
+        tenant_id: str | None = None,
         run_key: str,
         batch_id: str | None,
         input_mode: str,
@@ -636,17 +661,18 @@ class SQLitePipelineStore:
         formats: str | None,
         started_at_utc: str,
     ) -> RunStartDecision:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.begin() as connection:
             completed = self._fetchone(
                 connection,
                 """
                 SELECT run_id, attempt_number
                 FROM pipeline_runs
-                WHERE run_key = :run_key AND status = 'completed'
+                WHERE tenant_id = :tenant_id AND run_key = :run_key AND status = 'completed'
                 ORDER BY attempt_number DESC
                 LIMIT 1
                 """,
-                {"run_key": run_key},
+                {"tenant_id": resolved_tenant_id, "run_key": run_key},
             )
             if completed is not None:
                 return RunStartDecision(
@@ -666,7 +692,8 @@ class SQLitePipelineStore:
                 FROM run_checkpoints
                 JOIN pipeline_runs
                   ON pipeline_runs.run_id = run_checkpoints.run_id
-                WHERE pipeline_runs.run_key = :run_key
+                WHERE pipeline_runs.tenant_id = :tenant_id
+                  AND pipeline_runs.run_key = :run_key
                   AND pipeline_runs.status = 'failed'
                 ORDER BY pipeline_runs.attempt_number DESC,
                          run_checkpoints.stage_order DESC,
@@ -674,13 +701,17 @@ class SQLitePipelineStore:
                          run_checkpoints.checkpoint_id DESC
                 LIMIT 1
                 """,
-                {"run_key": run_key},
+                {"tenant_id": resolved_tenant_id, "run_key": run_key},
             )
 
             attempt_row = self._fetchone(
                 connection,
-                "SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt FROM pipeline_runs WHERE run_key = :run_key",
-                {"run_key": run_key},
+                """
+                SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt
+                FROM pipeline_runs
+                WHERE tenant_id = :tenant_id AND run_key = :run_key
+                """,
+                {"tenant_id": resolved_tenant_id, "run_key": run_key},
             )
             attempt_number = int(attempt_row["max_attempt"] or 0) + 1
             run_id = build_run_id(datetime.fromisoformat(started_at_utc.replace("Z", "+00:00")))
@@ -692,6 +723,7 @@ class SQLitePipelineStore:
                     """
                     INSERT INTO pipeline_runs (
                         run_id,
+                        tenant_id,
                         run_key,
                         attempt_number,
                         batch_id,
@@ -715,6 +747,7 @@ class SQLitePipelineStore:
                         summary_json
                     ) VALUES (
                         :run_id,
+                        :tenant_id,
                         :run_key,
                         :attempt_number,
                         :batch_id,
@@ -741,6 +774,7 @@ class SQLitePipelineStore:
                 ),
                 {
                     "run_id": run_id,
+                    "tenant_id": resolved_tenant_id,
                     "run_key": run_key,
                     "attempt_number": attempt_number,
                     "batch_id": batch_id,
@@ -774,6 +808,7 @@ class SQLitePipelineStore:
     def begin_export_run(
         self,
         *,
+        tenant_id: str | None = None,
         export_key: str,
         job_name: str,
         source_run_id: str,
@@ -782,17 +817,18 @@ class SQLitePipelineStore:
         output_root: str,
         started_at_utc: str,
     ) -> ExportStartDecision:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.begin() as connection:
             completed = self._fetchone(
                 connection,
                 """
                 SELECT export_run_id, attempt_number
                 FROM export_job_runs
-                WHERE export_key = :export_key AND status = 'completed'
+                WHERE tenant_id = :tenant_id AND export_key = :export_key AND status = 'completed'
                 ORDER BY attempt_number DESC
                 LIMIT 1
                 """,
-                {"export_key": export_key},
+                {"tenant_id": resolved_tenant_id, "export_key": export_key},
             )
             if completed is not None:
                 return ExportStartDecision(
@@ -808,9 +844,9 @@ class SQLitePipelineStore:
                 """
                 SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt
                 FROM export_job_runs
-                WHERE export_key = :export_key
+                WHERE tenant_id = :tenant_id AND export_key = :export_key
                 """,
-                {"export_key": export_key},
+                {"tenant_id": resolved_tenant_id, "export_key": export_key},
             )
             attempt_number = int(attempt_row["max_attempt"] or 0) + 1
             export_run_id = build_export_run_id(
@@ -821,6 +857,7 @@ class SQLitePipelineStore:
                     """
                     INSERT INTO export_job_runs (
                         export_run_id,
+                        tenant_id,
                         export_key,
                         attempt_number,
                         job_name,
@@ -838,6 +875,7 @@ class SQLitePipelineStore:
                         failure_detail
                     ) VALUES (
                         :export_run_id,
+                        :tenant_id,
                         :export_key,
                         :attempt_number,
                         :job_name,
@@ -858,6 +896,7 @@ class SQLitePipelineStore:
                 ),
                 {
                     "export_run_id": export_run_id,
+                    "tenant_id": resolved_tenant_id,
                     "export_key": export_key,
                     "attempt_number": attempt_number,
                     "job_name": job_name,
@@ -881,17 +920,23 @@ class SQLitePipelineStore:
         self,
         connection: Connection,
         table_name: str,
+        tenant_id: str,
         run_id: str,
         rows: list[dict[str, object]],
     ) -> None:
         headers = ARTIFACT_HEADERS[table_name]
-        quoted_columns = ", ".join(f'"{column}"' for column in ("run_id", "row_index", *headers))
-        placeholders = ", ".join(f":{column}" for column in ("run_id", "row_index", *headers))
+        quoted_columns = ", ".join(
+            f'"{column}"' for column in ("tenant_id", "run_id", "row_index", *headers)
+        )
+        placeholders = ", ".join(
+            f":{column}" for column in ("tenant_id", "run_id", "row_index", *headers)
+        )
         self._execute_many(
             connection,
             f"INSERT INTO {table_name} ({quoted_columns}) VALUES ({placeholders})",
             [
                 {
+                    "tenant_id": tenant_id,
                     "run_id": run_id,
                     "row_index": index,
                     **{header: row.get(header, "") for header in headers},
@@ -903,6 +948,7 @@ class SQLitePipelineStore:
     def _persist_review_case_rows(
         self,
         connection: Connection,
+        tenant_id: str,
         run_id: str,
         rows: list[dict[str, str | float]],
         *,
@@ -912,6 +958,7 @@ class SQLitePipelineStore:
             connection,
             """
             INSERT INTO review_cases (
+                tenant_id,
                 run_id,
                 row_index,
                 review_id,
@@ -927,6 +974,7 @@ class SQLitePipelineStore:
                 updated_at_utc,
                 resolved_at_utc
             ) VALUES (
+                :tenant_id,
                 :run_id,
                 :row_index,
                 :review_id,
@@ -945,6 +993,7 @@ class SQLitePipelineStore:
             """,
             [
                 {
+                    "tenant_id": tenant_id,
                     "run_id": run_id,
                     "row_index": index,
                     "review_id": row.get("review_id", ""),
@@ -967,6 +1016,7 @@ class SQLitePipelineStore:
     def persist_run_checkpoint(
         self,
         *,
+        tenant_id: str | None = None,
         run_id: str,
         run_key: str,
         attempt_number: int,
@@ -989,6 +1039,7 @@ class SQLitePipelineStore:
                 f"Unsupported run checkpoint stage {stage_name!r}; expected one of {sorted(RUN_CHECKPOINT_STAGE_ORDER)}"
             )
 
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         stage_order = RUN_CHECKPOINT_STAGE_ORDER[stage_name]
         checkpoint_id = build_checkpoint_id(
             datetime.fromisoformat(checkpointed_at_utc.replace("Z", "+00:00"))
@@ -1030,6 +1081,7 @@ class SQLitePipelineStore:
                     """
                     INSERT INTO run_checkpoints (
                         checkpoint_id,
+                        tenant_id,
                         run_id,
                         run_key,
                         attempt_number,
@@ -1042,6 +1094,7 @@ class SQLitePipelineStore:
                         payload_json
                     ) VALUES (
                         :checkpoint_id,
+                        :tenant_id,
                         :run_id,
                         :run_key,
                         :attempt_number,
@@ -1057,6 +1110,7 @@ class SQLitePipelineStore:
                 ),
                 {
                     "checkpoint_id": checkpoint_id,
+                    "tenant_id": resolved_tenant_id,
                     "run_id": run_id,
                     "run_key": run_key,
                     "attempt_number": attempt_number,
@@ -1090,13 +1144,15 @@ class SQLitePipelineStore:
         if metadata.status != "completed":
             raise ValueError(f"Unsupported persisted run status: {metadata.status}")
 
+        resolved_tenant_id = normalize_tenant_id(metadata.tenant_id)
         with self.engine.begin() as connection:
             self._clear_existing_run(connection, metadata.run_id)
             connection.execute(
                 text(
                     """
                     UPDATE pipeline_runs
-                    SET run_key = :run_key,
+                    SET tenant_id = :tenant_id,
+                        run_key = :run_key,
                         attempt_number = :attempt_number,
                         batch_id = :batch_id,
                         input_mode = :input_mode,
@@ -1122,6 +1178,7 @@ class SQLitePipelineStore:
                 ),
                 {
                     "run_id": metadata.run_id,
+                    "tenant_id": resolved_tenant_id,
                     "run_key": metadata.run_key,
                     "attempt_number": metadata.attempt_number,
                     "batch_id": metadata.batch_id,
@@ -1145,14 +1202,51 @@ class SQLitePipelineStore:
                     "summary_json": json.dumps(summary, sort_keys=True),
                 },
             )
-            self._persist_artifact_rows(connection, "normalized_source_records", metadata.run_id, normalized_rows)
-            self._persist_artifact_rows(connection, "candidate_pairs", metadata.run_id, match_rows)
-            self._persist_artifact_rows(connection, "blocking_metrics", metadata.run_id, blocking_metrics_rows)
-            self._persist_artifact_rows(connection, "entity_clusters", metadata.run_id, cluster_rows)
-            self._persist_artifact_rows(connection, "golden_records", metadata.run_id, golden_rows)
-            self._persist_artifact_rows(connection, "source_to_golden_crosswalk", metadata.run_id, crosswalk_rows)
+            self._persist_artifact_rows(
+                connection,
+                "normalized_source_records",
+                resolved_tenant_id,
+                metadata.run_id,
+                normalized_rows,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "candidate_pairs",
+                resolved_tenant_id,
+                metadata.run_id,
+                match_rows,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "blocking_metrics",
+                resolved_tenant_id,
+                metadata.run_id,
+                blocking_metrics_rows,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "entity_clusters",
+                resolved_tenant_id,
+                metadata.run_id,
+                cluster_rows,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "golden_records",
+                resolved_tenant_id,
+                metadata.run_id,
+                golden_rows,
+            )
+            self._persist_artifact_rows(
+                connection,
+                "source_to_golden_crosswalk",
+                resolved_tenant_id,
+                metadata.run_id,
+                crosswalk_rows,
+            )
             self._persist_review_case_rows(
                 connection,
+                resolved_tenant_id,
                 metadata.run_id,
                 review_rows,
                 created_at_utc=metadata.finished_at_utc,
@@ -1160,12 +1254,14 @@ class SQLitePipelineStore:
             self._persist_artifact_rows(
                 connection,
                 "public_safety_incident_identity",
+                resolved_tenant_id,
                 metadata.run_id,
                 public_safety_incident_identity_rows,
             )
             self._persist_artifact_rows(
                 connection,
                 "public_safety_golden_activity",
+                resolved_tenant_id,
                 metadata.run_id,
                 public_safety_golden_activity_rows,
             )
@@ -1341,7 +1437,13 @@ class SQLitePipelineStore:
             return None
         return _row_to_run_checkpoint(row)
 
-    def latest_resume_checkpoint_for_run_key(self, run_key: str) -> RunCheckpointRecord | None:
+    def latest_resume_checkpoint_for_run_key(
+        self,
+        run_key: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> RunCheckpointRecord | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             row = self._fetchone(
                 connection,
@@ -1350,7 +1452,8 @@ class SQLitePipelineStore:
                 FROM run_checkpoints
                 JOIN pipeline_runs
                   ON pipeline_runs.run_id = run_checkpoints.run_id
-                WHERE pipeline_runs.run_key = :run_key
+                WHERE pipeline_runs.tenant_id = :tenant_id
+                  AND pipeline_runs.run_key = :run_key
                   AND pipeline_runs.status = 'failed'
                 ORDER BY pipeline_runs.attempt_number DESC,
                          run_checkpoints.stage_order DESC,
@@ -1358,91 +1461,117 @@ class SQLitePipelineStore:
                          run_checkpoints.checkpoint_id DESC
                 LIMIT 1
                 """,
-                {"run_key": run_key},
+                {"tenant_id": resolved_tenant_id, "run_key": run_key},
             )
         if row is None:
             return None
         return _row_to_run_checkpoint(row)
 
-    def latest_run_id(self) -> str | None:
+    def latest_run_id(self, *, tenant_id: str | None = None) -> str | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             row = self._fetchone(
                 connection,
                 """
                 SELECT run_id
                 FROM pipeline_runs
-                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
-                LIMIT 1
-                """
-            )
-        return None if row is None else str(row["run_id"])
-
-    def latest_completed_run_id(self) -> str | None:
-        with self.engine.connect() as connection:
-            row = self._fetchone(
-                connection,
-                """
-                SELECT run_id
-                FROM pipeline_runs
-                WHERE status = 'completed'
-                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
-                LIMIT 1
-                """
-            )
-        return None if row is None else str(row["run_id"])
-
-    def latest_completed_run_for_run_key(self, run_key: str) -> PipelineRunRecord | None:
-        with self.engine.connect() as connection:
-            row = self._fetchone(
-                connection,
-                """
-                SELECT run_id
-                FROM pipeline_runs
-                WHERE status = 'completed' AND run_key = :run_key
+                WHERE tenant_id = :tenant_id
                 ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
                 LIMIT 1
                 """,
-                {"run_key": run_key},
+                {"tenant_id": resolved_tenant_id},
+            )
+        return None if row is None else str(row["run_id"])
+
+    def latest_completed_run_id(self, *, tenant_id: str | None = None) -> str | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        with self.engine.connect() as connection:
+            row = self._fetchone(
+                connection,
+                """
+                SELECT run_id
+                FROM pipeline_runs
+                WHERE tenant_id = :tenant_id
+                  AND status = 'completed'
+                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """,
+                {"tenant_id": resolved_tenant_id},
+            )
+        return None if row is None else str(row["run_id"])
+
+    def latest_completed_run_for_run_key(
+        self,
+        run_key: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> PipelineRunRecord | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        with self.engine.connect() as connection:
+            row = self._fetchone(
+                connection,
+                """
+                SELECT run_id
+                FROM pipeline_runs
+                WHERE tenant_id = :tenant_id
+                  AND status = 'completed'
+                  AND run_key = :run_key
+                ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
+                LIMIT 1
+                """,
+                {"tenant_id": resolved_tenant_id, "run_key": run_key},
             )
         if row is None:
             return None
         return self.load_run_record(str(row["run_id"]))
 
-    def latest_completed_export_run_for_key(self, export_key: str) -> ExportJobRunRecord | None:
+    def latest_completed_export_run_for_key(
+        self,
+        export_key: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> ExportJobRunRecord | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             row = self._fetchone(
                 connection,
                 """
                 SELECT *
                 FROM export_job_runs
-                WHERE export_key = :export_key AND status = 'completed'
+                WHERE tenant_id = :tenant_id
+                  AND export_key = :export_key
+                  AND status = 'completed'
                 ORDER BY attempt_number DESC, export_run_id DESC
                 LIMIT 1
                 """,
-                {"export_key": export_key},
+                {"tenant_id": resolved_tenant_id, "export_key": export_key},
             )
         if row is None:
             return None
         return self._row_to_export_job_run_record(row)
 
-    def latest_completed_run_id_with_review_cases(self) -> str | None:
+    def latest_completed_run_id_with_review_cases(self, *, tenant_id: str | None = None) -> str | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             row = self._fetchone(
                 connection,
                 """
                 SELECT pipeline_runs.run_id
                 FROM pipeline_runs
-                WHERE pipeline_runs.status = 'completed'
+                WHERE pipeline_runs.tenant_id = :tenant_id
+                  AND pipeline_runs.status = 'completed'
                   AND EXISTS (
                       SELECT 1
                       FROM review_cases
                       WHERE review_cases.run_id = pipeline_runs.run_id
+                        AND review_cases.tenant_id = :tenant_id
                   )
                 ORDER BY pipeline_runs.finished_at_utc DESC,
                          pipeline_runs.started_at_utc DESC,
                          pipeline_runs.run_id DESC
                 LIMIT 1
-                """
+                """,
+                {"tenant_id": resolved_tenant_id},
             )
         return None if row is None else str(row["run_id"])
 
@@ -1451,21 +1580,28 @@ class SQLitePipelineStore:
         *,
         manifest_path: str,
         config_dir: str | None,
+        tenant_id: str | None = None,
     ) -> PipelineRunRecord | None:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             row = self._fetchone(
                 connection,
                 """
                 SELECT run_id
                 FROM pipeline_runs
-                WHERE status = 'completed'
+                WHERE tenant_id = :tenant_id
+                  AND status = 'completed'
                   AND input_mode = 'manifest'
                   AND manifest_path = :manifest_path
                   AND COALESCE(config_dir, '') = COALESCE(:config_dir, '')
                 ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
                 LIMIT 1
                 """,
-                {"manifest_path": manifest_path, "config_dir": config_dir},
+                {
+                    "tenant_id": resolved_tenant_id,
+                    "manifest_path": manifest_path,
+                    "config_dir": config_dir,
+                },
             )
         if row is None:
             return None
@@ -1485,6 +1621,7 @@ class SQLitePipelineStore:
     def list_run_records(
         self,
         *,
+        tenant_id: str | None = None,
         status: str | None = None,
         input_mode: str | None = None,
         batch_id: str | None = None,
@@ -1500,8 +1637,13 @@ class SQLitePipelineStore:
                 f"Unsupported run sort {sort!r}; expected one of {sorted(RUN_LIST_SORTS)}"
             )
 
-        filters: list[str] = ["1 = 1"]
-        parameters: dict[str, object] = {"limit": limit, "offset": offset}
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        filters: list[str] = ["tenant_id = :tenant_id"]
+        parameters: dict[str, object] = {
+            "tenant_id": resolved_tenant_id,
+            "limit": limit,
+            "offset": offset,
+        }
         if status is not None:
             normalized_status = status.strip().lower()
             if normalized_status not in RUN_STATUSES:
@@ -1569,6 +1711,7 @@ class SQLitePipelineStore:
     def _row_to_export_job_run_record(self, row: Mapping[str, object]) -> ExportJobRunRecord:
         return ExportJobRunRecord(
             export_run_id=str(row["export_run_id"]),
+            tenant_id=normalize_tenant_id(row.get("tenant_id")),
             export_key=str(row["export_key"]),
             attempt_number=int(row["attempt_number"] or 0),
             job_name=str(row["job_name"]),
@@ -1602,12 +1745,14 @@ class SQLitePipelineStore:
     def list_export_runs(
         self,
         *,
+        tenant_id: str | None = None,
         job_name: str | None = None,
         source_run_id: str | None = None,
         status: str | None = None,
     ) -> list[ExportJobRunRecord]:
-        filters: list[str] = ["1 = 1"]
-        parameters: dict[str, object] = {}
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        filters: list[str] = ["tenant_id = :tenant_id"]
+        parameters: dict[str, object] = {"tenant_id": resolved_tenant_id}
         if job_name is not None:
             filters.append("job_name = :job_name")
             parameters["job_name"] = job_name
@@ -1639,6 +1784,7 @@ class SQLitePipelineStore:
     def record_audit_event(
         self,
         *,
+        tenant_id: str | None = None,
         actor_type: str,
         actor_id: str,
         action: str,
@@ -1674,11 +1820,17 @@ class SQLitePipelineStore:
         timestamp = occurred_at_utc or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         audit_event_id = build_audit_event_id(datetime.fromisoformat(timestamp.replace("Z", "+00:00")))
         with self.engine.begin() as connection:
+            resolved_tenant_id = (
+                normalize_tenant_id(tenant_id)
+                if tenant_id is not None
+                else self._resolve_audit_tenant_id(connection, run_id)
+            )
             connection.execute(
                 text(
                     """
                     INSERT INTO audit_events (
                         audit_event_id,
+                        tenant_id,
                         occurred_at_utc,
                         actor_type,
                         actor_id,
@@ -1690,6 +1842,7 @@ class SQLitePipelineStore:
                         details_json
                     ) VALUES (
                         :audit_event_id,
+                        :tenant_id,
                         :occurred_at_utc,
                         :actor_type,
                         :actor_id,
@@ -1704,6 +1857,7 @@ class SQLitePipelineStore:
                 ),
                 {
                     "audit_event_id": audit_event_id,
+                    "tenant_id": resolved_tenant_id,
                     "occurred_at_utc": timestamp,
                     "actor_type": normalized_actor_type,
                     "actor_id": normalized_actor_id,
@@ -1731,6 +1885,7 @@ class SQLitePipelineStore:
     def list_audit_events(
         self,
         *,
+        tenant_id: str | None = None,
         run_id: str | None = None,
         action: str | None = None,
         status: str | None = None,
@@ -1738,8 +1893,9 @@ class SQLitePipelineStore:
     ) -> list[AuditEventRecord]:
         if limit <= 0:
             raise ValueError("Audit event limit must be greater than 0")
-        filters: list[str] = ["1 = 1"]
-        parameters: dict[str, object] = {"limit": limit}
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        filters: list[str] = ["tenant_id = :tenant_id"]
+        parameters: dict[str, object] = {"tenant_id": resolved_tenant_id, "limit": limit}
         if run_id is not None:
             filters.append("run_id = :run_id")
             parameters["run_id"] = run_id
@@ -1769,46 +1925,82 @@ class SQLitePipelineStore:
             )
         return [_row_to_audit_event(row) for row in rows]
 
-    def load_operational_metrics(self) -> StoreOperationalMetrics:
+    def load_operational_metrics(self, *, tenant_id: str | None = None) -> StoreOperationalMetrics:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             run_status_counts = {status: 0 for status in RUN_STATUSES}
-            for row in self._fetchall(connection, "SELECT status, COUNT(*) AS total FROM pipeline_runs GROUP BY status"):
+            for row in self._fetchall(
+                connection,
+                """
+                SELECT status, COUNT(*) AS total
+                FROM pipeline_runs
+                WHERE tenant_id = :tenant_id
+                GROUP BY status
+                """,
+                {"tenant_id": resolved_tenant_id},
+            ):
                 status = str(row["status"])
                 if status in run_status_counts:
                     run_status_counts[status] = int(row["total"] or 0)
 
             export_status_counts = {status: 0 for status in EXPORT_RUN_STATUSES}
-            for row in self._fetchall(connection, "SELECT status, COUNT(*) AS total FROM export_job_runs GROUP BY status"):
+            for row in self._fetchall(
+                connection,
+                """
+                SELECT status, COUNT(*) AS total
+                FROM export_job_runs
+                WHERE tenant_id = :tenant_id
+                GROUP BY status
+                """,
+                {"tenant_id": resolved_tenant_id},
+            ):
                 status = str(row["status"])
                 if status in export_status_counts:
                     export_status_counts[status] = int(row["total"] or 0)
 
             review_case_status_counts = {status: 0 for status in REVIEW_CASE_STATUSES}
-            for row in self._fetchall(connection, "SELECT queue_status, COUNT(*) AS total FROM review_cases GROUP BY queue_status"):
+            for row in self._fetchall(
+                connection,
+                """
+                SELECT queue_status, COUNT(*) AS total
+                FROM review_cases
+                WHERE tenant_id = :tenant_id
+                GROUP BY queue_status
+                """,
+                {"tenant_id": resolved_tenant_id},
+            ):
                 status = str(row["queue_status"])
                 if status in review_case_status_counts:
                     review_case_status_counts[status] = int(row["total"] or 0)
 
-            audit_event_row = self._fetchone(connection, "SELECT COUNT(*) AS total FROM audit_events")
+            audit_event_row = self._fetchone(
+                connection,
+                "SELECT COUNT(*) AS total FROM audit_events WHERE tenant_id = :tenant_id",
+                {"tenant_id": resolved_tenant_id},
+            )
             latest_completed_row = self._fetchone(
                 connection,
                 """
                 SELECT run_id, finished_at_utc
                 FROM pipeline_runs
-                WHERE status = 'completed'
+                WHERE tenant_id = :tenant_id
+                  AND status = 'completed'
                 ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
                 LIMIT 1
-                """
+                """,
+                {"tenant_id": resolved_tenant_id},
             )
             latest_failed_row = self._fetchone(
                 connection,
                 """
                 SELECT run_id, finished_at_utc
                 FROM pipeline_runs
-                WHERE status = 'failed'
+                WHERE tenant_id = :tenant_id
+                  AND status = 'failed'
                 ORDER BY finished_at_utc DESC, started_at_utc DESC, run_id DESC
                 LIMIT 1
-                """
+                """,
+                {"tenant_id": resolved_tenant_id},
             )
 
         return StoreOperationalMetrics(
@@ -1843,6 +2035,18 @@ class SQLitePipelineStore:
                 {"run_id": run_id},
             )
         return [_row_to_strings(row, headers) for row in rows]
+
+    def _resolve_audit_tenant_id(self, connection: Connection, run_id: str | None) -> str:
+        if not run_id:
+            return DEFAULT_TENANT_ID
+        row = self._fetchone(
+            connection,
+            "SELECT tenant_id FROM pipeline_runs WHERE run_id = :run_id",
+            {"run_id": run_id},
+        )
+        if row is None:
+            return DEFAULT_TENANT_ID
+        return normalize_tenant_id(row.get("tenant_id"))
 
     def _load_single_artifact_row(
         self,
@@ -2188,6 +2392,7 @@ class SQLitePipelineStore:
         self,
         *,
         run_id: str,
+        tenant_id: str | None = None,
         queue_status: str | None = None,
         assigned_to: str | None = None,
         search_query: str | None = None,
@@ -2207,8 +2412,9 @@ class SQLitePipelineStore:
                 raise ValueError("Review-case offset requires limit to be provided")
             order_by = "row_index ASC"
 
-        filters: list[str] = ["run_id = :run_id"]
-        parameters: dict[str, object] = {"run_id": run_id}
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        filters: list[str] = ["tenant_id = :tenant_id", "run_id = :run_id"]
+        parameters: dict[str, object] = {"tenant_id": resolved_tenant_id, "run_id": run_id}
         if queue_status is not None:
             filters.append("queue_status = :queue_status")
             parameters["queue_status"] = validate_review_case_status(queue_status)
@@ -2243,7 +2449,7 @@ class SQLitePipelineStore:
                 connection,
                 f"""
                 SELECT run_id, review_id, left_id, right_id, score, reason_codes,
-                       top_contributing_match_signals, queue_status, assigned_to,
+                       tenant_id, top_contributing_match_signals, queue_status, assigned_to,
                        operator_notes, created_at_utc, updated_at_utc, resolved_at_utc
                 FROM review_cases
                 WHERE {where_clause}
@@ -2275,18 +2481,25 @@ class SQLitePipelineStore:
             ),
         )
 
-    def load_review_case(self, *, run_id: str, review_id: str) -> PersistedReviewCase:
+    def load_review_case(
+        self,
+        *,
+        run_id: str,
+        review_id: str,
+        tenant_id: str | None = None,
+    ) -> PersistedReviewCase:
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
         with self.engine.connect() as connection:
             row = self._fetchone(
                 connection,
                 """
-                SELECT run_id, review_id, left_id, right_id, score, reason_codes,
+                SELECT tenant_id, run_id, review_id, left_id, right_id, score, reason_codes,
                        top_contributing_match_signals, queue_status, assigned_to,
                        operator_notes, created_at_utc, updated_at_utc, resolved_at_utc
                 FROM review_cases
-                WHERE run_id = :run_id AND review_id = :review_id
+                WHERE tenant_id = :tenant_id AND run_id = :run_id AND review_id = :review_id
                 """,
-                {"run_id": run_id, "review_id": review_id},
+                {"tenant_id": resolved_tenant_id, "run_id": run_id, "review_id": review_id},
             )
         if row is None:
             raise FileNotFoundError(f"Persisted review case not found: run_id={run_id} review_id={review_id}")
@@ -2297,12 +2510,14 @@ class SQLitePipelineStore:
         *,
         run_id: str,
         review_id: str,
+        tenant_id: str | None = None,
         queue_status: str | None = None,
         assigned_to: str | None = None,
         operator_notes: str | None = None,
         updated_at_utc: str | None = None,
     ) -> PersistedReviewCase:
-        existing = self.load_review_case(run_id=run_id, review_id=review_id)
+        resolved_tenant_id = normalize_tenant_id(tenant_id)
+        existing = self.load_review_case(run_id=run_id, review_id=review_id, tenant_id=resolved_tenant_id)
         timestamp = updated_at_utc or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         next_status = existing.queue_status
@@ -2327,10 +2542,11 @@ class SQLitePipelineStore:
                         operator_notes = :operator_notes,
                         updated_at_utc = :updated_at_utc,
                         resolved_at_utc = :resolved_at_utc
-                    WHERE run_id = :run_id AND review_id = :review_id
+                    WHERE tenant_id = :tenant_id AND run_id = :run_id AND review_id = :review_id
                     """
                 ),
                 {
+                    "tenant_id": resolved_tenant_id,
                     "queue_status": next_status,
                     "assigned_to": next_assigned_to,
                     "operator_notes": next_operator_notes,
@@ -2342,7 +2558,7 @@ class SQLitePipelineStore:
             ).rowcount
         if updated_rows == 0:
             raise FileNotFoundError(f"Persisted review case not found: run_id={run_id} review_id={review_id}")
-        return self.load_review_case(run_id=run_id, review_id=review_id)
+        return self.load_review_case(run_id=run_id, review_id=review_id, tenant_id=resolved_tenant_id)
 
 
 PipelineStateStore = SQLitePipelineStore

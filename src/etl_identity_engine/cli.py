@@ -136,6 +136,7 @@ from etl_identity_engine.storage.sqlite_store import (
     RunCheckpointRecord,
     RUN_CHECKPOINT_STAGE_ORDER,
     build_run_key,
+    normalize_tenant_id,
 )
 from etl_identity_engine.storage.state_store_target import state_store_display_name, state_store_reference_name
 from etl_identity_engine.streaming import (
@@ -204,6 +205,13 @@ def _apply_runtime_defaults(args: argparse.Namespace) -> None:
     ):
         args.state_db = str(runtime_environment.state_db)
 
+    if (
+        hasattr(args, "tenant_id")
+        and getattr(args, "tenant_id") is None
+        and runtime_environment.tenant_id is not None
+    ):
+        args.tenant_id = runtime_environment.tenant_id
+
     args.environment = runtime_environment.name
 
 
@@ -211,6 +219,10 @@ def _require_state_db(args: argparse.Namespace) -> str:
     if not args.state_db:
         raise ValueError("This command requires --state-db or a runtime environment with state_db configured")
     return str(args.state_db)
+
+
+def _resolve_tenant_id(args: argparse.Namespace) -> str:
+    return normalize_tenant_id(getattr(args, "tenant_id", None))
 
 
 def _resolve_max_secret_file_age_hours(args: argparse.Namespace) -> float | None:
@@ -244,6 +256,14 @@ def _add_bundle_secret_arguments(parser: argparse.ArgumentParser, *, required: b
         "--key-file",
         default=None,
         help="File containing a base64-encoded 32-byte AES key.",
+    )
+
+
+def _add_tenant_id_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--tenant-id",
+        default=None,
+        help="Tenant boundary for persisted-state selection and storage. Defaults to the runtime environment tenant or 'default'.",
     )
 
 
@@ -1232,6 +1252,7 @@ def _resolve_run_key_args(
 ) -> dict[str, object | None]:
     manifest_path = getattr(args, "manifest", None)
     return {
+        "tenant_id": _resolve_tenant_id(args),
         "input_mode": "manifest" if manifest_path else "synthetic",
         "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else None,
         "batch_id": batch_id,
@@ -1252,6 +1273,7 @@ def _resolve_stream_run_key_args(
     batch: ResolvedStreamEventBatch,
 ) -> dict[str, object | None]:
     return {
+        "tenant_id": _resolve_tenant_id(args),
         "input_mode": "event_stream",
         "manifest_path": None,
         "batch_id": batch.batch_id,
@@ -1582,7 +1604,9 @@ def _cmd_restore_state_bundle(args: argparse.Namespace) -> None:
 
 
 def _resolve_review_case_run_id(args: argparse.Namespace, store: PipelineStateStore) -> str:
-    run_id = args.run_id or store.latest_completed_run_id_with_review_cases()
+    run_id = args.run_id or store.latest_completed_run_id_with_review_cases(
+        tenant_id=_resolve_tenant_id(args)
+    )
     if run_id is None:
         raise FileNotFoundError(
             f"No completed persisted review-case runs found in {state_store_display_name(_require_state_db(args))}"
@@ -1592,6 +1616,7 @@ def _resolve_review_case_run_id(args: argparse.Namespace, store: PipelineStateSt
 
 def _serialize_review_case(case: PersistedReviewCase) -> dict[str, object]:
     return {
+        "tenant_id": case.tenant_id,
         "run_id": case.run_id,
         "review_id": case.review_id,
         "left_id": case.left_id,
@@ -1611,6 +1636,7 @@ def _serialize_review_case(case: PersistedReviewCase) -> dict[str, object]:
 def _serialize_run_record(record: PipelineRunRecord) -> dict[str, object]:
     return {
         "run_id": record.run_id,
+        "tenant_id": record.tenant_id,
         "run_key": record.run_key,
         "attempt_number": record.attempt_number,
         "batch_id": record.batch_id,
@@ -1669,6 +1695,7 @@ def _serialize_export_job(job: ExportJobConfig) -> dict[str, object]:
 def _serialize_export_run_record(record: ExportJobRunRecord) -> dict[str, object]:
     return {
         "export_run_id": record.export_run_id,
+        "tenant_id": record.tenant_id,
         "export_key": record.export_key,
         "attempt_number": record.attempt_number,
         "job_name": record.job_name,
@@ -1690,6 +1717,7 @@ def _serialize_export_run_record(record: ExportJobRunRecord) -> dict[str, object
 def _record_cli_audit_event(
     store: PipelineStateStore,
     *,
+    tenant_id: str | None = None,
     action: str,
     resource_type: str,
     resource_id: str,
@@ -1698,6 +1726,7 @@ def _record_cli_audit_event(
     details: dict[str, object] | None = None,
 ) -> None:
     store.record_audit_event(
+        tenant_id=tenant_id,
         actor_type="cli",
         actor_id="operator",
         action=action,
@@ -1710,7 +1739,7 @@ def _record_cli_audit_event(
 
 
 def _resolve_completed_run_id(args: argparse.Namespace, store: PipelineStateStore) -> str:
-    run_id = args.run_id or store.latest_completed_run_id()
+    run_id = args.run_id or store.latest_completed_run_id(tenant_id=_resolve_tenant_id(args))
     if run_id is None:
         raise FileNotFoundError(
             f"No completed persisted runs found in {state_store_display_name(_require_state_db(args))}"
@@ -1737,10 +1766,12 @@ def _resolve_export_job(args: argparse.Namespace) -> ExportJobConfig:
 
 def _cmd_review_case_list(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     run_id = _resolve_review_case_run_id(args, store)
     cases = store.list_review_cases(
         run_id=run_id,
+        tenant_id=tenant_id,
         queue_status=args.status,
         assigned_to=args.assigned_to,
     )
@@ -1749,11 +1780,13 @@ def _cmd_review_case_list(args: argparse.Namespace) -> None:
 
 def _cmd_review_case_update(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     run_id = _resolve_review_case_run_id(args, store)
     updated = store.update_review_case(
         run_id=run_id,
         review_id=args.review_id,
+        tenant_id=tenant_id,
         queue_status=args.status,
         assigned_to=args.assigned_to,
         operator_notes=args.notes,
@@ -1764,10 +1797,12 @@ def _cmd_review_case_update(args: argparse.Namespace) -> None:
 def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     try:
         result = apply_review_decision_operation(
             store=store,
+            tenant_id=tenant_id,
             run_id=args.run_id,
             review_id=args.review_id,
             decision=args.decision,
@@ -1777,6 +1812,7 @@ def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
     except Exception as exc:
         _record_cli_audit_event(
             store,
+            tenant_id=tenant_id,
             action="apply_review_decision",
             resource_type="review_case",
             resource_id=args.review_id,
@@ -1803,6 +1839,7 @@ def _cmd_apply_review_decision(args: argparse.Namespace) -> None:
 
     _record_cli_audit_event(
         store,
+        tenant_id=tenant_id,
         action="apply_review_decision",
         resource_type="review_case",
         resource_id=result.case.review_id,
@@ -1851,7 +1888,10 @@ def _verify_run_replay_bundle(
 
     verification = verify_replay_bundle(bundle_manifest_path)
     updated_summary = dict(record.summary)
-    updated_summary["replay_bundle"] = replay_bundle_summary_from_result(verification)
+    updated_summary["replay_bundle"] = {
+        **replay_bundle_summary_from_result(verification),
+        "tenant_id": record.tenant_id,
+    }
     store.update_run_summary(run_id=run_id, summary=updated_summary)
     base_dir = Path(record.base_dir)
     normalized_file = base_dir / "data" / "normalized" / "normalized_person_records.csv"
@@ -1864,15 +1904,20 @@ def _verify_run_replay_bundle(
         )
     return {
         "run_id": run_id,
+        "tenant_id": record.tenant_id,
         "status": verification.status,
         "recoverable": verification.recoverable,
-        "replay_bundle": replay_bundle_summary_from_result(verification),
+        "replay_bundle": {
+            **replay_bundle_summary_from_result(verification),
+            "tenant_id": record.tenant_id,
+        },
     }
 
 
 def _cmd_verify_replay_bundle(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     run_id = _resolve_completed_run_id(args, store)
 
@@ -1881,6 +1926,7 @@ def _cmd_verify_replay_bundle(args: argparse.Namespace) -> None:
     except Exception as exc:
         _record_cli_audit_event(
             store,
+            tenant_id=tenant_id,
             action="verify_replay_bundle",
             resource_type="pipeline_run",
             resource_id=run_id,
@@ -1902,6 +1948,7 @@ def _cmd_verify_replay_bundle(args: argparse.Namespace) -> None:
     verification_status = str(payload["status"])
     _record_cli_audit_event(
         store,
+        tenant_id=tenant_id,
         action="verify_replay_bundle",
         resource_type="pipeline_run",
         resource_id=run_id,
@@ -1924,8 +1971,9 @@ def _cmd_verify_replay_bundle(args: argparse.Namespace) -> None:
 def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
-    run_id = args.run_id or store.latest_completed_run_id()
+    run_id = args.run_id or store.latest_completed_run_id(tenant_id=tenant_id)
     if run_id is None:
         raise FileNotFoundError(f"No completed persisted runs found in {state_store_display_name(state_db)}")
 
@@ -1941,6 +1989,7 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     )
     _record_cli_audit_event(
         store,
+        tenant_id=tenant_id,
         action="publish_delivery",
         resource_type="pipeline_run",
         resource_id=run_id,
@@ -1969,9 +2018,11 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
 def _cmd_publish_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     result = publish_run_operation(
         store=store,
+        tenant_id=tenant_id,
         state_db=state_db,
         run_id=args.run_id,
         output_dir=Path(args.output_dir),
@@ -1979,6 +2030,7 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
     )
     _record_cli_audit_event(
         store,
+        tenant_id=tenant_id,
         action="publish_run",
         resource_type="pipeline_run",
         resource_id=result.run.run_id,
@@ -2006,6 +2058,7 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
             {
                 "action": result.action,
                 "run_id": result.run.run_id,
+                "tenant_id": result.run.tenant_id,
                 "contract_version": result.contract_version,
                 "snapshot_dir": str(result.snapshot_dir),
                 "current_pointer_path": str(result.current_pointer_path),
@@ -2030,11 +2083,13 @@ def _cmd_export_job_list(args: argparse.Namespace) -> None:
 def _cmd_export_job_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     job = _resolve_export_job(args)
     try:
         result = export_job_run_operation(
             store=store,
+            tenant_id=tenant_id,
             state_db=state_db,
             source_run_id=args.run_id,
             job=job,
@@ -2042,6 +2097,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
     except Exception as exc:
         _record_cli_audit_event(
             store,
+            tenant_id=tenant_id,
             action="export_job_run",
             resource_type="export_job",
             resource_id=args.job_name,
@@ -2067,6 +2123,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
 
     _record_cli_audit_event(
         store,
+        tenant_id=tenant_id,
         action="export_job_run",
         resource_type="export_job",
         resource_id=args.job_name,
@@ -2096,6 +2153,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
         json.dumps(
             {
                 "action": result.action,
+                "tenant_id": result.export_run.tenant_id,
                 "job": _serialize_export_job(result.job),
                 "export_run": _serialize_export_run_record(result.export_run),
             },
@@ -2109,6 +2167,7 @@ def _cmd_export_job_history(args: argparse.Namespace) -> None:
     state_db = _require_state_db(args)
     store = PipelineStateStore(state_db)
     records = store.list_export_runs(
+        tenant_id=_resolve_tenant_id(args),
         job_name=args.job_name,
         source_run_id=args.source_run_id,
         status=args.status,
@@ -2125,10 +2184,12 @@ def _cmd_export_job_history(args: argparse.Namespace) -> None:
 def _cmd_replay_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
+    tenant_id = _resolve_tenant_id(args)
     store = PipelineStateStore(state_db)
     try:
         result = replay_run_operation(
             store=store,
+            tenant_id=tenant_id,
             state_db=state_db,
             source_run_id=args.run_id,
             base_dir=Path(args.base_dir) if args.base_dir else None,
@@ -2138,6 +2199,7 @@ def _cmd_replay_run(args: argparse.Namespace) -> None:
     except Exception as exc:
         _record_cli_audit_event(
             store,
+            tenant_id=tenant_id,
             action="replay_run",
             resource_type="pipeline_run",
             resource_id=args.run_id or "latest-completed-run",
@@ -2161,6 +2223,7 @@ def _cmd_replay_run(args: argparse.Namespace) -> None:
         raise
     _record_cli_audit_event(
         store,
+        tenant_id=tenant_id,
         action="replay_run",
         resource_type="pipeline_run",
         resource_id=result.result_run.run_id,
@@ -2189,6 +2252,7 @@ def _cmd_replay_run(args: argparse.Namespace) -> None:
         json.dumps(
             {
                 "action": result.action,
+                "tenant_id": result.result_run.tenant_id,
                 "requested_run_id": result.requested_run.run_id,
                 "result_run_id": result.result_run.run_id,
                 "state_db": str(result.state_db),
@@ -2292,6 +2356,7 @@ def _cmd_report(args: argparse.Namespace) -> None:
 def _cmd_run_all(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     base = Path(args.base_dir)
+    tenant_id = _resolve_tenant_id(args)
     manifest_path = getattr(args, "manifest", None)
     if args.refresh_mode == "incremental":
         if not manifest_path:
@@ -2329,6 +2394,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         component="cli",
         command="run-all",
         base_dir=base.resolve(),
+        tenant_id=tenant_id,
         input_mode=run_key_args["input_mode"],
         manifest_path=run_key_args["manifest_path"] or "",
         batch_id=manifest_batch_id or "",
@@ -2339,6 +2405,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
 
     if state_store is not None:
         start_decision = state_store.begin_run(
+            tenant_id=tenant_id,
             run_key=run_key,
             batch_id=manifest_batch_id,
             input_mode=str(run_key_args["input_mode"]),
@@ -2358,6 +2425,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 component="cli",
                 command="run-all",
                 run_id=bundle.run.run_id,
+                tenant_id=tenant_id,
                 run_key=run_key,
                 duration_seconds=seconds_since(started),
             )
@@ -2385,6 +2453,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 component="cli",
                 command="run-all",
                 run_id=run_id,
+                tenant_id=tenant_id,
                 run_key=run_key,
                 resume_from_run_id=resumed_from_run_id,
                 resume_from_stage=resumed_from_stage,
@@ -2395,6 +2464,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             component="cli",
             command="run-all",
             run_id=run_id,
+            tenant_id=tenant_id,
             run_key=run_key,
             attempt_number=attempt_number,
             input_mode=run_key_args["input_mode"],
@@ -2413,6 +2483,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
     review_rows: list[dict[str, str | float]] = []
     active_review_rows: list[dict[str, str | float]] = []
     run_context: dict[str, object] = {
+        "tenant_id": tenant_id,
         "input_mode": input_mode,
         "batch_id": manifest_batch_id or "",
         "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else "",
@@ -2448,6 +2519,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
         generated_person_count: int | None = None
         config_fingerprint = _config_fingerprint(config)
         run_context: dict[str, object] = {
+            "tenant_id": tenant_id,
             "input_mode": input_mode,
             "batch_id": manifest_batch_id or "",
             "manifest_path": str(Path(manifest_path).resolve()) if manifest_path else "",
@@ -2620,6 +2692,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 public_safety_summary=public_safety_summary,
             )
             state_store.persist_run_checkpoint(
+                tenant_id=tenant_id,
                 run_id=run_id,
                 run_key=run_key,
                 attempt_number=attempt_number,
@@ -2663,6 +2736,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                 review_source_run = state_store.latest_completed_run_for_manifest(
                     manifest_path=str(resolved_manifest.manifest_path),
                     config_dir=str(Path(args.config_dir).resolve()) if args.config_dir else None,
+                    tenant_id=tenant_id,
                 )
             if review_source_run is not None:
                 review_source_bundle = state_store.load_run_bundle(review_source_run.run_id)
@@ -2965,6 +3039,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             state_store.persist_run(
                 metadata=PersistRunMetadata(
                     run_id=run_id,
+                    tenant_id=tenant_id,
                     run_key=run_key,
                     attempt_number=attempt_number,
                     batch_id=batch_id,
@@ -3015,13 +3090,18 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                         run_id=run_id,
                         base_dir=base,
                         resolved_manifest=resolved_manifest,
+                        tenant_id=tenant_id,
                     )
-                    summary["replay_bundle"] = replay_bundle_summary_from_result(verification)
+                    summary["replay_bundle"] = {
+                        **replay_bundle_summary_from_result(verification),
+                        "tenant_id": tenant_id,
+                    }
                     emit_structured_log(
                         "replay_bundle_archived",
                         component="cli",
                         command="run-all",
                         run_id=run_id,
+                        tenant_id=tenant_id,
                         bundle_manifest_path=verification.bundle_manifest_path,
                         recoverable=verification.recoverable,
                         artifact_count=verification.artifact_count,
@@ -3031,6 +3111,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                     summary["replay_bundle"] = {
                         "bundle_id": f"replay-bundle-{run_id}",
                         "bundle_version": REPLAY_BUNDLE_VERSION,
+                        "tenant_id": tenant_id,
                         "status": "failed",
                         "recoverable": False,
                         "replayable_from_bundle": False,
@@ -3053,6 +3134,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
                         component="cli",
                         command="run-all",
                         run_id=run_id,
+                        tenant_id=tenant_id,
                         bundle_manifest_path=bundle_root / "bundle_manifest.json",
                         duration_seconds=seconds_since(archive_started),
                         error=str(exc),
@@ -3080,6 +3162,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             component="cli",
             command="run-all",
             run_id=run_id or "",
+            tenant_id=tenant_id,
             run_key=run_key,
             input_mode=input_mode,
             total_records=summary["total_records"],
@@ -3137,6 +3220,7 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
             component="cli",
             command="run-all",
             run_id=run_id or "",
+            tenant_id=tenant_id,
             run_key=run_key,
             input_mode=run_key_args["input_mode"],
             refresh_mode=args.refresh_mode,
@@ -3150,9 +3234,10 @@ def _cmd_run_all(args: argparse.Namespace) -> None:
 def _cmd_stream_refresh(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     base = Path(args.base_dir)
+    tenant_id = _resolve_tenant_id(args)
     state_db = _require_state_db(args)
     state_store = PipelineStateStore(state_db)
-    source_run_id = args.source_run_id or state_store.latest_completed_run_id()
+    source_run_id = args.source_run_id or state_store.latest_completed_run_id(tenant_id=tenant_id)
     if source_run_id is None:
         raise FileNotFoundError(f"No completed persisted runs found in {state_store_display_name(state_db)}")
 
@@ -3195,6 +3280,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
         component="cli",
         command="stream-refresh",
         base_dir=base.resolve(),
+        tenant_id=tenant_id,
         source_run_id=source_run_id,
         stream_id=resolved_batch.stream_id,
         batch_id=resolved_batch.batch_id,
@@ -3205,6 +3291,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
     )
 
     start_decision = state_store.begin_run(
+        tenant_id=tenant_id,
         run_key=run_key,
         batch_id=resolved_batch.batch_id,
         input_mode="event_stream",
@@ -3224,6 +3311,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             component="cli",
             command="stream-refresh",
             run_id=bundle.run.run_id,
+            tenant_id=tenant_id,
             source_run_id=source_run_id,
             stream_id=resolved_batch.stream_id,
             duration_seconds=seconds_since(started),
@@ -3233,6 +3321,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
                 {
                     "action": "reused_completed_run",
                     "run_id": bundle.run.run_id,
+                    "tenant_id": tenant_id,
                     "source_run_id": source_run_id,
                     "stream_id": resolved_batch.stream_id,
                     "state_db": state_store_display_name(state_db),
@@ -3260,6 +3349,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             component="cli",
             command="stream-refresh",
             run_id=run_id,
+            tenant_id=tenant_id,
             source_run_id=source_run_id,
             stream_id=resolved_batch.stream_id,
             resume_from_run_id=resumed_from_run_id,
@@ -3271,6 +3361,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
         component="cli",
         command="stream-refresh",
         run_id=run_id,
+        tenant_id=tenant_id,
         source_run_id=source_run_id,
         stream_id=resolved_batch.stream_id,
         batch_id=resolved_batch.batch_id,
@@ -3290,6 +3381,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
     review_rows: list[dict[str, str | float]] = []
     active_review_rows: list[dict[str, str | float]] = []
     run_context: dict[str, object] = {
+        "tenant_id": tenant_id,
         "input_mode": "event_stream",
         "batch_id": resolved_batch.batch_id,
         "manifest_path": str(resolved_batch.event_path),
@@ -3391,6 +3483,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
                 stream_summary=stream_summary,
             )
             state_store.persist_run_checkpoint(
+                tenant_id=tenant_id,
                 run_id=run_id,
                 run_key=run_key,
                 attempt_number=attempt_number,
@@ -3562,6 +3655,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
         state_store.persist_run(
             metadata=PersistRunMetadata(
                 run_id=run_id,
+                tenant_id=tenant_id,
                 run_key=run_key,
                 attempt_number=attempt_number,
                 batch_id=resolved_batch.batch_id,
@@ -3604,6 +3698,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
         )
         _record_cli_audit_event(
             state_store,
+            tenant_id=tenant_id,
             action="stream_refresh",
             resource_type="pipeline_run",
             resource_id=run_id,
@@ -3622,6 +3717,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             component="cli",
             command="stream-refresh",
             run_id=run_id,
+            tenant_id=tenant_id,
             source_run_id=source_run_id,
             stream_id=resolved_batch.stream_id,
             event_count=len(resolved_batch.events),
@@ -3632,7 +3728,17 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             review_queue_count=summary["review_queue_count"],
             duration_seconds=summary["performance"]["total_duration_seconds"],
         )
-        print(json.dumps({"action": "stream_refreshed", "run_id": run_id, "summary": summary}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "action": "stream_refreshed",
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "summary": summary,
+                },
+                sort_keys=True,
+            )
+        )
     except Exception as exc:
         failure_summary = None
         if normalized_rows:
@@ -3663,6 +3769,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             )
             _record_cli_audit_event(
                 state_store,
+                tenant_id=tenant_id,
                 action="stream_refresh",
                 resource_type="pipeline_run",
                 resource_id=run_id,
@@ -3680,6 +3787,7 @@ def _cmd_stream_refresh(args: argparse.Namespace) -> None:
             component="cli",
             command="stream-refresh",
             run_id=run_id or "",
+            tenant_id=tenant_id,
             source_run_id=source_run_id,
             stream_id=resolved_batch.stream_id,
             duration_seconds=seconds_since(started),
@@ -4268,6 +4376,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_case_list_parser.add_argument("--environment", default=None)
     review_case_list_parser.add_argument("--runtime-config", default=None)
     review_case_list_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(review_case_list_parser)
     review_case_list_parser.add_argument(
         "--run-id",
         default=None,
@@ -4293,6 +4402,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_case_update_parser.add_argument("--environment", default=None)
     review_case_update_parser.add_argument("--runtime-config", default=None)
     review_case_update_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(review_case_update_parser)
     review_case_update_parser.add_argument(
         "--run-id",
         default=None,
@@ -4324,6 +4434,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply_review_decision_parser.add_argument("--environment", default=None)
     apply_review_decision_parser.add_argument("--runtime-config", default=None)
     apply_review_decision_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(apply_review_decision_parser)
     apply_review_decision_parser.add_argument(
         "--run-id",
         default=None,
@@ -4355,6 +4466,7 @@ def build_parser() -> argparse.ArgumentParser:
     publish_delivery_parser.add_argument("--environment", default=None)
     publish_delivery_parser.add_argument("--runtime-config", default=None)
     publish_delivery_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(publish_delivery_parser)
     publish_delivery_parser.add_argument(
         "--run-id",
         default=None,
@@ -4379,6 +4491,7 @@ def build_parser() -> argparse.ArgumentParser:
     publish_run_parser.add_argument("--environment", default=None)
     publish_run_parser.add_argument("--runtime-config", default=None)
     publish_run_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(publish_run_parser)
     publish_run_parser.add_argument(
         "--run-id",
         default=None,
@@ -4413,6 +4526,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_job_run_parser.add_argument("--runtime-config", default=None)
     export_job_run_parser.add_argument("--config-dir", default=None)
     export_job_run_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(export_job_run_parser)
     export_job_run_parser.add_argument("--job-name", required=True)
     export_job_run_parser.add_argument(
         "--run-id",
@@ -4428,6 +4542,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_job_history_parser.add_argument("--environment", default=None)
     export_job_history_parser.add_argument("--runtime-config", default=None)
     export_job_history_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(export_job_history_parser)
     export_job_history_parser.add_argument("--job-name", default=None)
     export_job_history_parser.add_argument("--source-run-id", default=None)
     export_job_history_parser.add_argument(
@@ -4445,6 +4560,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_replay_bundle_parser.add_argument("--environment", default=None)
     verify_replay_bundle_parser.add_argument("--runtime-config", default=None)
     verify_replay_bundle_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(verify_replay_bundle_parser)
     verify_replay_bundle_parser.add_argument(
         "--run-id",
         default=None,
@@ -4459,6 +4575,7 @@ def build_parser() -> argparse.ArgumentParser:
     replay_run_parser.add_argument("--environment", default=None)
     replay_run_parser.add_argument("--runtime-config", default=None)
     replay_run_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(replay_run_parser)
     replay_run_parser.add_argument(
         "--run-id",
         default=None,
@@ -4517,6 +4634,7 @@ def build_parser() -> argparse.ArgumentParser:
     stream_refresh_parser.add_argument("--runtime-config", default=None)
     stream_refresh_parser.add_argument("--config-dir", default=None)
     stream_refresh_parser.add_argument("--state-db", default=None)
+    _add_tenant_id_argument(stream_refresh_parser)
     stream_refresh_parser.add_argument("--base-dir", default=".")
     stream_refresh_parser.add_argument(
         "--source-run-id",
@@ -4587,6 +4705,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_all_parser.add_argument("--refresh-mode", default="full", choices=["full", "incremental"])
     run_all_parser.add_argument("--environment", default=None)
     run_all_parser.add_argument("--runtime-config", default=None)
+    _add_tenant_id_argument(run_all_parser)
     run_all_parser.add_argument("--replay-source-run-id", default=None, help=argparse.SUPPRESS)
     run_all_parser.add_argument(
         "--state-db",

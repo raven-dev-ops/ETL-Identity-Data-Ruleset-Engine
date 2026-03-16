@@ -24,6 +24,7 @@ from etl_identity_engine.storage.sqlite_store import (
     PipelineStateStore,
     build_export_key,
     build_run_key,
+    normalize_tenant_id,
 )
 from etl_identity_engine.storage.state_store_target import state_store_display_name
 
@@ -96,15 +97,25 @@ def _resolve_replay_manifest_path(source_run: PipelineRunRecord) -> Path:
     )
 
 
-def resolve_completed_run_id(store: PipelineStateStore, requested_run_id: str | None) -> str:
-    run_id = requested_run_id or store.latest_completed_run_id()
+def resolve_completed_run_id(
+    store: PipelineStateStore,
+    requested_run_id: str | None,
+    *,
+    tenant_id: str | None = None,
+) -> str:
+    run_id = requested_run_id or store.latest_completed_run_id(tenant_id=tenant_id)
     if run_id is None:
         raise FileNotFoundError(f"No completed persisted runs found in {store.display_name}")
     return run_id
 
 
-def resolve_review_case_run_id(store: PipelineStateStore, requested_run_id: str | None) -> str:
-    run_id = requested_run_id or store.latest_completed_run_id_with_review_cases()
+def resolve_review_case_run_id(
+    store: PipelineStateStore,
+    requested_run_id: str | None,
+    *,
+    tenant_id: str | None = None,
+) -> str:
+    run_id = requested_run_id or store.latest_completed_run_id_with_review_cases(tenant_id=tenant_id)
     if run_id is None:
         raise FileNotFoundError(f"No completed persisted review-case runs found in {store.display_name}")
     return run_id
@@ -113,14 +124,20 @@ def resolve_review_case_run_id(store: PipelineStateStore, requested_run_id: str 
 def apply_review_decision_operation(
     *,
     store: PipelineStateStore,
+    tenant_id: str | None = None,
     run_id: str | None,
     review_id: str,
     decision: str,
     assigned_to: str | None,
     notes: str | None,
 ) -> ReviewDecisionOperationResult:
-    resolved_run_id = resolve_review_case_run_id(store, run_id)
-    existing = store.load_review_case(run_id=resolved_run_id, review_id=review_id)
+    resolved_tenant_id = normalize_tenant_id(tenant_id)
+    resolved_run_id = resolve_review_case_run_id(store, run_id, tenant_id=resolved_tenant_id)
+    existing = store.load_review_case(
+        run_id=resolved_run_id,
+        review_id=review_id,
+        tenant_id=resolved_tenant_id,
+    )
 
     target_assigned_to = existing.assigned_to if assigned_to is None else assigned_to.strip()
     target_notes = existing.operator_notes if notes is None else notes.strip()
@@ -135,6 +152,7 @@ def apply_review_decision_operation(
     updated = store.update_review_case(
         run_id=resolved_run_id,
         review_id=review_id,
+        tenant_id=resolved_tenant_id,
         queue_status=decision,
         assigned_to=assigned_to,
         operator_notes=notes,
@@ -145,13 +163,19 @@ def apply_review_decision_operation(
 def replay_run_operation(
     *,
     store: PipelineStateStore,
+    tenant_id: str | None = None,
     state_db: str | Path,
     source_run_id: str | None,
     base_dir: Path | None,
     refresh_mode: str | None,
     runner: CommandRunner,
 ) -> ReplayRunOperationResult:
-    resolved_source_run_id = resolve_completed_run_id(store, source_run_id)
+    resolved_tenant_id = normalize_tenant_id(tenant_id)
+    resolved_source_run_id = resolve_completed_run_id(
+        store,
+        source_run_id,
+        tenant_id=resolved_tenant_id,
+    )
     source_run = store.load_run_record(resolved_source_run_id)
 
     if source_run.input_mode != "manifest":
@@ -167,6 +191,7 @@ def replay_run_operation(
     replay_base_dir = base_dir if base_dir is not None else Path(source_run.base_dir)
     resolved_manifest_path = str(manifest_path)
     run_key = build_run_key(
+        tenant_id=resolved_tenant_id,
         input_mode="manifest",
         manifest_path=resolved_manifest_path,
         batch_id=peek_manifest_batch_id(manifest_path),
@@ -178,10 +203,12 @@ def replay_run_operation(
         formats=None,
         refresh_mode=resolved_refresh_mode,
     )
-    prior_completed = store.latest_completed_run_for_run_key(run_key)
+    prior_completed = store.latest_completed_run_for_run_key(run_key, tenant_id=resolved_tenant_id)
 
     replay_argv = [
         "run-all",
+        "--tenant-id",
+        resolved_tenant_id,
         "--base-dir",
         str(replay_base_dir),
         "--manifest",
@@ -209,7 +236,7 @@ def replay_run_operation(
             failure_detail = f"{failure_detail}. Captured pipeline output: {replay_logs}"
         raise RuntimeError(failure_detail) from exc
 
-    result_run = store.latest_completed_run_for_run_key(run_key)
+    result_run = store.latest_completed_run_for_run_key(run_key, tenant_id=resolved_tenant_id)
     if result_run is None:
         raise RuntimeError(f"Replay completed but no persisted run was found for run_key={run_key}")
 
@@ -232,12 +259,14 @@ def replay_run_operation(
 def publish_run_operation(
     *,
     store: PipelineStateStore,
+    tenant_id: str | None = None,
     state_db: str | Path,
     run_id: str | None,
     output_dir: Path,
     contract_version: str = DELIVERY_CONTRACT_VERSION,
 ) -> PublishRunOperationResult:
-    resolved_run_id = resolve_completed_run_id(store, run_id)
+    resolved_tenant_id = normalize_tenant_id(tenant_id)
+    resolved_run_id = resolve_completed_run_id(store, run_id, tenant_id=resolved_tenant_id)
     run = store.load_run_record(resolved_run_id)
     contract_root = output_dir / DELIVERY_CONTRACT_NAME / contract_version
     snapshot_dir = contract_root / "snapshots" / resolved_run_id
@@ -261,11 +290,17 @@ def publish_run_operation(
 def export_job_run_operation(
     *,
     store: PipelineStateStore,
+    tenant_id: str | None = None,
     state_db: str | Path,
     source_run_id: str | None,
     job: ExportJobConfig,
 ) -> ExportJobRunOperationResult:
-    resolved_source_run_id = resolve_completed_run_id(store, source_run_id)
+    resolved_tenant_id = normalize_tenant_id(tenant_id)
+    resolved_source_run_id = resolve_completed_run_id(
+        store,
+        source_run_id,
+        tenant_id=resolved_tenant_id,
+    )
     source_run = store.load_run_record(resolved_source_run_id)
     if source_run.status != "completed":
         raise ValueError(
@@ -273,6 +308,7 @@ def export_job_run_operation(
         )
 
     export_key = build_export_key(
+        tenant_id=resolved_tenant_id,
         job_name=job.name,
         source_run_id=resolved_source_run_id,
         contract_name=job.contract_name,
@@ -281,6 +317,7 @@ def export_job_run_operation(
     )
     started_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     start_decision = store.begin_export_run(
+        tenant_id=resolved_tenant_id,
         export_key=export_key,
         job_name=job.name,
         source_run_id=resolved_source_run_id,
@@ -309,6 +346,7 @@ def export_job_run_operation(
                 "source_to_golden_crosswalk": len(bundle.crosswalk_rows),
             }
             metadata = {
+                "tenant_id": resolved_tenant_id,
                 "job": {
                     "name": job.name,
                     "consumer": job.consumer,
@@ -320,6 +358,7 @@ def export_job_run_operation(
                 },
                 "source_run": {
                     "run_id": source_run.run_id,
+                    "tenant_id": source_run.tenant_id,
                     "run_key": source_run.run_key,
                     "attempt_number": source_run.attempt_number,
                     "batch_id": source_run.batch_id,

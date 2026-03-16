@@ -125,6 +125,7 @@ class AuditEventResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     audit_event_id: str
+    tenant_id: str
     occurred_at_utc: str
     actor_type: str
     actor_id: str
@@ -149,6 +150,7 @@ class RunStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
+    tenant_id: str
     run_key: str
     attempt_number: int
     batch_id: str | None
@@ -280,6 +282,7 @@ class GoldenRecordListResponse(BaseModel):
 class ReviewCaseResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    tenant_id: str
     run_id: str
     review_id: str
     left_id: str
@@ -371,6 +374,7 @@ class ExportJobRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     export_run_id: str
+    tenant_id: str
     export_key: str
     attempt_number: int
     job_name: str
@@ -419,6 +423,7 @@ def _serialize_export_job(job: ExportJobConfig) -> ExportJobResponse:
 def _serialize_export_run(record: ExportJobRunRecord) -> ExportJobRunResponse:
     return ExportJobRunResponse(
         export_run_id=record.export_run_id,
+        tenant_id=record.tenant_id,
         export_key=record.export_key,
         attempt_number=record.attempt_number,
         job_name=record.job_name,
