@@ -12,7 +12,7 @@ body:
     attributes:
       label: Preflight
       options:
-        - label: I searched existing issues and the planning backlog for similar maintenance work.
+        - label: I searched existing issues and epics for similar maintenance work.
           required: true
         - label: This request is not better represented as a bug, feature, docs issue, or epic.
           required: true

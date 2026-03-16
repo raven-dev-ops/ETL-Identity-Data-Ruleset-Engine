@@ -4,7 +4,7 @@ Describe the intent of this pull request.
 
 ## Related Issues
 
-Link the issue, epic, or backlog item this PR addresses.
+Link the issue or epic this PR addresses.
 
 ## Changes
 

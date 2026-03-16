@@ -12,7 +12,7 @@ body:
     attributes:
       label: Preflight
       options:
-        - label: I searched existing issues and the planning backlog for similar work.
+        - label: I searched existing issues and epics for similar work.
           required: true
         - label: I can describe the user or operator problem this change solves.
           required: true
@@ -93,4 +93,4 @@ body:
     id: dependencies
     attributes:
       label: Related Issues or Dependencies
-      description: Link blocking issues, epics, or related backlog items if known.
+      description: Link blocking issues, epics, or related tracked work if known.

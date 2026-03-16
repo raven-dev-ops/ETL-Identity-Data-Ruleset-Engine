@@ -6,6 +6,6 @@ contact_links:
   - name: Contribution guide
     url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/CONTRIBUTING.md
     about: Review setup, validation, and PR expectations before filing work.
-  - name: Project backlog
-    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/active-github-issues-backlog.md
-    about: Check planned milestones, issue types, and existing delivery streams first.
+  - name: Project issues
+    url: https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/issues
+    about: Review existing issues, epics, and milestones before filing new work.

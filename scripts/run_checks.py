@@ -215,15 +215,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify_console_entrypoint(python_executable)
     _run_command((python_executable, "-m", "ruff", "check", "."))
     _run_command((python_executable, "-m", "pytest"))
-    _run_command(
-        (
-            python_executable,
-            "scripts/create_github_backlog.py",
-            "--repo",
-            args.repo,
-            "--dry-run",
-        )
-    )
 
     with tempfile.TemporaryDirectory(prefix="etl-identity-engine-release-sample-") as temp_dir:
         _run_command(

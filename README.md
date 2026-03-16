@@ -208,7 +208,7 @@ is included in the repository.
 
 - [Project Structure Outline](planning/project-structure-outline.md)
 - [Remaining Work Task List](planning/remaining-work-task-list.md)
-- [Active GitHub Issues Backlog](planning/active-github-issues-backlog.md)
+- [GitHub Issues](https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/issues)
 - [Post-v1.4.0 GitHub Issues Backlog (Historical)](planning/post-v1.4.0-github-issues-backlog.md)
 - [Post-v1.5.0 GitHub Issues Backlog (Historical)](planning/post-v1.5.0-github-issues-backlog.md)
 - [Post-v1.2.0 GitHub Issues Backlog (Historical)](planning/post-v1.2.0-github-issues-backlog.md)
@@ -610,11 +610,10 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 
 `run_checks.ps1` now covers the same local validation surface as the
 documented CI baseline: package-build verification, `ruff`, `pytest`,
-the installed `etl-identity-engine` console entrypoint smoke check, the
-active-backlog dry-run, release-sample packaging, and the persisted-
-state recovery smoke path. The build and packaging checks use temporary
-output directories, so the wrapper does not leave artifacts under
-`dist/`.
+the installed `etl-identity-engine` console entrypoint smoke check,
+release-sample packaging, and the persisted-state recovery smoke path.
+The build and packaging checks use temporary output directories, so the
+wrapper does not leave artifacts under `dist/`.
 It also verifies that the installed editable package metadata matches
 `pyproject.toml`, so rerun the bootstrap script or
 `python -m pip install -e .[dev]` after pulling a version bump.
@@ -638,11 +637,10 @@ python -m etl_identity_engine.cli generate --profile small --duplicate-rate 0.4 
 
 `run_checks.sh` covers the same local validation surface as the
 documented CI baseline: package-build verification, `ruff`, `pytest`,
-the installed `etl-identity-engine` console entrypoint smoke check, the
-active-backlog dry-run, release-sample packaging, and the persisted-
-state recovery smoke path. The build and packaging checks use temporary
-output directories, so the wrapper does not leave artifacts under
-`dist/`.
+the installed `etl-identity-engine` console entrypoint smoke check,
+release-sample packaging, and the persisted-state recovery smoke path.
+The build and packaging checks use temporary output directories, so the
+wrapper does not leave artifacts under `dist/`.
 It also verifies that the installed editable package metadata matches
 `pyproject.toml`, so rerun the bootstrap script or
 `python -m pip install -e .[dev]` after pulling a version bump.
@@ -671,44 +669,16 @@ If `python` resolves to `...WindowsApps\python.exe`, install Python from
 `python.org` and disable App execution aliases for `python.exe` and
 `python3.exe` in Windows settings.
 
-## GitHub Backlog Automation
+## GitHub Issue Tracking
 
-Use the planning backlog to create labels, milestones, epics, and issues
-via the cross-platform Python automation script:
+GitHub issues, epics, and milestones are the source of truth for active
+work. Open new work directly in GitHub by using the issue forms for
+`bug`, `feature`, `docs`, `chore`, and `epic`.
 
-```powershell
-gh auth login
-python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --dry-run
-python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine"
-```
-
-The default backlog source is
-`planning/active-github-issues-backlog.md`. The bootstrap backlog at
-`planning/github-issues-backlog.md` and the completed
-`planning/post-v1.4.0-github-issues-backlog.md`,
-`planning/post-v1.5.0-github-issues-backlog.md`,
-`planning/post-v1.2.0-github-issues-backlog.md`,
-`planning/post-v0.9.0-github-issues-backlog.md`,
-`planning/post-v0.6.0-github-issues-backlog.md`, and
-`planning/post-v0.1.0-github-issues-backlog.md` files are historical
-and should be used only when re-syncing closed tracker history with
-`--include-closed`:
-
-```powershell
-python scripts/create_github_backlog.py --repo "raven-dev-ops/ETL-Identity-Data-Ruleset-Engine" --backlog-path planning/github-issues-backlog.md --include-closed --dry-run
-```
-
-By default, the backlog automation ignores catalog entries marked
-`Status: closed`. The active backlog file may also be empty between
-roadmap cycles; archive completed catalogs into the historical planning
-files instead of leaving closed work in the active source.
-
-When filing new work manually, use the GitHub issue forms for `bug`,
-`feature`, `docs`, `chore`, and `epic` so issues stay aligned with the
-backlog label taxonomy and milestone structure.
-
-On Windows, `scripts/create_github_backlog.ps1` remains available as a
-PowerShell-specific wrapper if you prefer that entrypoint.
+The markdown files under `planning/post-*.md` and
+`planning/github-issues-backlog.md` remain historical archives only.
+They are not an active sync source and are not used to create or update
+the live issue tracker.
 
 The `Issue Metadata` workflow runs after issue-template changes reach
 `main` and checks GitHub's default-branch issue metadata plus the pushed
@@ -724,11 +694,10 @@ bash path. The Python-native `scripts/run_checks.py` and
 platform.
 The local `run_checks` wrappers are the authoritative pre-push
 validation path. They include the local `pytest` suite plus the
-active-backlog dry-run, release-sample packaging, and persisted-state
-recovery smoke checks, and they use temporary packaging output so
-pre-push validation does not leave release artifacts behind. The remote
-metadata check validates only what GitHub currently sees on the pushed
-default branch.
+release-sample packaging and persisted-state recovery smoke checks, and
+they use temporary packaging output so pre-push validation does not
+leave release artifacts behind. The remote metadata check validates only
+what GitHub currently sees on the pushed default branch.
 
 ## License
 

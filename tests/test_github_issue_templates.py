@@ -76,7 +76,7 @@ def test_issue_template_config_has_required_contact_links() -> None:
     assert isinstance(contact_links, list)
     assert len(contact_links) >= 3
     names: set[str] = set()
-    backlog_url = None
+    issues_url = None
 
     for link in contact_links:
         assert isinstance(link, dict)
@@ -86,14 +86,11 @@ def test_issue_template_config_has_required_contact_links() -> None:
         assert isinstance(link["url"], str) and link["url"].startswith("https://")
         assert link["name"] not in names
         names.add(link["name"])
-        if link["name"] == "Project backlog":
-            backlog_url = link["url"]
+        if link["name"] == "Project issues":
+            issues_url = link["url"]
 
-    assert {"Private security report", "Contribution guide", "Project backlog"}.issubset(names)
-    assert backlog_url == (
-        "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/"
-        "blob/main/planning/active-github-issues-backlog.md"
-    )
+    assert {"Private security report", "Contribution guide", "Project issues"}.issubset(names)
+    assert issues_url == "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/issues"
 
 
 @pytest.mark.parametrize("path", FORM_PATHS, ids=lambda path: path.name)

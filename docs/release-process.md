@@ -40,7 +40,6 @@ check baseline.
 - Artifact contract tests pass for the documented pipeline outputs.
 - `README.md`, `CHANGELOG.md`, and the release notes reflect the current
   behavior.
-- The backlog dry-run still parses the active planning backlog.
 - A source distribution and wheel are both produced successfully from
   the release commit.
 - The release hardening job produces a retained dependency inventory and
@@ -203,8 +202,8 @@ The CI `container-supply-chain` job publishes the same directory as the
   - `python scripts/run_checks.py` on any platform when you want the
     shell-free equivalent path
 - Those wrappers cover package-build verification, an installed
-  `etl-identity-engine --help` smoke check, `ruff`, `pytest`, the
-  active-backlog dry-run, and release-sample packaging.
+  `etl-identity-engine --help` smoke check, `ruff`, `pytest`, and
+  release-sample packaging.
 - The wrapper build and packaging checks use temporary output
   directories; the
   explicit `package_release_sample.py --output-dir dist/release-samples`
@@ -218,9 +217,6 @@ The CI `container-supply-chain` job publishes the same directory as the
 - Review `dist/container-supply-chain/container_supply_chain_summary.json`,
   `container_sbom.json`, `container_provenance.json`,
   `container_dependency_audit.json`, and `container_attestation.json`.
-- Run the backlog dry-run:
-  - `python scripts/create_github_backlog.py --repo "<OWNER/REPO>" --dry-run`
-  - For historical backlog validation, use `--include-closed`.
 - Build the packaged release sample:
   - `python scripts/package_release_sample.py --output-dir dist/release-samples --profile small --seed 42 --formats csv,parquet`
 - If you are shipping a signed release handoff, rerun the bundle build

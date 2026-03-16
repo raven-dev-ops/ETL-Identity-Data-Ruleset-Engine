@@ -32,9 +32,9 @@ def test_validate_accepts_expected_issue_metadata() -> None:
                 "url": "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/CONTRIBUTING.md",
             },
             {
-                "name": "Project backlog",
-                "about": "planning",
-                "url": "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/blob/main/planning/active-github-issues-backlog.md",
+                "name": "Project issues",
+                "about": "tracking",
+                "url": "https://github.com/raven-dev-ops/ETL-Identity-Data-Ruleset-Engine/issues",
             },
         ],
         issue_templates=[
@@ -65,5 +65,5 @@ def test_validate_reports_missing_remote_metadata() -> None:
     assert "blank issues are still enabled on the default branch" in errors
     assert "missing contact link: Private security report" in errors
     assert "missing contact link: Contribution guide" in errors
-    assert "missing contact link: Project backlog" in errors
+    assert "missing contact link: Project issues" in errors
     assert any(error.startswith("missing pushed issue template files on default branch:") for error in errors)

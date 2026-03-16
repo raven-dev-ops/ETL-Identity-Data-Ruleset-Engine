@@ -1,9 +1,9 @@
 # Remaining Work Task List
 
 Date prepared: 2026-03-15
-Last updated: 2026-03-15
+Last updated: 2026-03-16
 
-This checklist records the completed post-`v1.1.0` backlog cycle that
+This checklist records the completed post-`v1.1.0` roadmap cycle that
 is now archived in `planning/post-v1.4.0-github-issues-backlog.md`.
 GitHub remains the source of truth for tracked work; this file is the
 short maintainer view for the finished cycle.
@@ -46,4 +46,5 @@ short maintainer view for the finished cycle.
 
 ## Next Step
 
-- Next: define the next backlog cycle after the `v1.4.0` closeout.
+- Open new work directly in GitHub issues when the next roadmap cycle is
+  identified.

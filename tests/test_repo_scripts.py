@@ -5,15 +5,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_run_checks_python_entrypoint_covers_active_backlog_and_release_sample() -> None:
+def test_run_checks_python_entrypoint_covers_release_sample_and_recovery_smoke() -> None:
     python_text = (REPO_ROOT / "scripts" / "run_checks.py").read_text(encoding="utf-8")
 
     expected_fragments = (
         "-m",
         "build",
-        "create_github_backlog.py",
-        "--repo",
-        "--dry-run",
         "package_release_sample.py",
         "persisted_state_recovery_smoke.py",
         "etl-identity-engine",
@@ -23,6 +20,8 @@ def test_run_checks_python_entrypoint_covers_active_backlog_and_release_sample()
 
     for fragment in expected_fragments:
         assert fragment in python_text
+
+    assert "create_github_backlog.py" not in python_text
 
 
 def test_run_checks_wrappers_delegate_to_python_entrypoint() -> None:
@@ -52,10 +51,10 @@ def test_run_pipeline_wrappers_delegate_to_python_entrypoint() -> None:
     assert "scripts/run_pipeline.py" in bash_text
 
 
-def test_ci_historical_backlog_step_uses_include_closed() -> None:
+def test_ci_no_longer_runs_file_backlog_sync() -> None:
     workflow_text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "--backlog-path planning/github-issues-backlog.md --include-closed --dry-run" in workflow_text
+    assert "create_github_backlog.py" not in workflow_text
 
 
 def test_ci_support_matrix_includes_python_312_and_macos() -> None:

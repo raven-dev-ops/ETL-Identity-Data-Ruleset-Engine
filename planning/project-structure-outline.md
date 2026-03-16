@@ -11,11 +11,11 @@ Define and track the repository structure for implementing the ETL Identity Data
 
 `M1` through `M6` are implemented in-repo, the public line has now
 advanced through the published `v1.1.0` release, the tracked
-`v1.0.0`-`v1.2.0` customer-pilot backlog cycle is complete in-repo, the
+`v1.0.0`-`v1.2.0` customer-pilot roadmap cycle is complete in-repo, the
 `v1.3.0`-`v1.5.0` supportability cycle is archived as historical
 planning state, the `v1.2.0`-`v1.4.0` roadmap cycle is also complete and
-archived, and there is no active roadmap backlog currently open in
-GitHub.
+archived, and GitHub issues are now the sole source of truth for active
+work.
 
 - package and CLI scaffold in `src/etl_identity_engine/`
 - tests in `tests/`
@@ -103,7 +103,6 @@ ETL-Identity-Data-Ruleset-Engine/
     survivorship.md
     windows-pilot-bootstrap.md
   planning/
-    active-github-issues-backlog.md
     github-issues-backlog.md
     post-v0.1.0-github-issues-backlog.md
     post-v0.6.0-github-issues-backlog.md
@@ -126,8 +125,6 @@ ETL-Identity-Data-Ruleset-Engine/
     build_public_safety_demo_site.py
     container_smoke_test.py
     container_supply_chain_check.py
-    create_github_backlog.py
-    create_github_backlog.ps1
     kubernetes_manifest_smoke.py
     manage_windows_customer_pilot_services.py
     package_customer_pilot_bundle.py
@@ -196,7 +193,6 @@ ETL-Identity-Data-Ruleset-Engine/
     test_runtime_config.py
     test_stream_refresh.py
     test_survivorship.py
-    test_create_github_backlog.py
     test_deployment_assets.py
     test_encrypted_bundle.py
     test_github_issue_templates.py
@@ -236,6 +232,5 @@ The current public line is now explicitly scoped around:
 - define the next roadmap cycle before creating additional GitHub
   issues
 - keep completed cycles archived under `planning/post-*.md`
-- keep `planning/active-github-issues-backlog.md` as the current sync
-  source, even when that file is intentionally empty between cycles
+- open and maintain active work directly in GitHub issues and milestones
 

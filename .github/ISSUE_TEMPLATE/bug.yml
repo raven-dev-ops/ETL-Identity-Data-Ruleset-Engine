@@ -14,7 +14,7 @@ body:
     attributes:
       label: Preflight
       options:
-        - label: I searched existing issues and the planning backlog for duplicates.
+        - label: I searched existing issues and epics for duplicates.
           required: true
         - label: I confirmed this is not a private security issue.
           required: true
