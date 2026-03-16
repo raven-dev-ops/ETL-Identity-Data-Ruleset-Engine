@@ -83,6 +83,13 @@ def test_ci_includes_kubernetes_manifest_smoke_job() -> None:
     assert "python scripts/kubernetes_manifest_smoke.py" in workflow_text
 
 
+def test_ci_includes_postgresql_ha_rehearsal_job() -> None:
+    workflow_text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "postgresql-ha-rehearsal:" in workflow_text
+    assert "python scripts/postgresql_ha_rehearsal.py" in workflow_text
+
+
 def test_ci_includes_container_supply_chain_job() -> None:
     workflow_text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 

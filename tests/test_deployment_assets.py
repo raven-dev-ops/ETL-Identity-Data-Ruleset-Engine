@@ -182,6 +182,127 @@ def test_kubernetes_smoke_script_targets_postgresql_backed_cluster_topology() ->
         "/runtime/landing/batch-manifest.yaml",
         "/api/v1/runs/latest",
         "identity-postgres",
+        "ETL_IDENTITY_SERVICE_READER_TENANT_ID",
+    )
+
+    for fragment in expected_fragments:
+        assert fragment in script_text
+
+
+def test_kubernetes_ha_kustomization_defines_external_writer_app_resources() -> None:
+    kustomization = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "kustomization.yaml").read_text(encoding="utf-8")
+    )
+
+    assert kustomization["namespace"] == "etl-identity"
+    assert set(kustomization["resources"]) == {
+        "../kubernetes/namespace.yaml",
+        "../kubernetes/landing-pvc.yaml",
+        "../kubernetes/service-service.yaml",
+        "pod-disruption-budget.yaml",
+        "service-deployment.yaml",
+    }
+
+
+def test_kubernetes_ha_service_and_job_manifests_target_cluster_ha_runtime() -> None:
+    service_deployment = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "service-deployment.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    batch_job = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "batch-job.yaml").read_text(encoding="utf-8")
+    )
+    upgrade_job = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "state-db-upgrade-job.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    disruption_budget = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "pod-disruption-budget.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    service_container = service_deployment["spec"]["template"]["spec"]["containers"][0]
+    batch_container = batch_job["spec"]["template"]["spec"]["containers"][0]
+    upgrade_container = upgrade_job["spec"]["template"]["spec"]["containers"][0]
+    anti_affinity = service_deployment["spec"]["template"]["spec"]["affinity"]["podAntiAffinity"]
+
+    assert service_deployment["spec"]["replicas"] == 2
+    assert service_container["args"][:3] == ["serve-api", "--environment", "cluster_ha"]
+    assert batch_container["args"][:7] == [
+        "run-all",
+        "--environment",
+        "cluster_ha",
+        "--base-dir",
+        "/runtime/output",
+        "--manifest",
+        "/runtime/landing/batch-manifest.yaml",
+    ]
+    assert upgrade_container["args"][:3] == ["state-db-upgrade", "--environment", "cluster_ha"]
+    assert service_container["envFrom"][0]["secretRef"]["name"] == "identity-ha-runtime-secret"
+    assert batch_container["envFrom"][0]["secretRef"]["name"] == "identity-ha-runtime-secret"
+    assert upgrade_container["envFrom"][0]["secretRef"]["name"] == "identity-ha-runtime-secret"
+    assert anti_affinity["requiredDuringSchedulingIgnoredDuringExecution"]
+    assert disruption_budget["spec"]["minAvailable"] == 1
+
+
+def test_kubernetes_ha_example_assets_document_writer_endpoint_contract() -> None:
+    runtime_secret = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "runtime-secret.example.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    external_writer_service = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "kubernetes-ha" / "external-writer-service.example.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert set(runtime_secret["stringData"]) == {
+        "ETL_IDENTITY_STATE_DB",
+        "ETL_IDENTITY_OBJECT_STORAGE_ACCESS_KEY",
+        "ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY",
+        "ETL_IDENTITY_SERVICE_READER_API_KEY",
+        "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY",
+        "ETL_IDENTITY_SERVICE_READER_TENANT_ID",
+        "ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID",
+    }
+    assert "identity-postgres-rw" in runtime_secret["stringData"]["ETL_IDENTITY_STATE_DB"]
+    assert "target_session_attrs=read-write" in runtime_secret["stringData"]["ETL_IDENTITY_STATE_DB"]
+    assert external_writer_service["spec"]["type"] == "ExternalName"
+    assert external_writer_service["metadata"]["name"] == "identity-postgres-rw"
+
+
+def test_kubernetes_ha_runtime_environment_exists() -> None:
+    runtime_config = yaml.safe_load(
+        (REPO_ROOT / "config" / "runtime_environments.yml").read_text(encoding="utf-8")
+    )
+
+    cluster_ha = runtime_config["environments"]["cluster_ha"]
+    assert cluster_ha["state_db"] == "${ETL_IDENTITY_STATE_DB}"
+    assert cluster_ha["service_auth"]["mode"] == "api_key"
+    assert cluster_ha["service_auth"]["reader_api_key"] == "${ETL_IDENTITY_SERVICE_READER_API_KEY}"
+    assert cluster_ha["service_auth"]["operator_api_key"] == "${ETL_IDENTITY_SERVICE_OPERATOR_API_KEY}"
+    assert cluster_ha["service_auth"]["reader_tenant_id"] == "${ETL_IDENTITY_SERVICE_READER_TENANT_ID:-default}"
+    assert cluster_ha["service_auth"]["operator_tenant_id"] == "${ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID:-default}"
+
+
+def test_postgresql_ha_rehearsal_script_targets_failover_and_restore_validation() -> None:
+    script_text = (REPO_ROOT / "scripts" / "postgresql_ha_rehearsal.py").read_text(encoding="utf-8")
+
+    expected_fragments = (
+        '"docker", "build"',
+        '"docker", "volume", "create"',
+        "target_session_attrs=read-write",
+        "identity-postgres-rw",
+        "verify-replay-bundle",
+        "backup-state-bundle",
+        "restore-state-bundle",
+        "replay-run",
+        "/api/v1/runs/latest",
+        "service_reconnected_after_writer_failover",
     )
 
     for fragment in expected_fragments:

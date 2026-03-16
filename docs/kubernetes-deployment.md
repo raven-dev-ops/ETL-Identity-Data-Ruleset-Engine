@@ -12,6 +12,10 @@ This baseline is intentionally concrete:
 - The service is exposed internally through a ClusterIP Service.
 - An optional Ingress example is included for external routing.
 
+This document covers the single-node PostgreSQL baseline. For the
+external-HA PostgreSQL app baseline, use
+[kubernetes-ha-deployment.md](kubernetes-ha-deployment.md).
+
 The manifests live under `deploy/kubernetes/`.
 
 ## Shipped Assets
@@ -197,10 +201,6 @@ This baseline now provides:
   batch execution
 - documented secret, storage, and service-exposure wiring
 - a repo-native smoke path that exercises the shipped cluster commands
-
-It does not yet provide:
-
-- a high-availability PostgreSQL topology
 
 Distributed benchmark fixtures and SLO targets for this baseline are now
 documented in [benchmarking-and-capacity.md](benchmarking-and-capacity.md).

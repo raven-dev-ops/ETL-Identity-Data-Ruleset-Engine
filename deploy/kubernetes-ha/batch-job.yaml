@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: identity-ha-batch
+  labels:
+    app.kubernetes.io/name: etl-identity-engine
+    app.kubernetes.io/component: batch
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: etl-identity-engine
+        app.kubernetes.io/component: batch
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: identity-batch
+          image: etl-identity-engine:v0.6.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - run-all
+            - --environment
+            - cluster_ha
+            - --base-dir
+            - /runtime/output
+            - --manifest
+            - /runtime/landing/batch-manifest.yaml
+            - --refresh-mode
+            - full
+          envFrom:
+            - secretRef:
+                name: identity-ha-runtime-secret
+          volumeMounts:
+            - name: landing
+              mountPath: /runtime/landing
+              readOnly: true
+            - name: output
+              mountPath: /runtime/output
+      volumes:
+        - name: landing
+          persistentVolumeClaim:
+            claimName: identity-landing-pvc
+        - name: output
+          emptyDir: {}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, QueuePool
 
 from etl_identity_engine.runtime_config import load_runtime_environment
 from etl_identity_engine.storage import migration_runner
@@ -38,6 +38,15 @@ def test_create_state_store_engine_disables_pooling_for_file_backed_sqlite(tmp_p
     engine = create_state_store_engine(tmp_path / "state" / "pipeline_state.sqlite")
     try:
         assert isinstance(engine.pool, NullPool)
+    finally:
+        engine.dispose()
+
+
+def test_create_state_store_engine_enables_pre_ping_for_postgresql() -> None:
+    engine = create_state_store_engine("postgresql://etl_user:supersecret@db.internal:5432/identity_state")
+    try:
+        assert isinstance(engine.pool, QueuePool)
+        assert engine.pool._pre_ping is True
     finally:
         engine.dispose()
 

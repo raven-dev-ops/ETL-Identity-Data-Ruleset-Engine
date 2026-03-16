@@ -120,6 +120,10 @@ def create_state_store_engine(state_db: str | Path | StateStoreTarget) -> Engine
         target.file_path.parent.mkdir(parents=True, exist_ok=True)
 
     engine_kwargs: dict[str, object] = {"future": True}
+    if target.backend == "postgresql":
+        # Probe pooled PostgreSQL connections before reuse so app workers recover cleanly after
+        # managed-cluster writer failover or a restarted primary endpoint.
+        engine_kwargs["pool_pre_ping"] = True
     if target.backend == "sqlite" and target.file_path is not None:
         # File-backed SQLite state stores are short-lived and test-heavy; disable pooling so
         # SQLAlchemy does not keep DB-API connections open past each context-managed operation.

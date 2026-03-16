@@ -161,6 +161,38 @@ For the compose topology in [container-deployment.md](container-deployment.md):
 The container baseline remains single-host. Recovery is file- and
 volume-oriented rather than orchestrator-managed.
 
+## External HA PostgreSQL Notes
+
+For the external-HA PostgreSQL app baseline in
+[kubernetes-ha-deployment.md](kubernetes-ha-deployment.md):
+
+- back up the writer endpoint, not a reader endpoint
+- keep the replay bundle on a runtime path that can be restored to the
+  same container-visible `/runtime/output/data/replay_bundles/...`
+  location
+- restore into a clean PostgreSQL target before cutover or rollback
+- validate `review-case-list`, `report`, and `replay-run` before
+  redirecting workloads to the restored database
+
+The supported PostgreSQL recovery flow is therefore:
+
+1. quiesce writes or complete the active batch window
+2. verify the archived replay bundle
+3. run `backup-state-bundle` against the stable writer endpoint
+4. restore that bundle into a clean PostgreSQL target
+5. rebuild a report or delivery output from restored state
+6. run `replay-run` if you need a fresh recovered run before cutover
+
+The repo-native HA rehearsal exercises that full path:
+
+```bash
+python scripts/postgresql_ha_rehearsal.py \
+  --image-tag etl-identity-engine:ha-rehearsal \
+  --service-port 18082 \
+  --writer-port 55440 \
+  --restore-port 55441
+```
+
 ## Smoke Validation
 
 The repo includes an executable recovery smoke path:

@@ -223,6 +223,8 @@ def _validate_manifests() -> dict[str, list[str]]:
         "ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY",
         "ETL_IDENTITY_SERVICE_READER_API_KEY",
         "ETL_IDENTITY_SERVICE_OPERATOR_API_KEY",
+        "ETL_IDENTITY_SERVICE_READER_TENANT_ID",
+        "ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID",
     }
     if set(runtime_secret_data) != required_runtime_keys:
         raise ValueError("runtime-secret.example.yaml must declare the runtime env keys")

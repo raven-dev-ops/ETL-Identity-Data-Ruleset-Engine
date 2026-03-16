@@ -8,7 +8,9 @@ The default catalog now also includes a `container` environment for the
 single-host deployment baseline shipped in
 [container-deployment.md](container-deployment.md), a `cluster`
 environment for the PostgreSQL-backed Kubernetes baseline in
-[kubernetes-deployment.md](kubernetes-deployment.md), and a `cjis`
+[kubernetes-deployment.md](kubernetes-deployment.md), a `cluster_ha`
+environment for the external-HA PostgreSQL app baseline in
+[kubernetes-ha-deployment.md](kubernetes-ha-deployment.md), and a `cjis`
 environment for the stricter JWT + PostgreSQL deployment baseline
 documented in [cjis-deployment-baseline.md](cjis-deployment-baseline.md).
 
@@ -141,6 +143,12 @@ The `cluster` environment follows the same API-key compatibility model,
 but it requires a deployment-supplied PostgreSQL URL through
 `ETL_IDENTITY_STATE_DB` and is intended for the shipped Kubernetes
 topology.
+
+The `cluster_ha` environment follows the same API-key compatibility
+model, but it is intended for the external-HA PostgreSQL app baseline.
+That line expects a stable writer endpoint such as
+`identity-postgres-rw` and relies on the database platform to promote a
+new primary behind that writer DNS or service name.
 
 ## Field Authorization Settings
 

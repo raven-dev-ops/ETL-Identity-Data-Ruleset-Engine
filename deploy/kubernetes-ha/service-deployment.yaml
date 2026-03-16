@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  labels:
+    app.kubernetes.io/name: etl-identity-engine
+    app.kubernetes.io/component: service-api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: etl-identity-engine
+      app.kubernetes.io/component: service-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: etl-identity-engine
+        app.kubernetes.io/component: service-api
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: etl-identity-engine
+                  app.kubernetes.io/component: service-api
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: identity-service
+          image: etl-identity-engine:v0.6.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - serve-api
+            - --environment
+            - cluster_ha
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+          envFrom:
+            - secretRef:
+                name: identity-ha-runtime-secret
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - |
+                  import os
+                  import urllib.request
+                  request = urllib.request.Request(
+                      "http://127.0.0.1:8000/readyz",
+                      headers={"X-API-Key": os.environ["ETL_IDENTITY_SERVICE_READER_API_KEY"]},
+                  )
+                  urllib.request.urlopen(request, timeout=5).read()
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - |
+                  import os
+                  import urllib.request
+                  request = urllib.request.Request(
+                      "http://127.0.0.1:8000/healthz",
+                      headers={"X-API-Key": os.environ["ETL_IDENTITY_SERVICE_READER_API_KEY"]},
+                  )
+                  urllib.request.urlopen(request, timeout=5).read()
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
