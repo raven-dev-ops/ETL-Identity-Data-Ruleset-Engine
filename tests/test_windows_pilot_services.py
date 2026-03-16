@@ -193,6 +193,49 @@ def test_query_windows_pilot_service_status_returns_not_installed(tmp_path: Path
     )
 
 
+def test_service_exists_returns_false_for_missing_service(monkeypatch) -> None:
+    class MissingServiceError(Exception):
+        def __init__(self) -> None:
+            super().__init__(
+                windows_pilot_services.WINDOWS_ERROR_SERVICE_DOES_NOT_EXIST,
+                "QueryServiceStatus",
+                "The specified service does not exist as an installed service.",
+            )
+
+    class FakeWin32ServiceUtil:
+        @staticmethod
+        def QueryServiceStatus(service_name: str):
+            raise MissingServiceError
+
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_win32_modules",
+        lambda: (None, None, None, FakeWin32ServiceUtil),
+    )
+
+    assert windows_pilot_services._service_exists("svc-demo_shell") is False
+
+
+def test_service_exists_propagates_non_missing_service_errors(monkeypatch) -> None:
+    class AccessDeniedError(Exception):
+        def __init__(self) -> None:
+            super().__init__(5, "QueryServiceStatus", "Access is denied.")
+
+    class FakeWin32ServiceUtil:
+        @staticmethod
+        def QueryServiceStatus(service_name: str):
+            raise AccessDeniedError
+
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_win32_modules",
+        lambda: (None, None, None, FakeWin32ServiceUtil),
+    )
+
+    with pytest.raises(AccessDeniedError):
+        windows_pilot_services._service_exists("svc-demo_shell")
+
+
 @pytest.mark.parametrize(
     ("service_kind", "expected_args"),
     [

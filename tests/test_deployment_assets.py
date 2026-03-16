@@ -38,6 +38,21 @@ def test_container_env_example_documents_required_values() -> None:
     assert "ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID=" in env_text
 
 
+def test_container_deployment_doc_mentions_tenant_bound_api_key_inputs() -> None:
+    doc_text = (REPO_ROOT / "docs" / "container-deployment.md").read_text(encoding="utf-8")
+
+    assert "ETL_IDENTITY_SERVICE_READER_TENANT_ID" in doc_text
+    assert "ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID" in doc_text
+
+
+def test_runtime_environments_doc_mentions_tenant_auth_settings() -> None:
+    doc_text = (REPO_ROOT / "docs" / "runtime-environments.md").read_text(encoding="utf-8")
+
+    assert "environments.<name>.service_auth.reader_tenant_id" in doc_text
+    assert "environments.<name>.service_auth.operator_tenant_id" in doc_text
+    assert "environments.<name>.service_auth.tenant_claim_path" in doc_text
+
+
 def test_cjis_env_example_documents_required_values() -> None:
     env_text = (REPO_ROOT / "deploy" / "cjis.env.example").read_text(encoding="utf-8")
 

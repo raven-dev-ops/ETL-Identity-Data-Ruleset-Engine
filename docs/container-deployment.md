@@ -32,6 +32,12 @@ Then adjust at least:
 - `ETL_IDENTITY_IMAGE`
 - `ETL_IDENTITY_SERVICE_READER_API_KEY`
 - `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY`
+- `ETL_IDENTITY_SERVICE_READER_TENANT_ID`
+- `ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID`
+
+The compose baseline stays on API-key compatibility mode, but the
+service still binds each key to one tenant. Replace the example
+`default` tenant IDs with the tenant identifier for the deployment.
 
 The default compose layout expects:
 

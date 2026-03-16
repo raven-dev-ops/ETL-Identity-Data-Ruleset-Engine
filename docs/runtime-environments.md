@@ -59,6 +59,8 @@ under:
 - `environments.<name>.service_auth.header_name`
 - `environments.<name>.service_auth.reader_api_key`
 - `environments.<name>.service_auth.operator_api_key`
+- `environments.<name>.service_auth.reader_tenant_id`
+- `environments.<name>.service_auth.operator_tenant_id`
 - `environments.<name>.service_auth.issuer`
 - `environments.<name>.service_auth.audience`
 - `environments.<name>.service_auth.algorithms`
@@ -66,6 +68,7 @@ under:
 - `environments.<name>.service_auth.jwt_public_key_pem`
 - `environments.<name>.service_auth.role_claim`
 - `environments.<name>.service_auth.scope_claim`
+- `environments.<name>.service_auth.tenant_claim_path`
 - `environments.<name>.service_auth.reader_roles`
 - `environments.<name>.service_auth.operator_roles`
 - `environments.<name>.service_auth.reader_scopes`
@@ -78,12 +81,16 @@ Two modes are supported:
   - validates bearer tokens against configured issuer, audience,
     algorithms, and deployment-provided signing material
   - maps external claims into internal `reader` and `operator` roles
+  - requires `tenant_claim_path` so every authenticated caller resolves
+    to exactly one tenant
   - `role_claim` and `subject_claim` may use dotted paths such as
     `realm_access.roles`
   - `scope_claim` may also use a dotted path and can narrow the token's
     effective permission set below the default role scope set
 - `mode: api_key`
   - keeps the simpler static API-key compatibility path
+  - still binds the `reader` and `operator` keys to exactly one tenant
+    through `reader_tenant_id` and `operator_tenant_id`
 
 The stable service scope names for the current line are:
 
@@ -137,18 +144,21 @@ preflight rather than a looser general production check.
 The `container` environment is different from `prod` in one important
 way: it provides default placeholder object-storage secret values so the
 local container topology can start without cloud credentials. Service
-authentication there remains in API-key compatibility mode.
+authentication there remains in API-key compatibility mode with one
+tenant bound to each configured API key.
 
 The `cluster` environment follows the same API-key compatibility model,
 but it requires a deployment-supplied PostgreSQL URL through
 `ETL_IDENTITY_STATE_DB` and is intended for the shipped Kubernetes
-topology.
+topology. That baseline also expects deployment-supplied tenant IDs for
+the reader and operator keys.
 
 The `cluster_ha` environment follows the same API-key compatibility
 model, but it is intended for the external-HA PostgreSQL app baseline.
 That line expects a stable writer endpoint such as
-`identity-postgres-rw` and relies on the database platform to promote a
-new primary behind that writer DNS or service name.
+`identity-postgres-rw`, relies on the database platform to promote a new
+primary behind that writer DNS or service name, and expects
+deployment-supplied tenant IDs for the reader and operator keys.
 
 ## Field Authorization Settings
 

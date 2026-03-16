@@ -35,6 +35,7 @@ SERVICE_STATUS_LABELS = {
     6: "pause_pending",
     7: "paused",
 }
+WINDOWS_ERROR_SERVICE_DOES_NOT_EXIST = 1060
 
 
 def _win32_modules():
@@ -177,8 +178,15 @@ def _service_exists(service_name: str) -> bool:
     _, _, _, win32serviceutil = _win32_modules()
     try:
         win32serviceutil.QueryServiceStatus(service_name)
-    except Exception:
-        return False
+    except Exception as exc:
+        error_code = getattr(exc, "winerror", None)
+        if not isinstance(error_code, int):
+            first_arg = exc.args[0] if exc.args else None
+            if isinstance(first_arg, int):
+                error_code = first_arg
+        if error_code == WINDOWS_ERROR_SERVICE_DOES_NOT_EXIST:
+            return False
+        raise
     return True
 
 
