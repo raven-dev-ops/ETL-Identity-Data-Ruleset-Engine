@@ -132,6 +132,39 @@ def _manifest_error(path: Path, message: str) -> BatchManifestValidationError:
     return BatchManifestValidationError(f"{path.name}: {message}")
 
 
+def _resolve_staged_bundle_path(
+    manifest_path: Path,
+    *,
+    bundle: BatchSourceBundleSpec,
+    staged_bundle_dir: Path,
+    relative_path: str,
+    label: str,
+) -> Path:
+    candidate = Path(relative_path)
+    if candidate.is_absolute():
+        raise _manifest_error(
+            manifest_path,
+            (
+                f"source_bundle {bundle.bundle_id!r} contract marker {label} "
+                f"path must be relative: {relative_path!r}"
+            ),
+        )
+
+    resolved = (staged_bundle_dir / candidate).resolve()
+    bundle_root = staged_bundle_dir.resolve()
+    try:
+        resolved.relative_to(bundle_root)
+    except ValueError as exc:
+        raise _manifest_error(
+            manifest_path,
+            (
+                f"source_bundle {bundle.bundle_id!r} contract marker {label} "
+                f"path escapes the staged bundle root: {relative_path!r}"
+            ),
+        ) from exc
+    return resolved
+
+
 def _load_manifest_mapping(path: Path) -> Mapping[str, object]:
     if path.suffix.lower() not in SUPPORTED_MANIFEST_SUFFIXES:
         raise _manifest_error(
@@ -1038,7 +1071,13 @@ def _materialize_object_storage_bundle(
                         f"{resolved_mapping_overlay!r}"
                     ),
                 ) from exc
-            staged_mapping_overlay_path = staged_bundle_dir / Path(resolved_mapping_overlay)
+            staged_mapping_overlay_path = _resolve_staged_bundle_path(
+                manifest_path,
+                bundle=bundle,
+                staged_bundle_dir=staged_bundle_dir,
+                relative_path=resolved_mapping_overlay,
+                label="mapping_overlay",
+            )
             staged_mapping_overlay_path.parent.mkdir(parents=True, exist_ok=True)
             staged_mapping_overlay_path.write_bytes(overlay_payload)
 
@@ -1071,7 +1110,13 @@ def _materialize_object_storage_bundle(
                         f"{relative_path!r}"
                     ),
                 ) from exc
-            staged_path = staged_bundle_dir / Path(relative_path)
+            staged_path = _resolve_staged_bundle_path(
+                manifest_path,
+                bundle=bundle,
+                staged_bundle_dir=staged_bundle_dir,
+                relative_path=relative_path,
+                label=f"file entry {logical_name!r}",
+            )
             staged_path.parent.mkdir(parents=True, exist_ok=True)
             staged_path.write_bytes(payload)
 

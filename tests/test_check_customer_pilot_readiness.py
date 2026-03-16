@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import socket
 import sys
 import zipfile
 
@@ -133,14 +134,25 @@ def _write_sample_bundle_root(root: Path, *, signing_private_key: Path | None = 
         )
 
 
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return int(sock.getsockname()[1])
+
+
 def test_evaluate_customer_pilot_readiness_for_bundle_root(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
     _write_sample_bundle_root(bundle_root)
+    demo_port = _find_free_port()
+    service_port = _find_free_port()
 
     summary = MODULE.evaluate_customer_pilot_readiness(
         bundle_root=str(bundle_root),
         install_root=str(bundle_root),
+        demo_port=demo_port,
+        service_port=service_port,
         python_version=(3, 11, 6),
         system_name="Windows",
         docker_available=True,
@@ -164,10 +176,14 @@ def test_evaluate_customer_pilot_readiness_for_bundle_zip(tmp_path: Path) -> Non
         for path in sorted(bundle_root.rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(bundle_root).as_posix())
+    demo_port = _find_free_port()
+    service_port = _find_free_port()
 
     summary = MODULE.evaluate_customer_pilot_readiness(
         bundle=str(bundle_zip),
         install_root=str(tmp_path / "install"),
+        demo_port=demo_port,
+        service_port=service_port,
         python_version=(3, 13, 0),
         system_name="Windows",
         docker_available=True,
@@ -209,11 +225,15 @@ def test_evaluate_customer_pilot_readiness_accepts_signed_bundle_with_trusted_ke
     bundle_root.mkdir()
     signing_private_key, trusted_public_key = _write_ed25519_keypair(tmp_path / "signing")
     _write_sample_bundle_root(bundle_root, signing_private_key=signing_private_key)
+    demo_port = _find_free_port()
+    service_port = _find_free_port()
 
     summary = MODULE.evaluate_customer_pilot_readiness(
         bundle_root=str(bundle_root),
         install_root=str(bundle_root),
         trusted_public_key=str(trusted_public_key),
+        demo_port=demo_port,
+        service_port=service_port,
         python_version=(3, 11, 6),
         system_name="Windows",
         docker_available=True,

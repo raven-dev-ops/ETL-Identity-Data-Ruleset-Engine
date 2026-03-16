@@ -1180,6 +1180,150 @@ def _load_field_authorization_config(
     return FieldAuthorizationConfig(surface_rules=surface_rules)
 
 
+def _resolve_runtime_environment_name(
+    raw_config: Mapping[str, object],
+    *,
+    requested_environment: str | None,
+    config_path: Path,
+    environ: Mapping[str, str],
+) -> str:
+    selected_environment = requested_environment or environ.get("ETL_IDENTITY_ENV")
+    if selected_environment is not None:
+        return selected_environment
+
+    raw_default_environment = raw_config.get("default_environment")
+    if raw_default_environment in (None, ""):
+        return "dev"
+    if not isinstance(raw_default_environment, str):
+        raise _config_error(config_path, "runtime_config.default_environment must be a non-empty string")
+
+    resolved_default_environment = _resolve_node_env_placeholders(
+        raw_default_environment,
+        path=config_path,
+        context="runtime_config.default_environment",
+        environ=environ,
+    )
+    if not isinstance(resolved_default_environment, str) or not resolved_default_environment.strip():
+        raise _config_error(config_path, "runtime_config.default_environment must be a non-empty string")
+    return resolved_default_environment.strip()
+
+
+def _load_resolved_runtime_environment_config(
+    raw_config: Mapping[str, object],
+    *,
+    environment_name: str,
+    config_path: Path,
+    environ: Mapping[str, str],
+) -> Mapping[str, object]:
+    environments = _require_mapping(
+        raw_config,
+        "environments",
+        path=config_path,
+        context="runtime_config",
+    )
+    selected = environments.get(environment_name)
+    if not isinstance(selected, Mapping):
+        raise _config_error(
+            config_path,
+            f"environments must define a mapping for '{environment_name}'",
+        )
+
+    resolved_selected = _resolve_node_env_placeholders(
+        dict(selected),
+        path=config_path,
+        context=f"environments.{environment_name}",
+        environ=environ,
+    )
+    if not isinstance(resolved_selected, Mapping):
+        raise _config_error(
+            config_path,
+            f"environments.{environment_name} must be a mapping",
+        )
+    _validate_allowed_keys(
+        resolved_selected,
+        allowed_keys={
+            "description",
+            "config_dir",
+            "state_db",
+            "tenant_id",
+            "secrets",
+            "service_auth",
+            "field_authorization",
+        },
+        path=config_path,
+        context=f"environments.{environment_name}",
+    )
+    return resolved_selected
+
+
+def _resolve_runtime_state_db(
+    raw_state_db: object,
+    *,
+    config_path: Path,
+    environment_name: str,
+) -> Path | str | None:
+    if raw_state_db in (None, ""):
+        return None
+    if not isinstance(raw_state_db, str) or not raw_state_db.strip():
+        raise _config_error(
+            config_path,
+            f"environments.{environment_name}.state_db must be a non-empty string when provided",
+        )
+
+    configured_state_db = raw_state_db.strip()
+    if is_state_store_url(configured_state_db):
+        return resolve_state_store_target(configured_state_db).raw_value
+
+    resolved_state_db_path = Path(configured_state_db)
+    if not resolved_state_db_path.is_absolute():
+        resolved_state_db_path = (config_path.parent / resolved_state_db_path).resolve()
+    return resolve_state_store_target(resolved_state_db_path).file_path
+
+
+def _resolve_runtime_secrets(
+    raw_secrets: object,
+    *,
+    config_path: Path,
+    environment_name: str,
+) -> dict[str, str]:
+    if not isinstance(raw_secrets, Mapping):
+        raise _config_error(
+            config_path,
+            f"environments.{environment_name}.secrets must be a mapping",
+        )
+
+    secrets: dict[str, str] = {}
+    for key, value in raw_secrets.items():
+        if not isinstance(key, str) or not key.strip():
+            raise _config_error(
+                config_path,
+                f"environments.{environment_name}.secrets contains an invalid key",
+            )
+        if not isinstance(value, str) or not value.strip():
+            raise _config_error(
+                config_path,
+                f"environments.{environment_name}.secrets.{key} must be a non-empty string",
+            )
+        secrets[key.strip()] = value.strip()
+    return secrets
+
+
+def _resolve_runtime_tenant_id(
+    raw_tenant_id: object,
+    *,
+    config_path: Path,
+    environment_name: str,
+) -> str | None:
+    if raw_tenant_id in (None, ""):
+        return None
+    if isinstance(raw_tenant_id, str) and raw_tenant_id.strip():
+        return raw_tenant_id.strip()
+    raise _config_error(
+        config_path,
+        f"environments.{environment_name}.tenant_id must be a non-empty string when provided",
+    )
+
+
 def load_runtime_environment(
     environment: str | None = None,
     runtime_config_path: Path | None = None,
@@ -1196,59 +1340,17 @@ def load_runtime_environment(
     )
 
     effective_environ = os.environ if environ is None else environ
-    default_environment = environment or effective_environ.get("ETL_IDENTITY_ENV")
-    if default_environment is None:
-        raw_default_environment = raw_config.get("default_environment")
-        if raw_default_environment in (None, ""):
-            default_environment = "dev"
-        elif isinstance(raw_default_environment, str):
-            resolved_default_environment = _resolve_node_env_placeholders(
-                raw_default_environment,
-                path=config_path,
-                context="runtime_config.default_environment",
-                environ=effective_environ,
-            )
-            if not isinstance(resolved_default_environment, str) or not resolved_default_environment.strip():
-                raise _config_error(config_path, "runtime_config.default_environment must be a non-empty string")
-            default_environment = resolved_default_environment.strip()
-        else:
-            raise _config_error(config_path, "runtime_config.default_environment must be a non-empty string")
-    environments = _require_mapping(
+    default_environment = _resolve_runtime_environment_name(
         raw_config,
-        "environments",
-        path=config_path,
-        context="runtime_config",
-    )
-    selected = environments.get(default_environment)
-    if not isinstance(selected, Mapping):
-        raise _config_error(
-            config_path,
-            f"environments must define a mapping for '{default_environment}'",
-        )
-    resolved_selected = _resolve_node_env_placeholders(
-        dict(selected),
-        path=config_path,
-        context=f"environments.{default_environment}",
+        requested_environment=environment,
+        config_path=config_path,
         environ=effective_environ,
     )
-    if not isinstance(resolved_selected, Mapping):
-        raise _config_error(
-            config_path,
-            f"environments.{default_environment} must be a mapping",
-        )
-    _validate_allowed_keys(
-        resolved_selected,
-        allowed_keys={
-            "description",
-            "config_dir",
-            "state_db",
-            "tenant_id",
-            "secrets",
-            "service_auth",
-            "field_authorization",
-        },
-        path=config_path,
-        context=f"environments.{default_environment}",
+    resolved_selected = _load_resolved_runtime_environment_config(
+        raw_config,
+        environment_name=default_environment,
+        config_path=config_path,
+        environ=effective_environ,
     )
 
     config_dir_value = _optional_non_empty_string(
@@ -1262,45 +1364,16 @@ def load_runtime_environment(
     if not config_dir.is_absolute():
         config_dir = (config_path.parent / config_dir).resolve()
 
-    raw_state_db = resolved_selected.get("state_db")
-    state_db: Path | str | None
-    if raw_state_db in (None, ""):
-        state_db = None
-    elif isinstance(raw_state_db, str) and raw_state_db.strip():
-        configured_state_db = raw_state_db.strip()
-        if is_state_store_url(configured_state_db):
-            state_db = resolve_state_store_target(configured_state_db).raw_value
-        else:
-            resolved_state_db_path = Path(configured_state_db)
-            if not resolved_state_db_path.is_absolute():
-                resolved_state_db_path = (config_path.parent / resolved_state_db_path).resolve()
-            state_db = resolve_state_store_target(resolved_state_db_path).file_path
-    else:
-        raise _config_error(
-            config_path,
-            f"environments.{default_environment}.state_db must be a non-empty string when provided",
-        )
-
-    raw_secrets = resolved_selected.get("secrets", {})
-    if not isinstance(raw_secrets, Mapping):
-        raise _config_error(
-            config_path,
-            f"environments.{default_environment}.secrets must be a mapping",
-        )
-    secrets: dict[str, str] = {}
-    for key, value in raw_secrets.items():
-        if not isinstance(key, str) or not key.strip():
-            raise _config_error(
-                config_path,
-                f"environments.{default_environment}.secrets contains an invalid key",
-            )
-        if not isinstance(value, str) or not value.strip():
-            raise _config_error(
-                config_path,
-                f"environments.{default_environment}.secrets.{key} must be a non-empty string",
-            )
-        secrets[key.strip()] = value.strip()
-
+    state_db = _resolve_runtime_state_db(
+        resolved_selected.get("state_db"),
+        config_path=config_path,
+        environment_name=default_environment,
+    )
+    secrets = _resolve_runtime_secrets(
+        resolved_selected.get("secrets", {}),
+        config_path=config_path,
+        environment_name=default_environment,
+    )
     raw_service_auth = resolved_selected.get("service_auth")
     service_auth = _load_service_auth_config(
         raw_service_auth,
@@ -1313,16 +1386,11 @@ def load_runtime_environment(
         config_path=config_path,
         environment_name=default_environment,
     )
-    raw_tenant_id = resolved_selected.get("tenant_id")
-    if raw_tenant_id in (None, ""):
-        tenant_id = None
-    elif isinstance(raw_tenant_id, str) and raw_tenant_id.strip():
-        tenant_id = raw_tenant_id.strip()
-    else:
-        raise _config_error(
-            config_path,
-            f"environments.{default_environment}.tenant_id must be a non-empty string when provided",
-        )
+    tenant_id = _resolve_runtime_tenant_id(
+        resolved_selected.get("tenant_id"),
+        config_path=config_path,
+        environment_name=default_environment,
+    )
 
     return RuntimeEnvironmentConfig(
         name=default_environment,

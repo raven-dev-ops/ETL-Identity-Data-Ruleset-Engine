@@ -63,17 +63,20 @@ def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProce
 def _wait_for_postgresql(state_db: str, *, timeout_seconds: int = 60) -> None:
     deadline = time.time() + timeout_seconds
     target = resolve_state_store_target(state_db)
+    last_error: Exception | None = None
     while time.time() < deadline:
         engine = create_state_store_engine(target)
         try:
             with engine.connect() as connection:
                 connection.execute(text("SELECT 1"))
             return
-        except Exception:
+        except Exception as exc:
+            last_error = exc
             time.sleep(1)
         finally:
             engine.dispose()
-    raise RuntimeError("Timed out waiting for benchmark PostgreSQL readiness")
+    error_suffix = "" if last_error is None else f": {last_error}"
+    raise RuntimeError(f"Timed out waiting for benchmark PostgreSQL readiness{error_suffix}")
 
 
 @contextmanager

@@ -652,6 +652,40 @@ def test_load_runtime_environment_resolves_paths_and_secrets(tmp_path: Path, mon
     )
 
 
+def test_load_runtime_environment_uses_supplied_environ_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: dev
+environments:
+  dev:
+    config_dir: ./dev-config
+    state_db: ./state/dev.sqlite
+  prod:
+    config_dir: ./prod-config
+    state_db: ${TEST_STATE_DB}
+""",
+    )
+    monkeypatch.setenv("ETL_IDENTITY_ENV", "dev")
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "wrong.sqlite"))
+
+    environment = load_runtime_environment(
+        runtime_config_path=runtime_config,
+        environ={
+            "ETL_IDENTITY_ENV": "prod",
+            "TEST_STATE_DB": str(tmp_path / "state" / "prod.sqlite"),
+        },
+    )
+
+    assert environment.name == "prod"
+    assert environment.config_dir == (tmp_path / "prod-config").resolve()
+    assert environment.state_db == (tmp_path / "state" / "prod.sqlite").resolve()
+
+
 def test_load_runtime_environment_supports_optional_tenant_id(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

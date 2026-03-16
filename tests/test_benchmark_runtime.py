@@ -52,6 +52,38 @@ def test_run_reports_missing_executable(monkeypatch: pytest.MonkeyPatch) -> None
         benchmark_runtime._run(["docker", "run"])
 
 
+def test_wait_for_postgresql_reports_last_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    time_values = iter((0.0, 0.0, 61.0))
+    dispose_calls: list[str] = []
+
+    class FailingConnection:
+        def __enter__(self):
+            raise ConnectionError("connection refused")
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    class FailingEngine:
+        def connect(self) -> FailingConnection:
+            return FailingConnection()
+
+        def dispose(self) -> None:
+            dispose_calls.append("disposed")
+
+    monkeypatch.setattr(benchmark_runtime, "resolve_state_store_target", lambda state_db: object())
+    monkeypatch.setattr(benchmark_runtime, "create_state_store_engine", lambda target: FailingEngine())
+    monkeypatch.setattr(benchmark_runtime.time, "time", lambda: next(time_values))
+    monkeypatch.setattr(benchmark_runtime.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Timed out waiting for benchmark PostgreSQL readiness: connection refused",
+    ):
+        benchmark_runtime._wait_for_postgresql("postgresql://example.test/identity_state")
+
+    assert dispose_calls == ["disposed"]
+
+
 def test_temporary_environment_restores_original_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ETL_IDENTITY_STATE_DB", "before")
     monkeypatch.delenv("ETL_IDENTITY_SERVICE_OPERATOR_API_KEY", raising=False)

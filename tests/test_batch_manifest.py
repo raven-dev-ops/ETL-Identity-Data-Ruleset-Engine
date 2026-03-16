@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+import etl_identity_engine.ingest.manifest as manifest_module
 from etl_identity_engine.cli import main
 from etl_identity_engine.generate.synth_generator import (
     INCIDENT_HEADERS,
@@ -20,6 +21,7 @@ from etl_identity_engine.ingest.public_safety_contracts import (
 )
 from etl_identity_engine.ingest.manifest import (
     BatchManifestValidationError,
+    BatchSourceBundleSpec,
     resolve_batch_manifest,
 )
 
@@ -617,6 +619,27 @@ source_bundles:
 """
 
 
+def _cad_bundle_spec(*, mapping_overlay: str | None = None) -> BatchSourceBundleSpec:
+    return BatchSourceBundleSpec(
+        bundle_id="cad_primary",
+        source_class="cad",
+        path="cad_bundle",
+        contract_name=CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+        contract_version="v1",
+        mapping_overlay=mapping_overlay,
+    )
+
+
+def _mock_object_storage_payload_loader(payloads: dict[str, bytes]):
+    def _load(location: str, *, storage_options: object) -> bytes:
+        try:
+            return payloads[location]
+        except KeyError as exc:
+            raise FileNotFoundError(location) from exc
+
+    return _load
+
+
 def test_resolve_batch_manifest_validates_and_resolves_local_sources(tmp_path: Path) -> None:
     landing_dir = tmp_path / "landing"
     _write_csv(
@@ -974,6 +997,234 @@ source_bundles:
         match=r"source_bundles\[0\] cannot define both mapping_overlay and vendor_profile",
     ):
         resolve_batch_manifest(manifest_path)
+
+
+def test_materialize_object_storage_bundle_rejects_missing_contract_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader({}),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' is missing contract_manifest\.yml",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location="memory://landing/cad_bundle",
+            storage_options={},
+        )
+
+
+def test_materialize_object_storage_bundle_rejects_non_utf8_contract_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_location = "memory://landing/cad_bundle"
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader(
+            {
+                f"{bundle_location}/{PUBLIC_SAFETY_CONTRACT_MARKER}": b"\xff\xfe\x00\x00",
+            }
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' contains a non-UTF-8 contract marker",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location=bundle_location,
+            storage_options={},
+        )
+
+
+def test_materialize_object_storage_bundle_rejects_empty_files_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_location = "memory://landing/cad_bundle"
+    marker_payload = yaml.safe_dump(
+        {
+            "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+            "contract_version": "v1",
+            "files": {},
+        },
+        sort_keys=False,
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader(
+            {
+                f"{bundle_location}/{PUBLIC_SAFETY_CONTRACT_MARKER}": marker_payload,
+            }
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' contract marker must contain a non-empty files mapping",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location=bundle_location,
+            storage_options={},
+        )
+
+
+def test_materialize_object_storage_bundle_rejects_missing_mapping_overlay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_location = "memory://landing/cad_bundle"
+    marker_payload = yaml.safe_dump(
+        {
+            "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+            "contract_version": "v1",
+            "mapping_overlay": "overlays/vendor_columns.yml",
+            "files": {"person_records": "cad_person_records.csv"},
+        },
+        sort_keys=False,
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader(
+            {
+                f"{bundle_location}/{PUBLIC_SAFETY_CONTRACT_MARKER}": marker_payload,
+            }
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' is missing mapping overlay 'overlays/vendor_columns\.yml'",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location=bundle_location,
+            storage_options={},
+        )
+
+
+def test_materialize_object_storage_bundle_rejects_missing_declared_bundle_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_location = "memory://landing/cad_bundle"
+    marker_payload = yaml.safe_dump(
+        {
+            "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+            "contract_version": "v1",
+            "files": {"person_records": "cad_person_records.csv"},
+        },
+        sort_keys=False,
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader(
+            {
+                f"{bundle_location}/{PUBLIC_SAFETY_CONTRACT_MARKER}": marker_payload,
+            }
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' is missing declared bundle file 'cad_person_records\.csv'",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location=bundle_location,
+            storage_options={},
+        )
+
+
+def test_materialize_object_storage_bundle_rejects_bundle_file_path_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_location = "memory://landing/cad_bundle"
+    marker_payload = yaml.safe_dump(
+        {
+            "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+            "contract_version": "v1",
+            "files": {"person_records": "../outside.csv"},
+        },
+        sort_keys=False,
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader(
+            {
+                f"{bundle_location}/{PUBLIC_SAFETY_CONTRACT_MARKER}": marker_payload,
+                f"{bundle_location}/../outside.csv": b"source_record_id\nA-1\n",
+            }
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' contract marker file entry 'person_records' path escapes the staged bundle root: '\.\./outside\.csv'",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location=bundle_location,
+            storage_options={},
+        )
+
+
+def test_materialize_object_storage_bundle_rejects_mapping_overlay_path_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_location = "memory://landing/cad_bundle"
+    marker_payload = yaml.safe_dump(
+        {
+            "contract_name": CAD_CALL_FOR_SERVICE_CONTRACT.contract_name,
+            "contract_version": "v1",
+            "mapping_overlay": "../overlays/vendor_columns.yml",
+            "files": {"person_records": "cad_person_records.csv"},
+        },
+        sort_keys=False,
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        manifest_module,
+        "_load_object_storage_payload",
+        _mock_object_storage_payload_loader(
+            {
+                f"{bundle_location}/{PUBLIC_SAFETY_CONTRACT_MARKER}": marker_payload,
+                f"{bundle_location}/../overlays/vendor_columns.yml": b"overlay_version: v1\n",
+            }
+        ),
+    )
+
+    with pytest.raises(
+        BatchManifestValidationError,
+        match=r"source_bundle 'cad_primary' contract marker mapping_overlay path escapes the staged bundle root: '\.\./overlays/vendor_columns\.yml'",
+    ):
+        manifest_module._materialize_object_storage_bundle(
+            tmp_path / "manifest.yml",
+            bundle=_cad_bundle_spec(),
+            bundle_location=bundle_location,
+            storage_options={},
+        )
 
 
 def test_normalize_manifest_rejects_invalid_public_safety_source_bundle_without_partial_output(
