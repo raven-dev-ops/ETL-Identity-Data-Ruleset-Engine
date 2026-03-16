@@ -131,6 +131,31 @@ Shared versioning and deprecation expectations for those downstream
 surfaces are defined in
 [compatibility-policy.md](compatibility-policy.md).
 
+## Field Authorization Boundary
+
+Named export jobs and `publish-delivery` now share one field-level
+authorization boundary for the delivery contract:
+
+- `delivery.golden_records`
+- `delivery.source_to_golden_crosswalk`
+
+If no policy is configured in the selected runtime environment, exports
+publish the documented contract unchanged.
+
+Configured actions are:
+
+- `allow`
+- `mask`
+- `deny`
+
+Current behavior:
+
+- `mask` preserves CSV headers and row counts while replacing non-empty
+  string values with `[MASKED]`
+- `deny` blocks the entire publication or export job rather than
+  emitting a partial snapshot
+- invalid config or evaluation errors fail closed
+
 ## Current Boundary
 
 The current export-job surface adds configured named jobs and persistent

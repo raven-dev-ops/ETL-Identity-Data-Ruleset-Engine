@@ -10,6 +10,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from etl_identity_engine.cli import main
+from etl_identity_engine.field_authorization import (
+    DELIVERY_GOLDEN_RECORDS_SURFACE,
+    FieldAuthorizationConfig,
+    SERVICE_GOLDEN_RECORD_SURFACE,
+)
 from etl_identity_engine.generate.synth_generator import PERSON_HEADERS
 from etl_identity_engine.runtime_config import ServiceAuthConfig
 from etl_identity_engine.service_api import create_service_app
@@ -417,6 +422,127 @@ def test_service_api_exposes_run_golden_crosswalk_and_review_state(tmp_path: Pat
     assert review_detail_response.status_code == 200
     assert review_detail_response.json()["left_id"] == review_row["left_id"]
     assert review_detail_response.json()["right_id"] == review_row["right_id"]
+
+
+def test_service_api_masks_configured_identity_fields_on_golden_record_surfaces(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    bundle = store.load_run_bundle(run_id)
+    golden_id = bundle.golden_rows[0]["golden_id"]
+    field_authorization = FieldAuthorizationConfig(
+        surface_rules={
+            SERVICE_GOLDEN_RECORD_SURFACE: {
+                "first_name": "mask",
+                "phone": "mask",
+            }
+        }
+    )
+
+    client = TestClient(
+        create_service_app(
+            db_path,
+            service_auth=_service_auth(),
+            field_authorization=field_authorization,
+        )
+    )
+    reader_headers = _auth_headers("reader-secret")
+
+    list_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records",
+        headers=reader_headers,
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["items"][0]["first_name"] == "[MASKED]"
+    assert list_response.json()["items"][0]["phone"] == "[MASKED]"
+    assert list_response.json()["items"][0]["last_name"] == bundle.golden_rows[0]["last_name"]
+
+    detail_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records/{golden_id}",
+        headers=reader_headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["first_name"] == "[MASKED]"
+    assert detail_response.json()["phone"] == "[MASKED]"
+
+
+def test_service_api_denies_golden_record_surface_when_policy_blocks_fields(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    golden_id = store.load_run_bundle(run_id).golden_rows[0]["golden_id"]
+    field_authorization = FieldAuthorizationConfig(
+        surface_rules={SERVICE_GOLDEN_RECORD_SURFACE: {"phone": "deny"}}
+    )
+    client = TestClient(
+        create_service_app(
+            db_path,
+            service_auth=_service_auth(),
+            field_authorization=field_authorization,
+        )
+    )
+    reader_headers = _auth_headers("reader-secret")
+
+    list_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records",
+        headers=reader_headers,
+    )
+    assert list_response.status_code == 403
+    assert "service.golden_record" in list_response.json()["detail"]
+
+    detail_response = client.get(
+        f"/api/v1/runs/{run_id}/golden-records/{golden_id}",
+        headers=reader_headers,
+    )
+    assert detail_response.status_code == 403
+    assert "phone" in detail_response.json()["detail"]
+
+
+def test_service_api_denies_publish_and_export_when_delivery_policy_blocks_fields(
+    tmp_path: Path,
+) -> None:
+    db_path, run_id, store = _create_persisted_manifest_run(tmp_path)
+    publish_root = tmp_path / "service-policy-publish"
+    export_root = tmp_path / "service-policy-exports"
+    config_dir = tmp_path / "service-policy-config"
+    _write_export_jobs_config(config_dir, output_root=export_root)
+    field_authorization = FieldAuthorizationConfig(
+        surface_rules={DELIVERY_GOLDEN_RECORDS_SURFACE: {"phone": "deny"}}
+    )
+    client = TestClient(
+        create_service_app(
+            db_path,
+            service_auth=_service_auth(),
+            config_dir=config_dir,
+            field_authorization=field_authorization,
+        )
+    )
+    operator_headers = _auth_headers("operator-secret")
+
+    publish_response = client.post(
+        f"/api/v1/runs/{run_id}/publish",
+        headers=operator_headers,
+        json={"output_dir": str(publish_root)},
+    )
+    assert publish_response.status_code == 403
+    assert "delivery.golden_records" in publish_response.json()["detail"]
+
+    export_response = client.post(
+        f"/api/v1/runs/{run_id}/exports/service_api_identity_snapshot",
+        headers=operator_headers,
+    )
+    assert export_response.status_code == 403
+    assert "delivery.golden_records" in export_response.json()["detail"]
+
+    audit_events = store.list_audit_events(run_id=run_id, limit=20)
+    assert any(
+        event.action == "publish_run"
+        and event.status == "failed"
+        and "delivery.golden_records" in str(event.details.get("error", ""))
+        for event in audit_events
+    )
+    assert any(
+        event.action == "export_job_run"
+        and event.status == "failed"
+        and "delivery.golden_records" in str(event.details.get("error", ""))
+        for event in audit_events
+    )
 
 
 def test_service_api_validates_request_inputs_and_returns_not_found_for_missing_rows(

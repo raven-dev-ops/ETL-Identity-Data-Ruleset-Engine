@@ -10,6 +10,12 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
+from etl_identity_engine.field_authorization import (
+    DELIVERY_GOLDEN_RECORDS_SURFACE,
+    DELIVERY_SOURCE_TO_GOLDEN_CROSSWALK_SURFACE,
+    FieldAuthorizationConfig,
+    apply_field_authorization_to_rows,
+)
 from etl_identity_engine.io.write import write_csv_dicts
 from etl_identity_engine.output_contracts import (
     CROSSWALK_HEADERS,
@@ -59,6 +65,8 @@ def _sha256_file(path: Path) -> str:
 def _build_delivery_manifest(
     *,
     bundle: PersistedRunBundle,
+    golden_rows: list[dict[str, object]],
+    crosswalk_rows: list[dict[str, object]],
     state_db_path: str | Path,
     snapshot_id: str,
     contract_version: str,
@@ -66,12 +74,12 @@ def _build_delivery_manifest(
     snapshot_dir: Path,
 ) -> dict[str, object]:
     artifact_rows = (
-        ("golden_records", Path("golden_person_records.csv"), GOLDEN_HEADERS, bundle.golden_rows),
+        ("golden_records", Path("golden_person_records.csv"), GOLDEN_HEADERS, golden_rows),
         (
             "source_to_golden_crosswalk",
             Path("source_to_golden_crosswalk.csv"),
             CROSSWALK_HEADERS,
-            bundle.crosswalk_rows,
+            crosswalk_rows,
         ),
     )
     artifacts: list[dict[str, object]] = []
@@ -102,8 +110,8 @@ def _build_delivery_manifest(
             "finished_at_utc": bundle.run.finished_at_utc,
         },
         "row_counts": {
-            "golden_records": len(bundle.golden_rows),
-            "source_to_golden_crosswalk": len(bundle.crosswalk_rows),
+            "golden_records": len(golden_rows),
+            "source_to_golden_crosswalk": len(crosswalk_rows),
         },
         "artifacts": artifacts,
     }
@@ -135,6 +143,7 @@ def publish_delivery_snapshot(
     bundle: PersistedRunBundle,
     state_db_path: str | Path,
     output_root: Path,
+    field_authorization: FieldAuthorizationConfig | None = None,
     contract_version: str = DELIVERY_CONTRACT_VERSION,
     published_at_utc: str | None = None,
 ) -> PublishedDeliverySnapshot:
@@ -148,6 +157,16 @@ def publish_delivery_snapshot(
     snapshot_dir = snapshots_root / snapshot_id
     manifest_path = snapshot_dir / "delivery_manifest.json"
     current_pointer_path = contract_root / "current.json"
+    golden_rows = apply_field_authorization_to_rows(
+        bundle.golden_rows,
+        surface=DELIVERY_GOLDEN_RECORDS_SURFACE,
+        config=field_authorization,
+    )
+    crosswalk_rows = apply_field_authorization_to_rows(
+        bundle.crosswalk_rows,
+        surface=DELIVERY_SOURCE_TO_GOLDEN_CROSSWALK_SURFACE,
+        config=field_authorization,
+    )
 
     snapshots_root.mkdir(parents=True, exist_ok=True)
 
@@ -166,18 +185,20 @@ def publish_delivery_snapshot(
         try:
             write_csv_dicts(
                 temporary_dir / "golden_person_records.csv",
-                bundle.golden_rows,
+                golden_rows,
                 fieldnames=DELIVERY_ARTIFACT_HEADERS[Path("golden_person_records.csv")],
             )
             write_csv_dicts(
                 temporary_dir / "source_to_golden_crosswalk.csv",
-                bundle.crosswalk_rows,
+                crosswalk_rows,
                 fieldnames=DELIVERY_ARTIFACT_HEADERS[Path("source_to_golden_crosswalk.csv")],
             )
             _write_json(
                 temporary_dir / "delivery_manifest.json",
                 _build_delivery_manifest(
                     bundle=bundle,
+                    golden_rows=golden_rows,
+                    crosswalk_rows=crosswalk_rows,
                     state_db_path=state_db_path,
                     snapshot_id=snapshot_id,
                     contract_version=contract_version,

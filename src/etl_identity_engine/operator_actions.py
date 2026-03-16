@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from etl_identity_engine.delivery_publish import publish_delivery_snapshot
+from etl_identity_engine.field_authorization import FieldAuthorizationConfig
 from etl_identity_engine.ingest.manifest import peek_manifest_batch_id
 from etl_identity_engine.ingest.replay_bundle import (
     replay_bundle_is_replayable_from_summary,
@@ -263,6 +264,7 @@ def publish_run_operation(
     state_db: str | Path,
     run_id: str | None,
     output_dir: Path,
+    field_authorization: FieldAuthorizationConfig | None = None,
     contract_version: str = DELIVERY_CONTRACT_VERSION,
 ) -> PublishRunOperationResult:
     resolved_tenant_id = normalize_tenant_id(tenant_id)
@@ -276,6 +278,7 @@ def publish_run_operation(
         bundle=bundle,
         state_db_path=state_db,
         output_root=output_dir,
+        field_authorization=field_authorization,
         contract_version=contract_version,
     )
     return PublishRunOperationResult(
@@ -294,6 +297,7 @@ def export_job_run_operation(
     state_db: str | Path,
     source_run_id: str | None,
     job: ExportJobConfig,
+    field_authorization: FieldAuthorizationConfig | None = None,
 ) -> ExportJobRunOperationResult:
     resolved_tenant_id = normalize_tenant_id(tenant_id)
     resolved_source_run_id = resolve_completed_run_id(
@@ -334,6 +338,7 @@ def export_job_run_operation(
             bundle=bundle,
             state_db_path=state_db,
             output_root=job.output_root,
+            field_authorization=field_authorization,
             contract_version=job.contract_version,
         )
         if start_decision.action == "reuse_completed":

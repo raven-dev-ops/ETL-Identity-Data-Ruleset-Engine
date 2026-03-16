@@ -109,6 +109,13 @@ Artifact entries include:
 Header compatibility for those files is inherited from the stable CSV
 artifact contracts in [output-contracts.md](output-contracts.md).
 
+If the selected runtime environment configures field authorization for
+`delivery.golden_records` or `delivery.source_to_golden_crosswalk`,
+publication still preserves the documented filenames, headers, and row
+counts. `mask` replaces non-empty string values with `[MASKED]`, while
+`deny` blocks the entire snapshot publication instead of emitting a
+partial contract.
+
 ## Compatibility
 
 `golden_crosswalk_snapshot/v1` is the current stable downstream consumer

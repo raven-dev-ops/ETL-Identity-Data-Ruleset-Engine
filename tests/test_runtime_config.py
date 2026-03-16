@@ -6,6 +6,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import pytest
 
 from etl_identity_engine.cli import main
+from etl_identity_engine.field_authorization import (
+    DELIVERY_GOLDEN_RECORDS_SURFACE,
+    SERVICE_GOLDEN_RECORD_SURFACE,
+)
 from etl_identity_engine.runtime_config import (
     ConfigValidationError,
     evaluate_runtime_auth_material,
@@ -915,6 +919,95 @@ environments:
         "review_cases:write",
         "runs:replay",
     )
+
+
+def test_load_runtime_environment_supports_field_authorization_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    field_authorization:
+      service.golden_record:
+        first_name: mask
+        phone: deny
+      delivery.golden_records:
+        address: mask
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+
+    environment = load_runtime_environment("prod", runtime_config)
+
+    assert environment.field_authorization is not None
+    assert environment.field_authorization.surface_rules[SERVICE_GOLDEN_RECORD_SURFACE] == {
+        "first_name": "mask",
+        "phone": "deny",
+    }
+    assert environment.field_authorization.surface_rules[DELIVERY_GOLDEN_RECORDS_SURFACE] == {
+        "address": "mask",
+    }
+
+
+def test_load_runtime_environment_rejects_invalid_field_authorization_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    field_authorization:
+      service.golden_record:
+        middle_name: mask
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.field_authorization\.service\.golden_record contains unsupported keys: middle_name",
+    ):
+        load_runtime_environment("prod", runtime_config)
+
+
+def test_load_runtime_environment_rejects_invalid_field_authorization_action(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_config = tmp_path / "runtime_environments.yml"
+    _write_text(
+        runtime_config,
+        """
+default_environment: prod
+environments:
+  prod:
+    config_dir: ./config
+    state_db: ${TEST_STATE_DB}
+    field_authorization:
+      service.golden_record:
+        first_name: redact
+""",
+    )
+    monkeypatch.setenv("TEST_STATE_DB", str(tmp_path / "state" / "prod.sqlite"))
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime_environments\.yml: environments\.prod\.field_authorization\.service\.golden_record\.first_name must be one of: allow, deny, mask",
+    ):
+        load_runtime_environment("prod", runtime_config)
 
 
 def test_load_runtime_environment_rejects_jwt_service_auth_without_tenant_claim_path(

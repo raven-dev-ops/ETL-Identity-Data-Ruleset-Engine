@@ -19,6 +19,17 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, ConfigDict, Field
 
 from etl_identity_engine import __version__
+from etl_identity_engine.field_authorization import (
+    FieldAuthorizationConfig,
+    FieldAuthorizationDenied,
+    FieldAuthorizationError,
+    SERVICE_CROSSWALK_LOOKUP_SURFACE,
+    SERVICE_GOLDEN_RECORD_SURFACE,
+    SERVICE_PUBLIC_SAFETY_GOLDEN_ACTIVITY_SURFACE,
+    SERVICE_PUBLIC_SAFETY_INCIDENT_IDENTITY_SURFACE,
+    apply_field_authorization_to_mapping,
+    ensure_surface_allowed,
+)
 from etl_identity_engine.observability import emit_structured_log, seconds_since, utc_now
 from etl_identity_engine.operator_actions import (
     apply_review_decision_operation,
@@ -467,6 +478,17 @@ def _resolve_operation_conflict(error: ValueError) -> None:
     raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+def _resolve_field_authorization_denied(error: FieldAuthorizationDenied) -> None:
+    raise HTTPException(status_code=403, detail=str(error)) from error
+
+
+def _resolve_field_authorization_failure(error: FieldAuthorizationError, *, surface: str) -> None:
+    raise HTTPException(
+        status_code=500,
+        detail=f"Field-authorization evaluation failed for {surface}",
+    ) from error
+
+
 def _parse_page_token(page_token: str | None) -> int:
     if page_token is None:
         return 0
@@ -762,6 +784,7 @@ def create_service_app(
     state_db_path: str | Path,
     *,
     service_auth: ServiceAuthConfig,
+    field_authorization: FieldAuthorizationConfig | None = None,
     config_dir: Path | None = None,
     environment: str | None = None,
 ) -> FastAPI:
@@ -895,6 +918,26 @@ def create_service_app(
             status=status,
             details=details or {},
         )
+
+    def _enforce_service_field_authorization(surface: str) -> None:
+        try:
+            ensure_surface_allowed(surface=surface, config=field_authorization)
+        except FieldAuthorizationDenied as error:
+            _resolve_field_authorization_denied(error)
+        except FieldAuthorizationError as error:
+            _resolve_field_authorization_failure(error, surface=surface)
+
+    def _authorize_service_mapping(surface: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        try:
+            return apply_field_authorization_to_mapping(
+                payload,
+                surface=surface,
+                config=field_authorization,
+            )
+        except FieldAuthorizationDenied as error:
+            _resolve_field_authorization_denied(error)
+        except FieldAuthorizationError as error:
+            _resolve_field_authorization_failure(error, surface=surface)
 
     health_access = require_access("reader", "operator", required_scopes=("service:health",))
     metrics_access = require_access("reader", "operator", required_scopes=("service:metrics",))
@@ -1064,6 +1107,7 @@ def create_service_app(
         principal: AuthenticatedPrincipal = Depends(golden_read_access),
     ) -> GoldenRecordListResponse:
         _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
+        _enforce_service_field_authorization(SERVICE_GOLDEN_RECORD_SURFACE)
         offset = _parse_page_token(page_token)
         result = store.list_golden_records(
             run_id=run_id,
@@ -1075,7 +1119,12 @@ def create_service_app(
             offset=offset,
         )
         return GoldenRecordListResponse(
-            items=[GoldenRecordResponse.model_validate(item) for item in result.items],
+            items=[
+                GoldenRecordResponse.model_validate(
+                    _authorize_service_mapping(SERVICE_GOLDEN_RECORD_SURFACE, item)
+                )
+                for item in result.items
+            ],
             page=_serialize_page(
                 page_size=page_size,
                 total_count=result.total_count,
@@ -1095,9 +1144,13 @@ def create_service_app(
         principal: AuthenticatedPrincipal = Depends(golden_read_access),
     ) -> GoldenRecordResponse:
         _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
+        _enforce_service_field_authorization(SERVICE_GOLDEN_RECORD_SURFACE)
         try:
             return GoldenRecordResponse.model_validate(
-                store.load_golden_record(run_id=run_id, golden_id=golden_id)
+                _authorize_service_mapping(
+                    SERVICE_GOLDEN_RECORD_SURFACE,
+                    store.load_golden_record(run_id=run_id, golden_id=golden_id),
+                )
             )
         except FileNotFoundError as error:
             _resolve_not_found(error)
@@ -1113,11 +1166,15 @@ def create_service_app(
         principal: AuthenticatedPrincipal = Depends(crosswalk_read_access),
     ) -> CrosswalkLookupResponse:
         _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
+        _enforce_service_field_authorization(SERVICE_CROSSWALK_LOOKUP_SURFACE)
         try:
             return CrosswalkLookupResponse.model_validate(
-                store.load_crosswalk_record_for_source(
-                    run_id=run_id,
-                    source_record_id=source_record_id,
+                _authorize_service_mapping(
+                    SERVICE_CROSSWALK_LOOKUP_SURFACE,
+                    store.load_crosswalk_record_for_source(
+                        run_id=run_id,
+                        source_record_id=source_record_id,
+                    ),
                 )
             )
         except FileNotFoundError as error:
@@ -1148,6 +1205,7 @@ def create_service_app(
         principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
     ) -> PublicSafetyGoldenActivityListResponse:
         _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
+        _enforce_service_field_authorization(SERVICE_PUBLIC_SAFETY_GOLDEN_ACTIVITY_SURFACE)
         offset = _parse_page_token(page_token)
         result = store.list_public_safety_golden_activity(
             run_id=run_id,
@@ -1159,7 +1217,12 @@ def create_service_app(
         )
         return PublicSafetyGoldenActivityListResponse(
             items=[
-                PublicSafetyGoldenActivityResponse.model_validate(item)
+                PublicSafetyGoldenActivityResponse.model_validate(
+                    _authorize_service_mapping(
+                        SERVICE_PUBLIC_SAFETY_GOLDEN_ACTIVITY_SURFACE,
+                        item,
+                    )
+                )
                 for item in result.items
             ],
             page=_serialize_page(
@@ -1181,9 +1244,13 @@ def create_service_app(
         principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
     ) -> PublicSafetyGoldenActivityResponse:
         _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
+        _enforce_service_field_authorization(SERVICE_PUBLIC_SAFETY_GOLDEN_ACTIVITY_SURFACE)
         try:
             return PublicSafetyGoldenActivityResponse.model_validate(
-                store.load_public_safety_golden_activity(run_id=run_id, golden_id=golden_id)
+                _authorize_service_mapping(
+                    SERVICE_PUBLIC_SAFETY_GOLDEN_ACTIVITY_SURFACE,
+                    store.load_public_safety_golden_activity(run_id=run_id, golden_id=golden_id),
+                )
             )
         except FileNotFoundError as error:
             _resolve_not_found(error)
@@ -1213,6 +1280,7 @@ def create_service_app(
         principal: AuthenticatedPrincipal = Depends(public_safety_read_access),
     ) -> PublicSafetyIncidentIdentityListResponse:
         _load_tenant_scoped_run(run_id, principal, mismatch_status_code=404)
+        _enforce_service_field_authorization(SERVICE_PUBLIC_SAFETY_INCIDENT_IDENTITY_SURFACE)
         offset = _parse_page_token(page_token)
         result = store.list_public_safety_incident_identity(
             run_id=run_id,
@@ -1226,7 +1294,12 @@ def create_service_app(
         )
         return PublicSafetyIncidentIdentityListResponse(
             items=[
-                PublicSafetyIncidentIdentityResponse.model_validate(item)
+                PublicSafetyIncidentIdentityResponse.model_validate(
+                    _authorize_service_mapping(
+                        SERVICE_PUBLIC_SAFETY_INCIDENT_IDENTITY_SURFACE,
+                        item,
+                    )
+                )
                 for item in result.items
             ],
             page=_serialize_page(
@@ -1551,6 +1624,7 @@ def create_service_app(
                 state_db=state_target.raw_value,
                 run_id=run_id,
                 output_dir=Path(request.output_dir),
+                field_authorization=field_authorization,
                 contract_version=request.contract_version,
             )
         except FileNotFoundError as error:
@@ -1573,6 +1647,46 @@ def create_service_app(
                 },
             )
             _resolve_not_found(error)
+        except FieldAuthorizationDenied as error:
+            _record_service_api_audit_event(
+                principal,
+                action="publish_run",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "output_dir": request.output_dir,
+                    "contract_version": request.contract_version,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["runs:publish"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_field_authorization_denied(error)
+        except FieldAuthorizationError as error:
+            _record_service_api_audit_event(
+                principal,
+                action="publish_run",
+                resource_type="pipeline_run",
+                resource_id=run_id,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "output_dir": request.output_dir,
+                    "contract_version": request.contract_version,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["runs:publish"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_field_authorization_failure(error, surface="delivery publication")
         except ValueError as error:
             _record_service_api_audit_event(
                 principal,
@@ -1676,6 +1790,7 @@ def create_service_app(
                 state_db=state_target.raw_value,
                 source_run_id=run_id,
                 job=job,
+                field_authorization=field_authorization,
             )
         except FileNotFoundError as error:
             _record_service_api_audit_event(
@@ -1697,6 +1812,46 @@ def create_service_app(
                 },
             )
             _resolve_not_found(error)
+        except FieldAuthorizationDenied as error:
+            _record_service_api_audit_event(
+                principal,
+                action="export_job_run",
+                resource_type="export_job",
+                resource_id=job_name,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "job_name": job_name,
+                    "source_run_id": run_id,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["exports:run"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_field_authorization_denied(error)
+        except FieldAuthorizationError as error:
+            _record_service_api_audit_event(
+                principal,
+                action="export_job_run",
+                resource_type="export_job",
+                resource_id=job_name,
+                run_id=run_id,
+                status="failed",
+                details={
+                    "job_name": job_name,
+                    "source_run_id": run_id,
+                    "actor_role": principal.role,
+                    "actor_subject": principal.subject or "",
+                    "granted_scopes": list(principal.scopes),
+                    "required_scopes": ["exports:run"],
+                    "auth_mode": principal.auth_mode,
+                    "error": str(error),
+                },
+            )
+            _resolve_field_authorization_failure(error, surface="delivery export")
         except ValueError as error:
             _record_service_api_audit_event(
                 principal,

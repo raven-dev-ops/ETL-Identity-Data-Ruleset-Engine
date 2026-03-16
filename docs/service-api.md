@@ -211,6 +211,37 @@ committed into repo config.
   - Shows service health/metric cards plus recent audit events from the
     configured state store.
 
+## Field Authorization Boundary
+
+Runtime environments may optionally attach a `field_authorization`
+policy to the documented identity read surfaces:
+
+- `service.golden_record`
+- `service.crosswalk_lookup`
+- `service.public_safety_golden_activity`
+- `service.public_safety_incident_identity`
+
+Policy actions are:
+
+- `allow`
+- `mask`
+- `deny`
+
+Current behavior:
+
+- no configured policy means the service returns the documented fields
+  unchanged
+- `mask` preserves the response schema and replaces non-empty string
+  values with `[MASKED]`
+- `deny` blocks the entire request with `403`
+- policy evaluation errors fail closed with `500` instead of returning a
+  partially filtered payload
+
+Service-triggered `publish` and named `export` actions also honor the
+runtime environment's delivery-surface field authorization policy. When
+that downstream policy uses `deny`, the service rejects the action with
+`403` instead of publishing a partial snapshot.
+
 ## Validation Model
 
 The service uses explicit request and response validation:

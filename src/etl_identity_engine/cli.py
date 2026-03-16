@@ -165,6 +165,13 @@ def _resolve_runtime_environment(args: argparse.Namespace):
     )
 
 
+def _resolve_field_authorization(args: argparse.Namespace):
+    runtime_environment = _resolve_runtime_environment(args)
+    if runtime_environment is None:
+        return None
+    return runtime_environment.field_authorization
+
+
 def _apply_runtime_defaults(args: argparse.Namespace) -> None:
     runtime_environment = _resolve_runtime_environment(args)
     if runtime_environment is None:
@@ -1972,6 +1979,7 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
     tenant_id = _resolve_tenant_id(args)
+    field_authorization = _resolve_field_authorization(args)
     store = PipelineStateStore(state_db)
     run_id = args.run_id or store.latest_completed_run_id(tenant_id=tenant_id)
     if run_id is None:
@@ -1985,6 +1993,7 @@ def _cmd_publish_delivery(args: argparse.Namespace) -> None:
         bundle=bundle,
         state_db_path=state_db,
         output_root=Path(args.output_dir),
+        field_authorization=field_authorization,
         contract_version=args.contract_version,
     )
     _record_cli_audit_event(
@@ -2019,6 +2028,7 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
     tenant_id = _resolve_tenant_id(args)
+    field_authorization = _resolve_field_authorization(args)
     store = PipelineStateStore(state_db)
     result = publish_run_operation(
         store=store,
@@ -2026,6 +2036,7 @@ def _cmd_publish_run(args: argparse.Namespace) -> None:
         state_db=state_db,
         run_id=args.run_id,
         output_dir=Path(args.output_dir),
+        field_authorization=field_authorization,
         contract_version=args.contract_version,
     )
     _record_cli_audit_event(
@@ -2084,6 +2095,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
     started = time.perf_counter()
     state_db = _require_state_db(args)
     tenant_id = _resolve_tenant_id(args)
+    field_authorization = _resolve_field_authorization(args)
     store = PipelineStateStore(state_db)
     job = _resolve_export_job(args)
     try:
@@ -2093,6 +2105,7 @@ def _cmd_export_job_run(args: argparse.Namespace) -> None:
             state_db=state_db,
             source_run_id=args.run_id,
             job=job,
+            field_authorization=field_authorization,
         )
     except Exception as exc:
         _record_cli_audit_event(
@@ -2302,6 +2315,7 @@ def _cmd_serve_api(args: argparse.Namespace) -> None:
     app = create_service_app(
         state_db,
         service_auth=runtime_environment.service_auth,
+        field_authorization=runtime_environment.field_authorization,
         config_dir=runtime_environment.config_dir,
         environment=runtime_environment.name,
     )

@@ -25,6 +25,7 @@ It defines:
 - `environments.<name>.state_db`
 - `environments.<name>.secrets`
 - `environments.<name>.service_auth`
+- `environments.<name>.field_authorization`
 
 Relative paths are resolved from the directory that contains the runtime
 environment file. `environments.<name>.state_db` supports either a
@@ -140,6 +141,55 @@ The `cluster` environment follows the same API-key compatibility model,
 but it requires a deployment-supplied PostgreSQL URL through
 `ETL_IDENTITY_STATE_DB` and is intended for the shipped Kubernetes
 topology.
+
+## Field Authorization Settings
+
+Runtime environments may optionally define field-level authorization
+rules under `environments.<name>.field_authorization`.
+
+If the block is omitted, the runtime allows all documented fields on the
+supported read and delivery surfaces.
+
+Each configured surface maps stable field names to one of:
+
+- `allow`
+- `mask`
+- `deny`
+
+Supported service read surfaces:
+
+- `service.golden_record`
+- `service.crosswalk_lookup`
+- `service.public_safety_golden_activity`
+- `service.public_safety_incident_identity`
+
+Supported delivery and export surfaces:
+
+- `delivery.golden_records`
+- `delivery.source_to_golden_crosswalk`
+
+Example:
+
+```yaml
+environments:
+  prod:
+    field_authorization:
+      service.golden_record:
+        first_name: mask
+        phone: mask
+      delivery.golden_records:
+        phone: deny
+```
+
+Behavior is intentionally narrow and fail-closed:
+
+- `mask` preserves the documented response or CSV shape and replaces
+  non-empty string values with `[MASKED]`
+- `deny` blocks the entire request or publication job for that surface
+- invalid surface names, field names, or actions fail runtime-config
+  loading
+- unexpected evaluation failures return errors instead of silently
+  emitting partially filtered data
 
 ## Config Overlays
 

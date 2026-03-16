@@ -15,6 +15,12 @@ from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 import yaml
+from etl_identity_engine.field_authorization import (
+    FieldAuthorizationAction,
+    FieldAuthorizationConfig,
+    SUPPORTED_FIELD_AUTHORIZATION_ACTIONS,
+    SUPPORTED_FIELD_AUTHORIZATION_SURFACES,
+)
 from etl_identity_engine.output_contracts import DELIVERY_CONTRACT_NAME, DELIVERY_CONTRACT_VERSION
 from etl_identity_engine.storage.state_store_target import is_state_store_url, resolve_state_store_target
 
@@ -144,6 +150,7 @@ class RuntimeEnvironmentConfig:
     tenant_id: str | None
     secrets: dict[str, str]
     service_auth: ServiceAuthConfig | None
+    field_authorization: FieldAuthorizationConfig | None
 
 
 @dataclass(frozen=True)
@@ -1124,6 +1131,55 @@ def _load_service_auth_config(
     )
 
 
+def _load_field_authorization_config(
+    raw_field_authorization: object,
+    *,
+    config_path: Path,
+    environment_name: str,
+) -> FieldAuthorizationConfig | None:
+    context = f"environments.{environment_name}.field_authorization"
+    if raw_field_authorization in (None, {}):
+        return None
+    if not isinstance(raw_field_authorization, Mapping):
+        raise _config_error(config_path, f"{context} must be a mapping")
+
+    surface_rules: dict[str, dict[str, FieldAuthorizationAction]] = {}
+    for surface_name, raw_rules in raw_field_authorization.items():
+        if not isinstance(surface_name, str) or not surface_name.strip():
+            raise _config_error(config_path, f"{context} must use non-empty string surface names")
+        normalized_surface_name = surface_name.strip()
+        supported_fields = SUPPORTED_FIELD_AUTHORIZATION_SURFACES.get(normalized_surface_name)
+        if supported_fields is None:
+            raise _config_error(
+                config_path,
+                f"{context}.{normalized_surface_name} is unsupported; expected one of "
+                f"{', '.join(sorted(SUPPORTED_FIELD_AUTHORIZATION_SURFACES))}",
+            )
+        if not isinstance(raw_rules, Mapping):
+            raise _config_error(config_path, f"{context}.{normalized_surface_name} must be a mapping")
+        _validate_allowed_keys(
+            raw_rules,
+            allowed_keys=set(supported_fields),
+            path=config_path,
+            context=f"{context}.{normalized_surface_name}",
+        )
+        resolved_rules: dict[str, FieldAuthorizationAction] = {}
+        for field_name, raw_action in raw_rules.items():
+            normalized_action = str(raw_action or "").strip().lower()
+            if normalized_action not in SUPPORTED_FIELD_AUTHORIZATION_ACTIONS:
+                raise _config_error(
+                    config_path,
+                    f"{context}.{normalized_surface_name}.{field_name} must be one of: "
+                    f"{', '.join(sorted(SUPPORTED_FIELD_AUTHORIZATION_ACTIONS))}",
+                )
+            resolved_rules[str(field_name)] = normalized_action
+        surface_rules[normalized_surface_name] = resolved_rules
+
+    if not surface_rules:
+        return None
+    return FieldAuthorizationConfig(surface_rules=surface_rules)
+
+
 def load_runtime_environment(
     environment: str | None = None,
     runtime_config_path: Path | None = None,
@@ -1182,7 +1238,15 @@ def load_runtime_environment(
         )
     _validate_allowed_keys(
         resolved_selected,
-        allowed_keys={"description", "config_dir", "state_db", "tenant_id", "secrets", "service_auth"},
+        allowed_keys={
+            "description",
+            "config_dir",
+            "state_db",
+            "tenant_id",
+            "secrets",
+            "service_auth",
+            "field_authorization",
+        },
         path=config_path,
         context=f"environments.{default_environment}",
     )
@@ -1243,6 +1307,12 @@ def load_runtime_environment(
         config_path=config_path,
         environment_name=default_environment,
     )
+    raw_field_authorization = resolved_selected.get("field_authorization")
+    field_authorization = _load_field_authorization_config(
+        raw_field_authorization,
+        config_path=config_path,
+        environment_name=default_environment,
+    )
     raw_tenant_id = resolved_selected.get("tenant_id")
     if raw_tenant_id in (None, ""):
         tenant_id = None
@@ -1261,6 +1331,7 @@ def load_runtime_environment(
         tenant_id=tenant_id,
         secrets=secrets,
         service_auth=service_auth,
+        field_authorization=field_authorization,
     )
 
 

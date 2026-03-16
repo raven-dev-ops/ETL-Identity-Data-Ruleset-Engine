@@ -4,7 +4,15 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from etl_identity_engine.cli import main
+from etl_identity_engine.delivery_publish import publish_delivery_snapshot
+from etl_identity_engine.field_authorization import (
+    DELIVERY_GOLDEN_RECORDS_SURFACE,
+    FieldAuthorizationConfig,
+    FieldAuthorizationDenied,
+)
 from etl_identity_engine.output_contracts import (
     DELIVERY_ARTIFACT_HEADERS,
     DELIVERY_CONTRACT_NAME,
@@ -25,10 +33,9 @@ def _read_csv_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def test_publish_delivery_writes_versioned_snapshot_and_current_pointer(tmp_path: Path) -> None:
+def _create_completed_run_bundle(tmp_path: Path) -> tuple[Path, str, SQLitePipelineStore]:
     base_dir = tmp_path / "run"
     db_path = tmp_path / "state" / "pipeline.sqlite"
-    publish_root = tmp_path / "published"
 
     assert (
         main(
@@ -50,6 +57,12 @@ def test_publish_delivery_writes_versioned_snapshot_and_current_pointer(tmp_path
     store = SQLitePipelineStore(db_path)
     run_id = store.latest_completed_run_id()
     assert run_id is not None
+    return db_path, run_id, store
+
+
+def test_publish_delivery_writes_versioned_snapshot_and_current_pointer(tmp_path: Path) -> None:
+    db_path, run_id, store = _create_completed_run_bundle(tmp_path)
+    publish_root = tmp_path / "published"
     bundle = store.load_run_bundle(run_id)
 
     assert (
@@ -120,3 +133,56 @@ def test_publish_delivery_writes_versioned_snapshot_and_current_pointer(tmp_path
         == 0
     )
     assert [path.name for path in (contract_root / "snapshots").iterdir() if path.is_dir()] == [run_id]
+
+
+def test_publish_delivery_masks_configured_fields_without_changing_contract_shape(
+    tmp_path: Path,
+) -> None:
+    db_path, run_id, store = _create_completed_run_bundle(tmp_path)
+    publish_root = tmp_path / "masked-delivery"
+    bundle = store.load_run_bundle(run_id)
+    field_authorization = FieldAuthorizationConfig(
+        surface_rules={
+            DELIVERY_GOLDEN_RECORDS_SURFACE: {
+                "first_name": "mask",
+                "phone": "mask",
+            }
+        }
+    )
+
+    published = publish_delivery_snapshot(
+        bundle=bundle,
+        state_db_path=db_path,
+        output_root=publish_root,
+        field_authorization=field_authorization,
+    )
+
+    golden_rows = _read_csv_rows(published.snapshot_dir / "golden_person_records.csv")
+    assert golden_rows[0]["first_name"] == "[MASKED]"
+    assert golden_rows[0]["phone"] == "[MASKED]"
+    assert golden_rows[0]["last_name"] == bundle.golden_rows[0]["last_name"]
+    assert list(golden_rows[0]) == list(bundle.golden_rows[0])
+
+    manifest = json.loads((published.snapshot_dir / "delivery_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["row_counts"]["golden_records"] == len(bundle.golden_rows)
+
+
+def test_publish_delivery_denies_snapshot_publication_when_policy_blocks_surface(
+    tmp_path: Path,
+) -> None:
+    db_path, run_id, store = _create_completed_run_bundle(tmp_path)
+    publish_root = tmp_path / "denied-delivery"
+    bundle = store.load_run_bundle(run_id)
+    field_authorization = FieldAuthorizationConfig(
+        surface_rules={DELIVERY_GOLDEN_RECORDS_SURFACE: {"phone": "deny"}}
+    )
+
+    with pytest.raises(FieldAuthorizationDenied, match=r"delivery\.golden_records"):
+        publish_delivery_snapshot(
+            bundle=bundle,
+            state_db_path=db_path,
+            output_root=publish_root,
+            field_authorization=field_authorization,
+        )
+
+    assert not publish_root.exists()
