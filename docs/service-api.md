@@ -51,6 +51,8 @@ authentication. Deployments provide:
 - allowed `algorithms`
 - either `jwt_public_key_pem` or `jwt_secret`
 - a configured role-claim path such as `roles` or `realm_access.roles`
+- a configured `tenant_claim_path` that resolves every caller to exactly
+  one tenant
 - distinct external roles for `reader` and `operator`
 
 Requests send a bearer token in the configured header, typically:
@@ -68,6 +70,14 @@ maps external identity claims into the stable internal service roles:
   - may call all `reader` endpoints
   - may also execute privileged review-decision, replay, publish, and
     export-trigger actions
+
+JWT caller identity is also tenant-scoped:
+
+- the configured `tenant_claim_path` must resolve to exactly one tenant
+- bearer tokens without a valid tenant claim are rejected with `403`
+- list and lookup endpoints are filtered to the authenticated tenant
+- foreign-tenant direct-resource lookups return `404`
+- foreign-tenant privileged operations return `403`
 
 The service also enforces endpoint-level scopes. The current stable
 scope surface is:
@@ -117,6 +127,12 @@ API-key auth remains supported for local and compatibility deployments.
 - default header: `X-API-Key`
 - `reader_api_key`
 - `operator_api_key`
+- `reader_tenant_id`
+- `operator_tenant_id`
+
+API-key principals are also bound to one tenant through runtime config.
+The service does not accept a request-side tenant override through
+headers, query parameters, or request bodies.
 
 The repo's `container` environment continues to use API keys so the
 single-host compose topology stays easy to start locally.
@@ -336,5 +352,16 @@ files.
 
 ## Current Boundary
 
-It does not yet support field-level or tenant-level authorization
-beyond the current service roles and endpoint scopes.
+The current baseline now enforces tenant-scoped access and optional
+field-level authorization across the documented service, publish, and
+export surfaces.
+
+It does not yet support:
+
+- per-principal authorization differences inside one tenant beyond the
+  current `reader` / `operator` role split plus endpoint scopes
+- tenant-spanning administrative access or cross-tenant super-admin
+  behavior
+
+Those remain future authorization extensions rather than part of the
+current service baseline.

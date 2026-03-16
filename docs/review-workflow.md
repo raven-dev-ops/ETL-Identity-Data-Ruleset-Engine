@@ -118,8 +118,10 @@ manifest reruns:
 
 It does not yet:
 
-- expose field-level or tenant-level review authorization beyond the
-  current `operator` role plus `review_cases:write` scope
+- expose per-field review authorization rules inside a tenant
+- expose queue-, assignment-, or case-level authorization rules beyond
+  the current tenant-scoped `operator` role plus `review_cases:write`
+  scope
 
 Those remain future workflow extensions rather than part of the current
 review baseline.

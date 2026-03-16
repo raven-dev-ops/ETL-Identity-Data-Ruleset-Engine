@@ -72,6 +72,8 @@ Start from `deploy/kubernetes/runtime-secret.example.yaml` and provide:
 - `ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY`
 - `ETL_IDENTITY_SERVICE_READER_API_KEY`
 - `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY`
+- `ETL_IDENTITY_SERVICE_READER_TENANT_ID`
+- `ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID`
 
 For the shipped baseline, `ETL_IDENTITY_STATE_DB` should point at the
 cluster-local PostgreSQL Service:
@@ -79,6 +81,12 @@ cluster-local PostgreSQL Service:
 ```text
 postgresql://etl_identity:<password>@identity-postgres:5432/identity_state
 ```
+
+The API-key compatibility baseline still enforces tenant isolation. Bind
+the reader and operator keys to the deployment tenant through the two
+tenant-id secret values above. The shipped examples default to
+`default`; replace that with the tenant identifier used for the
+deployment.
 
 Do not commit deployment-specific secret values into the repository.
 

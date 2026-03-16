@@ -84,6 +84,12 @@ provide:
 - `ETL_IDENTITY_OBJECT_STORAGE_SECRET_KEY`
 - `ETL_IDENTITY_SERVICE_READER_API_KEY`
 - `ETL_IDENTITY_SERVICE_OPERATOR_API_KEY`
+- `ETL_IDENTITY_SERVICE_READER_TENANT_ID`
+- `ETL_IDENTITY_SERVICE_OPERATOR_TENANT_ID`
+
+The API-key compatibility baseline still binds each service principal to
+one tenant. The shipped examples default those tenant IDs to `default`;
+set them to the deployment tenant before applying the Secret.
 
 Replace the image tag in:
 
