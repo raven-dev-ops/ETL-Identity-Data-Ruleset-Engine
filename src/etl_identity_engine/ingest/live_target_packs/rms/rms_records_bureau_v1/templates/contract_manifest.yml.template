@@ -1,0 +1,7 @@
+contract_name: {{ contract_name }}
+contract_version: {{ contract_version }}
+vendor_profile: {{ vendor_profile }}
+files:
+  person_records: vendor_person_records.csv
+  incident_records: vendor_incident_records.csv
+  incident_person_links: vendor_incident_person_links.csv

@@ -33,6 +33,18 @@ work in local, object-storage, and installed-wheel environments. They
 are part of the supported onboarding surface for the current release
 line.
 
+The repo now also ships maintained live onboarding target packs built on
+top of the same profile layer:
+
+- `cad_county_dispatch_v1`
+- `rms_records_bureau_v1`
+
+Those packs pin fixed bundle filenames, a shipped
+`contract_manifest.yml`, a sample `batch_manifest.yml`, and rendered
+customer-variable documentation around the supported profile so
+operators do not have to invent those pieces per pilot. See
+`docs/live-target-packs.md`.
+
 ## Where Vendor Profiles Apply
 
 You can apply a packaged vendor profile in three places:

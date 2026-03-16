@@ -1,0 +1,52 @@
+manifest_version: "1.0"
+entity_type: person
+batch_id: live-{{ agency_slug }}-rms-001
+landing_zone:
+  kind: local_filesystem
+  base_path: .
+sources:
+  - source_id: source_a
+    path: landing/source_a.csv
+    format: csv
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+  - source_id: source_b
+    path: landing/source_b.csv
+    format: csv
+    schema_version: person-v1
+    required_columns:
+      - source_record_id
+      - person_entity_id
+      - source_system
+      - first_name
+      - last_name
+      - dob
+      - address
+      - city
+      - state
+      - postal_code
+      - phone
+      - updated_at
+      - is_conflict_variant
+      - conflict_types
+source_bundles:
+  - bundle_id: {{ bundle_id }}
+    source_class: {{ source_class }}
+    path: {{ bundle_dir }}
+    contract_name: {{ contract_name }}
+    contract_version: {{ contract_version }}
+    vendor_profile: {{ vendor_profile }}

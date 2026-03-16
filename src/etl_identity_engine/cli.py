@@ -34,6 +34,13 @@ from etl_identity_engine.ingest.manifest import (
     peek_manifest_batch_id,
     resolve_batch_manifest,
 )
+from etl_identity_engine.ingest.live_target_packs import (
+    check_live_target_pack,
+    list_live_target_packs,
+    prepare_live_target_pack,
+)
+from etl_identity_engine.ingest.landed_batch_custody import capture_live_target_custody
+from etl_identity_engine.ingest.live_acceptance_package import package_live_target_acceptance
 from etl_identity_engine.ingest.public_safety_conformance import (
     check_public_safety_onboarding,
 )
@@ -381,6 +388,16 @@ def _parse_formats(value: str) -> tuple[str, ...]:
     if not formats:
         raise ValueError("At least one format must be provided")
     return formats
+
+
+def _parse_key_value_pairs(values: Sequence[str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for raw_value in values:
+        key, separator, value = raw_value.partition("=")
+        if not separator or not key.strip() or not value.strip():
+            raise ValueError(f"Expected KEY=VALUE override, received: {raw_value!r}")
+        resolved[key.strip()] = value.strip()
+    return resolved
 
 
 def _resolve_generated_person_input_paths(
@@ -1480,6 +1497,57 @@ def _cmd_generate_public_safety_vendor_batches(args: argparse.Namespace) -> None
         rms_profiles=tuple(args.rms_profile or ()),
     )
     print(json.dumps(result.summary, indent=2, sort_keys=True))
+
+
+def _cmd_list_live_target_packs(args: argparse.Namespace) -> None:
+    packs = list_live_target_packs(source_class=args.source_class)
+    print(json.dumps([pack.to_summary() for pack in packs], indent=2, sort_keys=True))
+
+
+def _cmd_prepare_live_target_pack(args: argparse.Namespace) -> None:
+    summary = prepare_live_target_pack(
+        args.target_id,
+        Path(args.output_dir),
+        variable_overrides=_parse_key_value_pairs(args.set or []),
+        force=bool(args.force),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+
+
+def _cmd_check_live_target_pack(args: argparse.Namespace) -> None:
+    summary = check_live_target_pack(
+        args.target_id,
+        Path(args.root_dir),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    if summary["status"] != "passed":
+        raise SystemExit(1)
+
+
+def _cmd_capture_live_target_custody(args: argparse.Namespace) -> None:
+    summary = capture_live_target_custody(
+        args.target_id,
+        Path(args.staged_root),
+        Path(args.output_dir),
+        operator_id=args.operator_id,
+        transport_channel=args.transport_channel,
+        tenant_id=args.tenant_id,
+        arrived_at_utc=args.arrived_at_utc,
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    if summary["status"] != "captured":
+        raise SystemExit(1)
+
+
+def _cmd_package_live_target_acceptance(args: argparse.Namespace) -> None:
+    summary = package_live_target_acceptance(
+        args.target_id,
+        Path(args.source_root),
+        Path(args.output_dir),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    if summary["status"] != "packaged":
+        raise SystemExit(1)
 
 
 def _cmd_state_db_upgrade(args: argparse.Namespace) -> None:
@@ -4222,6 +4290,99 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     validate_public_safety_contract_parser.set_defaults(func=_cmd_validate_public_safety_contract)
+
+    list_live_target_packs_parser = subparsers.add_parser(
+        "list-live-target-packs",
+        help="List packaged live CAD/RMS onboarding target packs.",
+    )
+    list_live_target_packs_parser.add_argument(
+        "--source-class",
+        default=None,
+        choices=["cad", "rms"],
+        help="Optional source-class filter.",
+    )
+    list_live_target_packs_parser.set_defaults(func=_cmd_list_live_target_packs)
+
+    prepare_live_target_pack_parser = subparsers.add_parser(
+        "prepare-live-target-pack",
+        help="Render a packaged live CAD/RMS onboarding target pack with sample data.",
+    )
+    prepare_live_target_pack_parser.add_argument("--target-id", required=True)
+    prepare_live_target_pack_parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory where the rendered target pack should be written.",
+    )
+    prepare_live_target_pack_parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        help="Override a customer variable with KEY=VALUE. Repeat as needed.",
+    )
+    prepare_live_target_pack_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing non-empty output directory.",
+    )
+    prepare_live_target_pack_parser.set_defaults(func=_cmd_prepare_live_target_pack)
+
+    check_live_target_pack_parser = subparsers.add_parser(
+        "check-live-target-pack",
+        help="Validate a rendered packaged live CAD/RMS onboarding target pack.",
+    )
+    check_live_target_pack_parser.add_argument("--target-id", required=True)
+    check_live_target_pack_parser.add_argument(
+        "--root-dir",
+        default=".",
+        help="Rendered target-pack root directory. Defaults to the current directory.",
+    )
+    check_live_target_pack_parser.set_defaults(func=_cmd_check_live_target_pack)
+
+    capture_live_target_custody_parser = subparsers.add_parser(
+        "capture-live-target-custody",
+        help="Seal a staged live target pack into an immutable landing directory with custody metadata.",
+    )
+    capture_live_target_custody_parser.add_argument("--target-id", required=True)
+    capture_live_target_custody_parser.add_argument(
+        "--staged-root",
+        required=True,
+        help="Staged live target pack root containing the landed files to seal.",
+    )
+    capture_live_target_custody_parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Root directory where the immutable landed batch copy should be created.",
+    )
+    capture_live_target_custody_parser.add_argument("--operator-id", required=True)
+    capture_live_target_custody_parser.add_argument("--transport-channel", required=True)
+    capture_live_target_custody_parser.add_argument(
+        "--tenant-id",
+        default=None,
+        help="Optional tenant identifier to carry into replay linkage metadata.",
+    )
+    capture_live_target_custody_parser.add_argument(
+        "--arrived-at-utc",
+        default=None,
+        help="Optional ISO-8601 arrival timestamp for the landed batch.",
+    )
+    capture_live_target_custody_parser.set_defaults(func=_cmd_capture_live_target_custody)
+
+    package_live_target_acceptance_parser = subparsers.add_parser(
+        "package-live-target-acceptance",
+        help="Build a masked acceptance-fixture package and drift report from a live target pack root.",
+    )
+    package_live_target_acceptance_parser.add_argument("--target-id", required=True)
+    package_live_target_acceptance_parser.add_argument(
+        "--source-root",
+        required=True,
+        help="Validated live target pack root or immutable custody root to package.",
+    )
+    package_live_target_acceptance_parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Root directory where the masked acceptance package should be written.",
+    )
+    package_live_target_acceptance_parser.set_defaults(func=_cmd_package_live_target_acceptance)
 
     check_public_safety_onboarding_parser = subparsers.add_parser(
         "check-public-safety-onboarding",

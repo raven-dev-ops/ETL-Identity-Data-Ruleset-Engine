@@ -1,0 +1,2 @@
+party_record_oid,master_person_oid,given_name,family_name,dob_iso,address_text,city_name,state_abbr,zip_code,phone_value,updated_timestamp,duplicate_flag,duplicate_reason_codes
+RMS-2,P-20,Avery,Brooks,1979-11-05,12 EAST STATE STREET,Columbus,OH,43004,5553334444,2026-03-14T03:00:00Z,false,

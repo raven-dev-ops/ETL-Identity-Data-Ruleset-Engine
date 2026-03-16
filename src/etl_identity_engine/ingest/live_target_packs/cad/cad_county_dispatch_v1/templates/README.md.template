@@ -1,0 +1,46 @@
+# {{ display_name }}
+
+This directory is the prepared onboarding scaffold for the
+`{{ target_id }}` live target pack.
+
+## Customer Variables
+
+- `agency_name`: `{{ agency_name }}`
+- `agency_slug`: `{{ agency_slug }}`
+- `drop_zone_subpath`: `{{ drop_zone_subpath }}`
+- `operator_contact`: `{{ operator_contact }}`
+
+## Landing Contract
+
+- Customer-managed inbound drop zone before local staging:
+  `{{ drop_zone_subpath }}`
+- Keep the bundle directory name fixed as `{{ bundle_dir }}`.
+- Replace the sample rows in `landing/source_a.csv` and
+  `landing/source_b.csv` with the canonical landed person extracts used
+  for the onboarding manifest.
+- Replace the sample rows in `{{ bundle_dir }}/vendor_person_records.csv`,
+  `{{ bundle_dir }}/vendor_incident_records.csv`, and
+  `{{ bundle_dir }}/vendor_incident_person_links.csv` with the landed
+  CAD export while preserving filenames and header shapes.
+- Keep `{{ bundle_dir }}/contract_manifest.yml` pointed at
+  `vendor_profile: {{ vendor_profile }}` unless the supported pack
+  version changes.
+
+## Validation
+
+```bash
+etl-identity-engine check-live-target-pack --target-id {{ target_id }} --root-dir .
+etl-identity-engine check-public-safety-onboarding --manifest {{ manifest_name }} --bundle-dir {{ bundle_dir }}
+```
+
+## Conformance Rules
+
+- Contract: `{{ contract_name }}` / `{{ contract_version }}`
+- Packaged vendor profile: `{{ vendor_profile }}`
+- `person_records.source_system` and `incident_records.source_system`
+  must resolve to `cad`
+- person, incident, and link identifiers must be non-empty and internally
+  consistent
+
+Primary onboarding contact for this rendered scaffold:
+`{{ operator_contact }}`

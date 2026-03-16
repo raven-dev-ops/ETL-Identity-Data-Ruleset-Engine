@@ -52,7 +52,14 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "etl_identity_engine.demo_shell" = ["templates/demo_shell/*.html"]
-"etl_identity_engine.ingest" = ["vendor_profiles/cad/*.yml", "vendor_profiles/rms/*.yml"]
+"etl_identity_engine.ingest" = [
+  "vendor_profiles/cad/*.yml",
+  "vendor_profiles/rms/*.yml",
+  "live_target_packs/cad/*/templates/*",
+  "live_target_packs/cad/*/sample/*/*",
+  "live_target_packs/rms/*/templates/*",
+  "live_target_packs/rms/*/sample/*/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -103,6 +103,12 @@ and `vendor_profile` are mutually exclusive for the same source bundle.
 The current shipped packaged profiles cover both CAD and RMS
 onboarding.
 
+For the supported live CAD and RMS targets, use
+`capture-live-target-custody` after staged-pack validation to seal the
+manifest plus landed files into an immutable intake directory. That
+workflow is documented in `docs/live-landed-input-custody.md` and is
+the supported live-input path distinct from the synthetic fixture tree.
+
 ## Supported Schema
 
 `person-v1` currently requires these columns:

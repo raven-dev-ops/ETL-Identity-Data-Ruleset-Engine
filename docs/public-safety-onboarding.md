@@ -9,6 +9,17 @@ owners:
    documented column names and contract marker files.
 3. Run the conformance check before any pipeline onboarding work.
 
+For the first supported live targets, the runtime now also ships
+renderable onboarding packs documented in `docs/live-target-packs.md`.
+Use them when you need a maintained target-specific scaffold instead of
+the generic fixture tree:
+
+```bash
+etl-identity-engine list-live-target-packs
+etl-identity-engine prepare-live-target-pack --target-id cad_county_dispatch_v1 --output-dir dist/live-targets/cad_county_dispatch_v1
+etl-identity-engine check-live-target-pack --target-id cad_county_dispatch_v1 --root-dir dist/live-targets/cad_county_dispatch_v1
+```
+
 ## Shipped Example Tree
 
 The example fixture root is:
@@ -127,6 +138,18 @@ For the supported CAD profiles, there is now also a third option:
 
 The same pattern now applies to the shipped RMS profiles.
 
+For the first supported live CAD and RMS targets, that `vendor_profile`
+path is now wrapped in a maintained target pack with:
+
+- a concrete `batch_manifest.yml`
+- a fixed bundle directory and filenames
+- a bundle-local `contract_manifest.yml`
+- sample landing files and bundle rows that pass the onboarding checks
+- customer-variable hooks rendered into the pack README and summary
+
+Those packs remove the need for ad hoc manifest edits during normal
+onboarding for `cad_county_dispatch_v1` and `rms_records_bureau_v1`.
+
 For rehearsal and pre-sales work, the repo now also ships
 `generate-public-safety-vendor-batches`. That command derives canonical
 synthetic seed data, materializes vendor-native CAD/RMS bundle files for
@@ -137,6 +160,15 @@ rows by hand.
 
 This remains the intended first pass for source owners and integration
 teams before persisted public-safety activity ingestion work.
+
+For live customer onboarding, stop after the staged-pack validation step
+and move into the custody workflow in `docs/live-landed-input-custody.md`.
+The synthetic fixtures in `fixtures/` stay rehearsal-only and should not
+be treated as the chain-of-custody baseline for live exports.
+
+When customer reviewers need proof artifacts, generate the masked
+acceptance package in `docs/live-acceptance-packages.md` instead of
+hand-copying raw landed files or custody manifests.
 
 ## Canonical Regression Scenarios
 

@@ -1,0 +1,2 @@
+cad_person_key,master_name_id,given_name,family_name,birth_date,street_address,city_name,state_code,zip5,primary_phone,row_updated_at,variant_flag,variant_codes
+CAD-1,P-1,Taylor,Jordan,1985-03-12,123 Main Street,Columbus,OH,43004,5551234567,2026-03-14T00:00:00Z,false,
