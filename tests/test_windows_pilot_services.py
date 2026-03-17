@@ -328,3 +328,217 @@ def test_service_log_paths_fall_back_to_bundle_runtime_logs(tmp_path: Path, monk
     assert stdout_path == bundle_root / "runtime" / "logs" / "demo_shell.stdout.log"
     assert stderr_path == bundle_root / "runtime" / "logs" / "demo_shell.stderr.log"
     assert stdout_path.parent.exists()
+
+
+def test_run_subprocess_service_terminates_running_process_when_stop_event_is_set(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stdout_path = tmp_path / "logs" / "demo_shell.stdout.log"
+    stderr_path = tmp_path / "logs" / "demo_shell.stderr.log"
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    info_messages: list[str] = []
+    error_messages: list[str] = []
+
+    class FakeServiceManager:
+        @staticmethod
+        def LogInfoMsg(message: str) -> None:
+            info_messages.append(message)
+
+        @staticmethod
+        def LogErrorMsg(message: str) -> None:
+            error_messages.append(message)
+
+    class FakeWin32Event:
+        WAIT_OBJECT_0 = 0
+
+        @staticmethod
+        def WaitForSingleObject(stop_event, timeout: int) -> int:
+            return FakeWin32Event.WAIT_OBJECT_0
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.terminate_called = False
+            self.kill_called = False
+            self.wait_calls = 0
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminate_called = True
+
+        def wait(self, timeout: int) -> int:
+            self.wait_calls += 1
+            self.returncode = 0
+            return 0
+
+        def kill(self) -> None:
+            self.kill_called = True
+
+    process = FakeProcess()
+
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_subprocess_command",
+        lambda service_name, service_kind: (["python", "service.py"], tmp_path, {"ENV": "1"}),
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_log_paths",
+        lambda service_name, service_kind: (stdout_path, stderr_path),
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_win32_modules",
+        lambda: (FakeServiceManager, FakeWin32Event, None, None),
+    )
+    monkeypatch.setattr(windows_pilot_services.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    windows_pilot_services._run_subprocess_service("svc-demo", "demo_shell", object())
+
+    assert process.terminate_called is True
+    assert process.wait_calls == 1
+    assert process.kill_called is False
+    assert error_messages == []
+    assert any("Started ETL Identity pilot subprocess for svc-demo" in message for message in info_messages)
+    assert "[service-start] python service.py" in stdout_path.read_text(encoding="utf-8")
+
+
+def test_run_subprocess_service_kills_process_after_terminate_timeout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stdout_path = tmp_path / "logs" / "service_api.stdout.log"
+    stderr_path = tmp_path / "logs" / "service_api.stderr.log"
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+
+    class FakeServiceManager:
+        @staticmethod
+        def LogInfoMsg(message: str) -> None:
+            return None
+
+        @staticmethod
+        def LogErrorMsg(message: str) -> None:
+            return None
+
+    class FakeWin32Event:
+        WAIT_OBJECT_0 = 0
+
+        @staticmethod
+        def WaitForSingleObject(stop_event, timeout: int) -> int:
+            return FakeWin32Event.WAIT_OBJECT_0
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.terminate_called = False
+            self.kill_called = False
+            self.wait_calls = 0
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminate_called = True
+
+        def wait(self, timeout: int) -> int:
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise windows_pilot_services.subprocess.TimeoutExpired(cmd="service.py", timeout=timeout)
+            self.returncode = 0
+            return 0
+
+        def kill(self) -> None:
+            self.kill_called = True
+
+    process = FakeProcess()
+
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_subprocess_command",
+        lambda service_name, service_kind: (["python", "service.py"], tmp_path, {"ENV": "1"}),
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_log_paths",
+        lambda service_name, service_kind: (stdout_path, stderr_path),
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_win32_modules",
+        lambda: (FakeServiceManager, FakeWin32Event, None, None),
+    )
+    monkeypatch.setattr(windows_pilot_services.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    windows_pilot_services._run_subprocess_service("svc-api", "service_api", object())
+
+    assert process.terminate_called is True
+    assert process.kill_called is True
+    assert process.wait_calls == 2
+
+
+def test_run_subprocess_service_logs_nonzero_exit_codes(tmp_path: Path, monkeypatch) -> None:
+    stdout_path = tmp_path / "logs" / "demo_shell.stdout.log"
+    stderr_path = tmp_path / "logs" / "demo_shell.stderr.log"
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    error_messages: list[str] = []
+
+    class FakeServiceManager:
+        @staticmethod
+        def LogInfoMsg(message: str) -> None:
+            return None
+
+        @staticmethod
+        def LogErrorMsg(message: str) -> None:
+            error_messages.append(message)
+
+    class FakeWin32Event:
+        WAIT_OBJECT_0 = 0
+        WAIT_TIMEOUT = 258
+
+        @staticmethod
+        def WaitForSingleObject(stop_event, timeout: int) -> int:
+            return FakeWin32Event.WAIT_TIMEOUT
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 12
+            self.terminate_called = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminate_called = True
+
+        def wait(self, timeout: int) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            return None
+
+    process = FakeProcess()
+
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_subprocess_command",
+        lambda service_name, service_kind: (["python", "service.py"], tmp_path, {"ENV": "1"}),
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_service_log_paths",
+        lambda service_name, service_kind: (stdout_path, stderr_path),
+    )
+    monkeypatch.setattr(
+        windows_pilot_services,
+        "_win32_modules",
+        lambda: (FakeServiceManager, FakeWin32Event, None, None),
+    )
+    monkeypatch.setattr(windows_pilot_services.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    windows_pilot_services._run_subprocess_service("svc-demo", "demo_shell", object())
+
+    assert process.terminate_called is False
+    assert any("exited with code 12" in message for message in error_messages)
